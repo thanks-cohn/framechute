@@ -5,7 +5,7 @@ import { saveBlobAs } from "./native-save.js";
 import { zipSync } from "../vendor/fflate.mjs";
 import { PDFDocument } from "../vendor/pdf-lib.mjs";
 import { compareText, replaceAllText, extractDocxText, createSimpleDocx, textToPdf, readableText } from "./document-operations.js";
-import { enterPaintMode, leavePaintMode, paintOverlayFor, syncPaintOverlay } from "../image-edit/paint-runtime.js";
+import { enterPaintMode, isPaintEditing, leavePaintMode, paintOverlayFor, syncPaintOverlay } from "../image-edit/paint-runtime.js";
 
 const workspace = document.querySelector("#workspace");
 const status = document.querySelector("#status");
@@ -70,7 +70,7 @@ register({ id: "object.duplicate", label: "Duplicate", appliesTo: (s) => s.lengt
 } });
 register({id:"object.copy-to",label:"Copy To…",appliesTo:(s)=>s.length>0&&typeof window.showDirectoryPicker==="function",async run({selection:items}){let directory;try{directory=await window.showDirectoryPicker({mode:"readwrite"});}catch(error){if(error.name==="AbortError")return;throw error;}let copied=0,excluded=[];for(const item of items){const blob=imageOf(item)?await transformed(item,{format:"png"}):await window.FrameChuteWorkspace.sourceBlob(item);if(!blob){excluded.push(nameOf(item));continue;}const filename=imageOf(item)?`${nameOf(item).replace(/\.[^.]+$/,"")}.png`:nameOf(item),handle=await directory.getFileHandle(filename,{create:true}),writer=await handle.createWritable();await writer.write(blob);await writer.close();copied++;}announce(`${copied} file(s) copied. Originals were not deleted.${excluded.length?` Unsupported: ${excluded.join(", ")}.`:""}`);}});
 register({ id: "image.rotate-left", label: "↶ Rotate", appliesTo: applies("image"), async run({ selection: items }) { items.forEach((item) => updateTransform(item, { rotate: (transforms.get(item)?.rotate || 0) - 90 })); } });
-register({ id: "image.paint", label: "Edit", appliesTo: applies("image", { max: 1 }), async run({ selection: [item] }) { await enterPaintMode(item); announce("Draw on the object, then choose Done. Your source stays unchanged."); } });
+register({ id: "image.paint", label: "Image Editing", appliesTo: applies("image", { max: 1 }), async run({ selection: [item] }) { if(isPaintEditing(item)){leavePaintMode(item);announce("Image editing is OFF. Edits are preserved and normal object controls are restored.");}else{await enterPaintMode(item);announce("Image editing is ON. Draw on the object; turning it off preserves your edits.");} } });
 register({ id: "image.rotate-right", label: "Rotate ↷", appliesTo: applies("image"), async run({ selection: items }) { items.forEach((item) => updateTransform(item, { rotate: (transforms.get(item)?.rotate || 0) + 90 })); } });
 register({ id: "image.flip-x", label: "Flip Horizontal", appliesTo: applies("image"), async run({ selection: items }) { items.forEach((item) => updateTransform(item, { flipX: !transforms.get(item)?.flipX })); } });
 register({ id: "image.flip-y", label: "Flip Vertical", appliesTo: applies("image"), async run({ selection: items }) { items.forEach((item) => updateTransform(item, { flipY: !transforms.get(item)?.flipY })); } });
@@ -145,7 +145,7 @@ function render() {
   bar.hidden = !items.length; if (!items.length) return;
   bar.querySelector(".quick-actions-count").textContent = `${items.length} selected`;
   const buttons = bar.querySelector(".quick-actions-buttons"); buttons.replaceChildren();
-  for (const action of registry.available(items)) { const button = document.createElement("button"); button.type="button"; button.textContent=action.label; button.addEventListener("click", async () => { try { button.disabled=true; await registry.run(action.id,{selection:items, progress:(done,total)=>{const p=bar.querySelector("progress");p.hidden=false;p.max=total;p.value=done;}}); } catch(error) { console.error(error); announce(error.message); } finally { button.disabled=false;bar.querySelector("progress").hidden=true;render(); } }); buttons.append(button); }
+  for (const action of registry.available(items)) { const button = document.createElement("button"); button.type="button"; button.textContent=action.id==="image.paint"?`Image Editing  [ ${isPaintEditing(items[0])?"ON":"OFF"} ]`:action.label; if(action.id==="image.paint")button.setAttribute("aria-pressed",String(isPaintEditing(items[0]))); button.addEventListener("click", async () => { try { button.disabled=true; await registry.run(action.id,{selection:items, progress:(done,total)=>{const p=bar.querySelector("progress");p.hidden=false;p.max=total;p.value=done;}}); } catch(error) { console.error(error); announce(error.message); } finally { button.disabled=false;bar.querySelector("progress").hidden=true;render(); } }); buttons.append(button); }
 }
 function enhanceObjectMenuControl(block) {
   if (block.querySelector(":scope > .object-menu-toggle")) return;
@@ -163,6 +163,7 @@ function restoreTransforms(block, value) { if (!value) return; transforms.set(bl
 window.addEventListener("framechute:block-restored", (event) => restoreTransforms(event.detail.block, event.detail.record.state?.quickActionTransforms));
 window.addEventListener("framechute:custom-block-ready", (event) => restoreTransforms(event.detail.block, event.detail.payload?.quickActionTransforms));
 selection.addEventListener("change", () => { document.querySelectorAll(".is-paint-editing").forEach((block) => { if (!selection.has(block)) leavePaintMode(block); }); render(); });
+window.addEventListener("framechute:image-edit-mode",render);
 window.addEventListener("keydown", (event) => {
   if (!['Delete','Backspace'].includes(event.key) || !selection.size || event.defaultPrevented) return;
   const target=event.target;

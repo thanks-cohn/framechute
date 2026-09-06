@@ -1,6 +1,6 @@
 export const QUICK_ACTIONS_GLOBAL_KEY = "framechute.quick-actions-enabled.v1";
 
-export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true } = {}) {
+export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false } = {}) {
   return [
     { id: "quick-actions-global", label: `Quick Actions  [ ${quickActionsEnabled ? "ON" : "OFF"} ]` },
     { id: "open-file", label: "Open File…" },
@@ -12,7 +12,7 @@ export function objectMenuItems({ quickActionsHidden = false, quickActionsEnable
     { id: "fit-height", label: "Fit Height" },
     { id: "actual-size", label: "Actual Size" },
     { id: "shrink-all", label: "Shrink all images to fit" },
-    { id: "edit", label: "Edit" }, { id: "duplicate", label: "Duplicate" },
+    { id: "edit", label: imageEditing ? "Finish Editing" : "Edit Image" }, { id: "duplicate", label: "Duplicate" },
     { id: "save-as", label: "Save As" }
   ];
 }

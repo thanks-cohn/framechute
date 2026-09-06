@@ -15,7 +15,7 @@ import {
 } from "./file-access.js";
 import { writeCompleteBlob, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf } from "./documents/pdf-document.js";
-import { DOCX_MIME, parseDocx, serializeDocx } from "./documents/docx-document.js";
+import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
 
 const workspace = document.querySelector("#workspace");
@@ -582,7 +582,7 @@ registerBlockType("pdf", {
 });
 
 function docxBlocksFromEditor(editor) {
-  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: [...node.childNodes].map((child) => ({ text: child.textContent || "", bold: child.nodeType === 1 && ["B", "STRONG"].includes(child.tagName), italic: child.nodeType === 1 && ["I", "EM"].includes(child.tagName), underline: child.nodeType === 1 && child.tagName === "U" })).filter((run) => run.text.length) });
+  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: [...node.childNodes].map((child) => child.nodeType === 1 && child.matches("img[data-docx-relationship]") ? ({ text: "", images: [{ kind: "image", relationshipId: child.dataset.docxRelationship, part: child.dataset.docxPart, mime: child.dataset.docxMime, width: Number(child.dataset.docxWidth) || child.width, height: Number(child.dataset.docxHeight) || child.height }] }) : ({ text: child.textContent || "", bold: child.nodeType === 1 && ["B", "STRONG"].includes(child.tagName), italic: child.nodeType === 1 && ["I", "EM"].includes(child.tagName), underline: child.nodeType === 1 && child.tagName === "U" })).filter((run) => run.text.length || run.images?.length) });
   const blocks = [];
   for (const node of editor.children) {
     if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
@@ -592,29 +592,39 @@ function docxBlocksFromEditor(editor) {
   return blocks;
 }
 
-function renderDocxEditor(block, blocks) {
+function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.model) {
   const editor = block.querySelector(".docx-editor"); editor.replaceChildren();
+  const urls = [];
   const addParagraph = (p, parent = editor) => {
     const heading = /^Heading([1-6])$/i.exec(p.style || "");
     const tag = heading ? `h${heading[1]}` : "p";
     const element = document.createElement(tag); element.style.textAlign = p.alignment || "left";
-    for (const run of p.runs || []) { let span = document.createElement(run.bold ? "strong" : run.italic ? "em" : run.underline ? "u" : "span"); span.textContent = run.text; element.append(span); }
+    for (const run of p.runs || []) {
+      if (run.text) { const span = document.createElement(run.bold ? "strong" : run.italic ? "em" : run.underline ? "u" : "span"); span.textContent = run.text; element.append(span); }
+      for (const image of run.images || []) {
+        if (image.unsupported || !model?.parts?.[image.part]) { const placeholder=document.createElement("span");placeholder.className="docx-image-unavailable";placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;placeholder.contentEditable="false";element.append(placeholder);continue; }
+        const img=document.createElement("img"),url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));urls.push(url);
+        img.src=url;img.alt="Embedded document image";img.dataset.docxRelationship=image.relationshipId;img.dataset.docxPart=image.part;img.dataset.docxMime=image.mime;img.dataset.docxWidth=String(image.width||"");img.dataset.docxHeight=String(image.height||"");img.contentEditable="false";
+        if(image.width)img.style.width=`${image.width}px`;if(image.height)img.style.height=`${image.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";element.append(img);
+      }
+    }
     parent.append(element); return element;
   };
   for (const item of blocks || []) {
     if (item.type === "table") { const table = document.createElement("table"); for (const row of item.rows) { const tr = table.insertRow(); for (const cell of row) { const td = tr.insertCell(); for (const p of cell) addParagraph(p, td); } } editor.append(table); }
     else addParagraph(item);
   }
+  return urls;
 }
 
 async function loadDocxHandle(block, handle, state = {}) {
   const file = await fileFromHandle(handle); if (!file) throw new Error("DOCX could not be read");
   const model = parseDocx(new Uint8Array(await file.arrayBuffer()));
   if (Array.isArray(state.blocks)) model.blocks = structuredClone(state.blocks);
-  renderDocxEditor(block, model.blocks);
-  const runtime = { handle, model };
+  const runtime = { handle, model, objectUrls: [] }; runtimeSources.set(block, runtime);
+  runtime.objectUrls = renderDocxEditor(block, model.blocks, model);
   runtime.serialize = () => { model.blocks = docxBlocksFromEditor(block.querySelector(".docx-editor")); return serializeDocx(model); };
-  runtimeSources.set(block, runtime); clearSourceUnavailable(block); setDocumentDirty(block, Boolean(state.dirty));
+  clearSourceUnavailable(block); setDocumentDirty(block, Boolean(state.dirty));
   requestAnimationFrame(() => { block.querySelector(".docx-editor").scrollTop = Number(state.scrollTop) || 0; });
 }
 
@@ -623,6 +633,19 @@ registerBlockType("docx", {
   initialize(block) {
     attachDocumentSave(block);
     const editor = block.querySelector(".docx-editor");
+    block.addEventListener("framechute:release-resources",()=>{for(const url of runtimeSources.get(block)?.objectUrls||[])URL.revokeObjectURL(url);},{once:true});
+    const imageFiles = (event) => [...event.dataTransfer?.files || []].filter((file) => /^image\/(png|jpeg|gif|webp)$/i.test(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
+    editor.addEventListener("dragenter", (event) => { if(!imageFiles(event).length)return;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target"); }, true);
+    editor.addEventListener("dragover", (event) => { if(!imageFiles(event).length)return;event.preventDefault();event.stopPropagation();if(event.dataTransfer)event.dataTransfer.dropEffect="copy";workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target"); }, true);
+    editor.addEventListener("dragleave", (event) => { if(!editor.contains(event.relatedTarget))editor.classList.remove("is-docx-drop-target"); }, true);
+    editor.addEventListener("drop", async (event) => {
+      const files=imageFiles(event);if(!files.length)return;event.preventDefault();event.stopPropagation();editor.classList.remove("is-docx-drop-target");workspace.classList.remove("is-drop-target");
+      const runtime=runtimeSources.get(block);if(!runtime?.model){setStatus("This DOCX is not ready for image insertion.");return;}
+      let target=(document.caretPositionFromPoint?.(event.clientX,event.clientY)?.offsetNode || document.caretRangeFromPoint?.(event.clientX,event.clientY)?.startContainer)?.parentElement?.closest("p,h1,h2,h3,h4,h5,h6,li,td") || editor.lastElementChild;
+      if(!target || !editor.contains(target)){target=document.createElement("p");editor.append(target);}
+      for(const file of files){const bitmap=await createImageBitmap(file);const ratio=Math.min(1,Math.max(1,editor.clientWidth-32)/bitmap.width),descriptor=addDocxImage(runtime.model,new Uint8Array(await file.arrayBuffer()),{mime:file.type||"image/png",width:Math.round(bitmap.width*ratio),height:Math.round(bitmap.height*ratio)});bitmap.close();const img=document.createElement("img"),url=URL.createObjectURL(file);runtime.objectUrls.push(url);img.src=url;img.alt=file.name;img.contentEditable="false";img.dataset.docxRelationship=descriptor.relationshipId;img.dataset.docxPart=descriptor.part;img.dataset.docxMime=descriptor.mime;img.dataset.docxWidth=String(descriptor.width);img.dataset.docxHeight=String(descriptor.height);img.style.width=`${descriptor.width}px`;img.style.height=`${descriptor.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";target.append(img);}
+      setDocumentDirty(block,true);setStatus(`${files.length} image${files.length===1?"":"s"} inserted into the DOCX.`);
+    }, true);
     editor.addEventListener("input", () => setDocumentDirty(block, true));
     for (const [selector, command] of [[".docx-bold", "bold"], [".docx-italic", "italic"], [".docx-underline", "underline"]]) block.querySelector(selector).addEventListener("click", () => { editor.focus(); document.execCommand(command); setDocumentDirty(block, true); });
     block.querySelector(".reconnect-source").addEventListener("click", async () => { try { await reconnectSource(block, pickDocxFile, (handle) => loadDocxHandle(block, handle, this.capture(block))); } catch (error) { console.error(error); setStatus("Could not reconnect that DOCX."); } });

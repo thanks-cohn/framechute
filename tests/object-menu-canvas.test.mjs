@@ -41,7 +41,8 @@ test("Canvas payload round-trips semantic identity and real FCX extension state"
   assert.equal(restored.dataUrl,"data:image/png;base64,transparent");
   assert.deepEqual(restored.imagePaintLayer,paint);
   assert.equal(restored.quickActionsHidden,true);
-  assert.equal(objectMenuItems({quickActionsHidden:restored.quickActionsHidden}).find(item=>item.id==="edit").label,"Edit");
+  assert.equal(objectMenuItems({quickActionsHidden:restored.quickActionsHidden}).find(item=>item.id==="edit").label,"Edit Image");
+  assert.equal(objectMenuItems({imageEditing:true}).find(item=>item.id==="edit").label,"Finish Editing");
 });
 
 test("canvas pixels use the shared flood-fill and composition engine",()=>{

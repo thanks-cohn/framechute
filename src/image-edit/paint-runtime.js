@@ -72,8 +72,9 @@ async function restoreCanvas(runtime, state) {
   if (restored.bytes) runtime.context.putImageData(new ImageData(restored.bytes, restored.width, restored.height), 0, 0);
   else { const image = new Image(); image.src = restored.overlay; await image.decode(); runtime.context.drawImage(image, 0, 0, runtime.canvas.width, runtime.canvas.height); }
 }
-export async function enterPaintMode(block) { const runtime = layers.get(block) || await makeRuntime(block); if (!runtime) throw new Error("This image is not ready to edit"); runtime.canvas.classList.add("is-editing"); runtime.block.classList.add("is-paint-editing"); if (!runtime.toolbar) paintToolbar(runtime); return runtime; }
-export function leavePaintMode(block) { const runtime = layers.get(block); if (!runtime) return; runtime.canvas.classList.remove("is-editing"); runtime.block.classList.remove("is-paint-editing"); runtime.toolbar?.remove(); runtime.toolbar = null; }
+export function isPaintEditing(block) { return Boolean(block?.classList.contains("is-paint-editing")); }
+export async function enterPaintMode(block) { const runtime = layers.get(block) || await makeRuntime(block); if (!runtime) throw new Error("This image is not ready to edit"); runtime.canvas.classList.add("is-editing"); runtime.block.classList.add("is-paint-editing"); if (!runtime.toolbar) paintToolbar(runtime); window.dispatchEvent(new CustomEvent("framechute:image-edit-mode",{detail:{block,editing:true}})); return runtime; }
+export function leavePaintMode(block) { const runtime = layers.get(block); if (!runtime) return; runtime.canvas.classList.remove("is-editing"); runtime.block.classList.remove("is-paint-editing"); runtime.toolbar?.remove(); runtime.toolbar = null; window.dispatchEvent(new CustomEvent("framechute:image-edit-mode",{detail:{block,editing:false}})); }
 export function paintOverlayFor(block) { return layers.get(block)?.canvas || null; }
 export function syncPaintOverlay(block) { const runtime = layers.get(block); if (runtime) sync(runtime); }
 
