@@ -1,5 +1,5 @@
 import { saveBlobAs } from "./actions/native-save.js";
-import { contentBounds, outputDimensions, validateRasterSize } from "./workspace-snapshot-bounds.mjs";
+import { contentBounds, outputDimensions, squareBounds, validateRasterSize } from "./workspace-snapshot-bounds.mjs";
 
 const workspace = document.querySelector("#workspace");
 const dialog = document.querySelector("#snapshot-export-dialog");
@@ -98,15 +98,20 @@ function updateDialog(bounds) {
   if (!form.elements.filename.value || /^framechute-snapshot-/.test(form.elements.filename.value)) form.elements.filename.value = defaultName(extension);
 }
 
+function framedBounds(tightBounds) {
+  return form.elements.bounds.value === "square" ? squareBounds(tightBounds) : tightBounds;
+}
+
 async function takeSnapshot() {
   const records = measuredBlocks();
-  const bounds = contentBounds(records);
-  if (!bounds) { announce("Nothing to snapshot."); return; }
-  form.reset(); updateDialog(bounds); dialog.showModal();
+  const tightBounds = contentBounds(records);
+  if (!tightBounds) { announce("Nothing to snapshot."); return; }
+  form.reset(); updateDialog(framedBounds(tightBounds)); dialog.showModal();
   const accepted = await new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "export"), { once: true }));
   if (!accepted) return;
   const format = form.elements.format.value;
   const transparent = format !== "jpeg" && form.elements.transparent.checked;
+  const bounds = framedBounds(tightBounds);
   try {
     announce("Rendering the used workspace…");
     const blob = await renderSnapshot(records, bounds, { format, scale: Number(form.elements.scale.value), quality: Number(form.elements.quality.value), transparent, background: "#ffffff" });
@@ -115,7 +120,7 @@ async function takeSnapshot() {
   } catch (error) { announce(error.message); }
 }
 
-form?.addEventListener("change", () => { const bounds = contentBounds(measuredBlocks()); if (bounds) updateDialog(bounds); });
+form?.addEventListener("change", () => { const bounds = contentBounds(measuredBlocks()); if (bounds) updateDialog(framedBounds(bounds)); });
 document.querySelector("#take-snapshot")?.addEventListener("click", () => void takeSnapshot());
 window.addEventListener("framechute:take-snapshot", () => void takeSnapshot());
 window.addEventListener("framechute:open-workspace", () => document.querySelector("#import-fcx")?.click());

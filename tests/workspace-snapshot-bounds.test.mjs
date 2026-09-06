@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { contentBounds, outputDimensions, validateRasterSize } from "../src/workspace-snapshot-bounds.mjs";
+import { contentBounds, outputDimensions, squareBounds, validateRasterSize } from "../src/workspace-snapshot-bounds.mjs";
 
 test("content bounds include negative, distant, visible objects and padding", () => {
   assert.deepEqual(contentBounds([
@@ -23,4 +23,13 @@ test("scale changes pixels without changing geometry and huge rasters fail safel
   assert.equal(validateRasterSize(outputDimensions(bounds, 2)), "");
   assert.match(validateRasterSize({ width: 20000, height: 20000 }), /too large/);
   assert.equal(contentBounds([]), null);
+});
+
+test("square framing centers tight bounds without stretching content", () => {
+  assert.deepEqual(squareBounds({ left: 10, top: 20, right: 1210, bottom: 820, width: 1200, height: 800 }), {
+    left: 10, top: -180, right: 1210, bottom: 1020, width: 1200, height: 1200
+  });
+  assert.deepEqual(squareBounds({ left: -50, top: -25, right: 350, bottom: 775, width: 400, height: 800 }), {
+    left: -250, top: -25, right: 550, bottom: 775, width: 800, height: 800
+  });
 });

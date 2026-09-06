@@ -1,5 +1,9 @@
 export const QUICK_ACTIONS_GLOBAL_KEY = "framechute.quick-actions-enabled.v1";
 
+export function showWorkspaceActionsForTarget(hasObjectTarget) {
+  return !hasObjectTarget;
+}
+
 export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false } = {}) {
   return [
     { id: "quick-actions-global", label: `Quick Actions  [ ${quickActionsEnabled ? "ON" : "OFF"} ]` },

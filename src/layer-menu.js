@@ -1,4 +1,4 @@
-import { readQuickActionsEnabled, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
+import { readQuickActionsEnabled, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
 
 const workspace = document.querySelector("#workspace");
 
@@ -49,10 +49,10 @@ menu.className = "flashframe-layer-menu";
 menu.hidden = true;
 menu.setAttribute("role", "menu");
 menu.innerHTML = `
-  <button type="button" data-layer-action="open-workspace" role="menuitem">Open Workspace…</button>
-  <button type="button" data-layer-action="export-workspace" role="menuitem">Export Workspace…</button>
-  <button type="button" data-layer-action="take-snapshot" role="menuitem">Take Snapshot…</button>
-  <div class="flashframe-layer-menu-separator" role="separator"></div>
+  <button class="workspace-menu-action" type="button" data-layer-action="open-workspace" role="menuitem">Open Workspace…</button>
+  <button class="workspace-menu-action" type="button" data-layer-action="export-workspace" role="menuitem">Export Workspace…</button>
+  <button class="workspace-menu-action" type="button" data-layer-action="take-snapshot" role="menuitem">Take Snapshot…</button>
+  <div class="flashframe-layer-menu-separator workspace-menu-action" role="separator"></div>
   <button type="button" data-layer-action="quick-actions" role="menuitem">Quick Actions</button>
   <button type="button" data-layer-action="open-file" role="menuitem">Open File…</button>
   <button type="button" data-layer-action="minimize" role="menuitem">Minimize</button>
@@ -210,6 +210,7 @@ function showMenu(block, x, y) {
   menu.hidden = false;
   const timed = Boolean(block) && (block.dataset.timedMedia === "true" || Boolean(block.querySelector("video, audio")));
   const advanced = window.frameChuteAdvancedMode === true;
+  menu.querySelectorAll(".workspace-menu-action").forEach(item => { item.hidden = !showWorkspaceActionsForTarget(Boolean(block)); });
   menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
   menu.querySelector('[data-layer-action="expand"]').textContent = block?.classList.contains("is-maximized") ? "Restore Size" : "Expand";
   menu.querySelector('[data-layer-action="front"]').hidden = !block;
