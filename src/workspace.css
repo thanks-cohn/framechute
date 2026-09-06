@@ -614,6 +614,17 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-text-item { position: absolute; color: transparent; white-space: pre; line-height: 1; cursor: text; transform-origin: 0 0; }
 .pdf-text-item:hover { outline: 1px dashed #276ee8; background: #eaf2ff99; color: #111; }
 .pdf-text-item[contenteditable="true"] { color: #111; background: white; outline: 2px solid #276ee8; z-index: 2; }
+.pdf-text-edit { color: #111; background: #fff; outline: 1px dashed #276ee8; overflow: hidden; }
+.pdf-text-edit.is-selected { outline: 2px solid #276ee8; overflow: visible; z-index: 3; }
+.pdf-edit-text { display: block; min-width: 100%; min-height: 100%; overflow: hidden; }
+.pdf-move-handle, .pdf-resize-handle { display: none; position: absolute; padding: 0; border: 1px solid #276ee8; background: #fff; color: #174a9c; z-index: 4; }
+.pdf-text-edit.is-selected .pdf-move-handle, .pdf-text-edit.is-selected .pdf-resize-handle { display: block; }
+.pdf-move-handle { left: -18px; top: -18px; width: 18px; height: 18px; cursor: move; font-size: 11px; }
+.pdf-resize-handle { right: -6px; bottom: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.pdf-edit-controls { align-items: center; gap: 5px; border-left: 1px solid color-mix(in srgb, CanvasText 20%, transparent); padding-left: 7px; }
+.pdf-edit-controls:not([hidden]) { display: inline-flex; }
+.pdf-edit-controls label { display: inline-flex; align-items: center; gap: 3px; }
+.pdf-font-size { width: 55px; }
 .docx-block { min-width: 420px; min-height: 360px; }
 .docx-editor { flex: 1; overflow: auto; margin: 0; padding: 48px 56px; background: white; color: #171717; font: 16px/1.5 Arial, sans-serif; outline: none; }
 .docx-editor h1, .docx-editor h2, .docx-editor h3 { line-height: 1.2; }
