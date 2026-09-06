@@ -42,6 +42,11 @@ function makeMenusVisible() {
   window.dispatchEvent(new CustomEvent("flashframe:reveal-menus"));
 }
 
+window.addEventListener("framechute:grab-object", event => {
+  const block = event.detail?.block;
+  if (block) startMenuGrab(block, { clientX: block.getBoundingClientRect().left + 12, clientY: block.getBoundingClientRect().top + 12 });
+});
+
 const menu = document.createElement("div");
 menu.className = "flashframe-layer-menu";
 menu.hidden = true;
@@ -230,13 +235,16 @@ function showMenu(block, x, y) {
   menu.querySelector(".frameless-separator").hidden = !isVisualMedia;
   const closeButton = menu.querySelector('[data-layer-action="close"]');
   const hasTimedMotion = Boolean(block?.dataset.timedMotion || block?.classList.contains("has-timed-motion"));
-  menu.querySelector('[data-layer-action="timed-edit"]').hidden = !block;
+  const simple = window.frameChuteAdvancedMode !== true;
+  menu.querySelector('[data-layer-action="timed-edit"]').hidden = !block || simple;
   menu.querySelector('[data-layer-action="timed-edit"]').textContent = hasTimedMotion ? "Edit timed move" : "Create timed move";
-  menu.querySelector('[data-layer-action="timed-play"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="timed-return"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="timed-clear"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="layer-rule"]').hidden = !block;
-  menu.querySelector(".timed-motion-separator").hidden = !block;
+  menu.querySelector('[data-layer-action="timed-play"]').hidden = !hasTimedMotion || simple;
+  menu.querySelector('[data-layer-action="timed-return"]').hidden = !hasTimedMotion || simple;
+  menu.querySelector('[data-layer-action="timed-clear"]').hidden = !hasTimedMotion || simple;
+  menu.querySelector('[data-layer-action="layer-rule"]').hidden = !block || simple;
+  menu.querySelector(".timed-motion-separator").hidden = !block || simple;
+  menu.querySelector('[data-layer-action="sync"]').hidden = !block || isImage || simple;
+  menu.querySelector('[data-layer-action="independent"]').hidden = !block || isImage || simple;
   closeButton.hidden = !block;
   closeButton.textContent = isVisualMedia ? "Close object" : "Close frame";
 
