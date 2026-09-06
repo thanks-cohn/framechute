@@ -1,3 +1,5 @@
+import { readQuickActionsEnabled, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
+
 const workspace = document.querySelector("#workspace");
 
 function blocksByLayer() {
@@ -47,14 +49,20 @@ menu.className = "flashframe-layer-menu";
 menu.hidden = true;
 menu.setAttribute("role", "menu");
 menu.innerHTML = `
+  <button type="button" data-layer-action="quick-actions" role="menuitem">Quick Actions</button>
+  <button type="button" data-layer-action="open-file" role="menuitem">Open File…</button>
+  <button type="button" data-layer-action="minimize" role="menuitem">Minimize</button>
+  <button type="button" data-layer-action="expand" role="menuitem">Expand</button>
+  <button type="button" data-layer-action="center" role="menuitem">Bring to Center</button>
+  <button type="button" data-layer-action="grab" role="menuitem" title="Move Object: choose Grab, then drag the object from its visible image or video">Grab / Move Object <span class="flashframe-layer-menu-shortcut">G</span></button>
+  <button type="button" data-layer-action="close" class="flashframe-layer-menu-close" role="menuitem">Close Object</button>
+  <div class="flashframe-layer-menu-separator" role="separator"></div>
   <button type="button" data-layer-action="front" role="menuitem">Bring to front</button>
   <button type="button" data-layer-action="back" role="menuitem">Send to back</button>
-  <button type="button" data-layer-action="grab" role="menuitem" title="Move Object: choose Grab, then drag the object from its visible image or video">Grab / Move Object <span class="flashframe-layer-menu-shortcut">G</span></button>
-  <button type="button" data-layer-action="open-file" role="menuitem">Open File…</button>
-  <div class="flashframe-layer-menu-separator" role="separator"></div>
+  <div class="flashframe-layer-menu-separator sync-separator" role="separator"></div>
   <button type="button" data-layer-action="sync" role="menuitem">Sync with…</button>
   <button type="button" data-layer-action="independent" role="menuitem">Make independent</button>
-  <div class="flashframe-layer-menu-separator" role="separator"></div>
+  <div class="flashframe-layer-menu-separator sync-separator" role="separator"></div>
   <button type="button" data-layer-action="show-toolbar" role="menuitem">Show top bar</button>
   <button type="button" data-layer-action="show-settings" role="menuitem">Show Settings</button>
   <button type="button" data-layer-action="show-media-player" role="menuitem">Show media player</button>
@@ -70,7 +78,6 @@ menu.innerHTML = `
   <button type="button" data-layer-action="timed-clear" role="menuitem">Remove timed move</button>
   <button type="button" data-layer-action="layer-rule" role="menuitem">Layer timing…</button>
   <div class="flashframe-layer-menu-separator timed-motion-separator" role="separator"></div>
-  <button type="button" data-layer-action="close" class="flashframe-layer-menu-close" role="menuitem">Close frame</button>
 `;
 document.body.append(menu);
 
@@ -189,16 +196,24 @@ function startMenuGrab(block, point = lastContextPoint) {
   document.body.classList.add("framechute-menu-grabbing");
 }
 
+window.addEventListener("framechute:object-command", event => {
+  if (event.detail?.command === "grab") startMenuGrab(event.detail.block, lastContextPoint);
+});
+
 function showMenu(block, x, y) {
   window.dispatchEvent(new CustomEvent("framechute:close-context-menus", { detail: { except: menu } }));
   targetBlock = block;
   menu.hidden = false;
   const timed = Boolean(block) && (block.dataset.timedMedia === "true" || Boolean(block.querySelector("video, audio")));
+  const advanced = window.frameChuteAdvancedMode === true;
+  menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
+  menu.querySelector('[data-layer-action="expand"]').textContent = block?.classList.contains("is-maximized") ? "Restore Size" : "Expand";
   menu.querySelector('[data-layer-action="front"]').hidden = !block;
   menu.querySelector('[data-layer-action="back"]').hidden = !block;
   menu.querySelector('[data-layer-action="grab"]').hidden = !block;
-  menu.querySelector('[data-layer-action="sync"]').hidden = !timed;
-  menu.querySelector('[data-layer-action="independent"]').hidden = !timed;
+  menu.querySelector('[data-layer-action="sync"]').hidden = !advanced || !timed;
+  menu.querySelector('[data-layer-action="independent"]').hidden = !advanced || !timed;
+  menu.querySelectorAll(".sync-separator").forEach(separator => { separator.hidden = !advanced || !timed; });
   const isImage = block?.dataset.customKind === "image"
     || block?.dataset.customLocalKind === "image"
     || Boolean(block?.querySelector(":scope > .image-frame"));
@@ -230,13 +245,13 @@ function showMenu(block, x, y) {
   menu.querySelector(".frameless-separator").hidden = !isVisualMedia;
   const closeButton = menu.querySelector('[data-layer-action="close"]');
   const hasTimedMotion = Boolean(block?.dataset.timedMotion || block?.classList.contains("has-timed-motion"));
-  menu.querySelector('[data-layer-action="timed-edit"]').hidden = !block;
+  menu.querySelector('[data-layer-action="timed-edit"]').hidden = !advanced || !block;
   menu.querySelector('[data-layer-action="timed-edit"]').textContent = hasTimedMotion ? "Edit timed move" : "Create timed move";
-  menu.querySelector('[data-layer-action="timed-play"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="timed-return"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="timed-clear"]').hidden = !hasTimedMotion;
-  menu.querySelector('[data-layer-action="layer-rule"]').hidden = !block;
-  menu.querySelector(".timed-motion-separator").hidden = !block;
+  menu.querySelector('[data-layer-action="timed-play"]').hidden = !advanced || !hasTimedMotion;
+  menu.querySelector('[data-layer-action="timed-return"]').hidden = !advanced || !hasTimedMotion;
+  menu.querySelector('[data-layer-action="timed-clear"]').hidden = !advanced || !hasTimedMotion;
+  menu.querySelector('[data-layer-action="layer-rule"]').hidden = !advanced || !block;
+  menu.querySelector(".timed-motion-separator").hidden = !advanced || !block;
   closeButton.hidden = !block;
   closeButton.textContent = isVisualMedia ? "Close object" : "Close frame";
 
@@ -420,3 +435,13 @@ window.addEventListener("scroll", (event) => {
 window.addEventListener("framechute:close-context-menus", (event) => {
   if (event.detail?.except !== menu) hideMenu();
 });
+  if (button.dataset.layerAction === "quick-actions") {
+    writeQuickActionsEnabled(!readQuickActionsEnabled());
+    window.dispatchEvent(new StorageEvent("storage", { key: "framechute.quick-actions-enabled.v1" }));
+    hideMenu(); return;
+  }
+  if (["minimize", "expand", "center"].includes(button.dataset.layerAction)) {
+    const block = targetBlock, command = button.dataset.layerAction; hideMenu();
+    if (block) window.dispatchEvent(new CustomEvent("framechute:object-command", { detail: { block, command } }));
+    return;
+  }
