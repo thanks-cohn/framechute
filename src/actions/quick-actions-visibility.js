@@ -1,4 +1,4 @@
-import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, writeQuickActionsEnabled } from "./object-menu-model.mjs";
+import { getQuickActionsOverride, objectMenuItems, quickActionsVisible, readQuickActionsEnabled, setQuickActionsOverride, writeQuickActionsEnabled } from "./object-menu-model.mjs";
 import { fittedImageSize } from "./image-display-size.mjs";
 const workspace = document.querySelector("#workspace");
 const status = document.querySelector("#status");
@@ -66,14 +66,7 @@ if (!workspace || !bar || !actions?.selection) {
     return block instanceof HTMLElement && (block.dataset.customKind === "image" || Boolean(block.querySelector(".image-frame")));
   }
 
-  function isHiddenFor(block) {
-    return isImageBlock(block) && isQuickActionsHidden(block);
-  }
-
-  function setHiddenFor(block, hidden) {
-    if (!isImageBlock(block)) return;
-    setQuickActionsHidden(block, hidden);
-  }
+  const overrideFor = block => isImageBlock(block) ? getQuickActionsOverride(block) : "global";
 
   function selectedImagesOnly() {
     const items = selection.items;
@@ -81,10 +74,9 @@ if (!workspace || !bar || !actions?.selection) {
   }
 
   function shouldHideBar() {
-    if (!quickActionsEnabled) return true;
     const items = selection.items;
     if (!items.length) return true;
-    return items.every(isImageBlock) && items.every(isHiddenFor);
+    return items.every(item => !quickActionsVisible(item, quickActionsEnabled));
   }
 
   function applyBarVisibility() {
@@ -104,7 +96,7 @@ if (!workspace || !bar || !actions?.selection) {
     event.stopPropagation();
     const images = selectedImagesOnly();
     if (!images.length) return;
-    images.forEach((block) => setHiddenFor(block, true));
+    images.forEach((block) => setQuickActionsOverride(block, "off"));
     applyBarVisibility();
     if (status) status.textContent = images.length === 1
       ? "Quick Actions hidden for this object. Open its menu to show them again."
@@ -129,9 +121,17 @@ if (!workspace || !bar || !actions?.selection) {
   }
   async function runMenuAction(id) {
     const block=menuBlock; if(!block)return;
+    const selectedImages=selection.has(block)&&selection.items.every(isImageBlock)?selection.items:[block];
     try {
       if(id==="quick-actions-global"){quickActionsEnabled=writeQuickActionsEnabled(!quickActionsEnabled);applyBarVisibility();if(status)status.textContent=`Quick Actions are now ${quickActionsEnabled?"on":"off"} everywhere.`;}
-      if(id==="quick-actions"){const show=isHiddenFor(block);setHiddenFor(block,!show);selection.replace(block);applyBarVisibility();if(status)status.textContent=`Quick Actions ${show?"shown":"hidden"} for this object.`;}
+      if(id==="quick-actions-object"){const states=["global","on","off"],next=states[(states.indexOf(overrideFor(block))+1)%states.length];setQuickActionsOverride(block,next);applyBarVisibility();if(status)status.textContent=`This object's Quick Actions setting is now ${next.toUpperCase()}.`;}
+      if(id==="convert"||id==="save-as")await actions.registry.run("image.save-as",{selection:selectedImages});
+      if(id==="resize")await actions.registry.run("image.resize",{selection:selectedImages});
+      if(id==="crop")await actions.registry.run("image.crop",{selection:[block]});
+      if(id==="copy-image")await actions.registry.run("image.copy",{selection:[block]});
+      if(id==="open-image")await actions.registry.run("image.open-tab",{selection:[block]});
+      if(id==="open-location"){const reconnect=block.querySelector(".reconnect-source,.reconnect-custom-image,.framechute-reconnect-location");if(reconnect){reconnect.click();if(status)status.textContent="Choose or reauthorize the containing folder. Browsers cannot reveal an unknown local path.";}else if(status)status.textContent="The browser did not provide this image's containing folder. Reopen it with Choose Folder to authorize that location.";}
+      if(id==="grab")window.dispatchEvent(new CustomEvent("framechute:grab-object",{detail:{block}}));
       if(id==="shrink-fit")resizeDisplay(block,"shrink");
       if(id==="fit-workspace")resizeDisplay(block,"contain");
       if(id==="fit-width")resizeDisplay(block,"width");
@@ -140,7 +140,6 @@ if (!workspace || !bar || !actions?.selection) {
       if(id==="shrink-all")workspace.querySelectorAll(".block").forEach(candidate=>{if(isImageBlock(candidate))resizeDisplay(candidate,"shrink");});
       if(id==="edit")await actions.registry.run("image.paint",{selection:[block]});
       if(id==="duplicate")await actions.registry.run("object.duplicate",{selection:[block]});
-      if(id==="save-as")await actions.registry.run("image.save-as",{selection:[block]});
       if(id==="open-file")window.dispatchEvent(new CustomEvent("framechute:open-file"));
       if(id==="remove")block.querySelector(":scope > .block-header .remove-block")?.click();
     } catch(error) {
@@ -148,7 +147,7 @@ if (!workspace || !bar || !actions?.selection) {
       if(status)status.textContent=error?.message || "That object action could not be completed.";
     } finally { closeMenu(); }
   }
-  function openMenu(block,clientX,clientY){if(!isImageBlock(block))return;menuBlock=block;menu.replaceChildren();for(const item of objectMenuItems({quickActionsHidden:isHiddenFor(block),quickActionsEnabled})){if(item.separator){const rule=document.createElement("hr");rule.setAttribute("role","separator");menu.append(rule);continue;}const control=document.createElement("button");control.type="button";control.setAttribute("role","menuitem");control.textContent=item.label;if(item.danger)control.className="danger";control.onclick=()=>void runMenuAction(item.id);menu.append(control);}positionMenu(clientX,clientY);}
+  function openMenu(block,clientX,clientY){if(!isImageBlock(block))return;menuBlock=block;menu.replaceChildren();for(const item of objectMenuItems({quickActionsOverride:overrideFor(block),quickActionsEnabled})){if(item.separator){const rule=document.createElement("hr");rule.setAttribute("role","separator");menu.append(rule);continue;}const control=document.createElement("button");control.type="button";control.setAttribute("role","menuitem");control.textContent=item.label;if(item.danger)control.className="danger";control.onclick=()=>void runMenuAction(item.id);menu.append(control);}positionMenu(clientX,clientY);}
   window.addEventListener("framechute:open-object-menu",event=>openMenu(event.detail?.block,event.detail?.clientX||0,event.detail?.clientY||0));
   workspace.addEventListener("contextmenu", event => { const block=event.target.closest(".block");if(!isImageBlock(block)){closeMenu();return;}event.preventDefault();if(!selection.has(block))selection.replace(block);openMenu(block,event.clientX,event.clientY); });
 
@@ -174,27 +173,27 @@ if (!workspace || !bar || !actions?.selection) {
 
   window.addEventListener("framechute:block-captured", (event) => {
     const { block, record } = event.detail;
-    if (!isImageBlock(block) || !isHiddenFor(block)) return;
-    record.state.quickActionsHidden = true;
+    if (!isImageBlock(block) || overrideFor(block) === "global") return;
+    record.state.quickActionsOverride = overrideFor(block);
     if (typeof record.state.text === "string" && record.state.text.startsWith("__FLASHFRAME_CUSTOM_BLOCK_V1__")) {
       const marker = "__FLASHFRAME_CUSTOM_BLOCK_V1__";
       const payload = JSON.parse(record.state.text.slice(marker.length));
-      payload.quickActionsHidden = true;
+      payload.quickActionsOverride = overrideFor(block);
       record.state.text = marker + JSON.stringify(payload);
     }
   });
 
-  function restoreVisibility(block, hidden) {
+  function restoreVisibility(block, value, legacyHidden) {
     if (!isImageBlock(block)) return;
-    setHiddenFor(block, hidden === true);
+    setQuickActionsOverride(block, value || (legacyHidden === true ? "off" : "global"));
     applyBarVisibility();
   }
 
   window.addEventListener("framechute:block-restored", (event) => {
-    restoreVisibility(event.detail.block, event.detail.record.state?.quickActionsHidden);
+    restoreVisibility(event.detail.block, event.detail.record.state?.quickActionsOverride, event.detail.record.state?.quickActionsHidden);
   });
   window.addEventListener("framechute:custom-block-ready", (event) => {
-    restoreVisibility(event.detail.block, event.detail.payload?.quickActionsHidden);
+    restoreVisibility(event.detail.block, event.detail.payload?.quickActionsOverride, event.detail.payload?.quickActionsHidden);
   });
 
   applyBarVisibility();

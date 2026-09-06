@@ -1,14 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, writeQuickActionsEnabled } from "../src/actions/object-menu-model.mjs";
+import { getQuickActionsOverride, isQuickActionsHidden, objectMenuItems, quickActionsVisible, readQuickActionsEnabled, setQuickActionsHidden, setQuickActionsOverride, writeQuickActionsEnabled } from "../src/actions/object-menu-model.mjs";
 import { canvasMetadata, createCanvasPayload, deserializeCanvasPayload, normalizeCanvasSize, serializeCanvasPayload, transparentRgba, validateCanvasSize } from "../src/standalone-canvas.mjs";
 import { compositeRgba, floodFill } from "../src/image-edit/paint-layer.mjs";
 
-test("object menu reflects per-object Quick Actions visibility",()=>{
-  assert.equal(objectMenuItems({quickActionsHidden:true}).find(item=>item.id==="quick-actions").label,"Show Quick Actions for This Object");
-  assert.equal(objectMenuItems({quickActionsHidden:false}).find(item=>item.id==="quick-actions").label,"Hide Quick Actions for This Object");
-  assert.deepEqual(objectMenuItems().filter(item=>item.id).map(item=>item.id),["quick-actions-global","open-file","remove","quick-actions","shrink-fit","fit-workspace","fit-width","fit-height","actual-size","shrink-all","edit","duplicate","save-as"]);
+test("simple image menu has the required ordered actions and tri-state override",()=>{
+  assert.equal(objectMenuItems({quickActionsOverride:"on"})[1].label,"Quick Actions for This Object  [ ON ]");
+  assert.deepEqual(objectMenuItems().filter(item=>item.id).map(item=>item.id),["quick-actions-global","quick-actions-object","convert","resize","crop","grab","remove","shrink-fit","copy-image","open-image","open-location","edit","duplicate","save-as"]);
   assert.equal(objectMenuItems().find(item=>item.id==="remove").label,"Close Object");
+});
+
+test("per-object Quick Actions overrides bypass the global default both ways",()=>{
+  const image={dataset:{}};
+  assert.equal(quickActionsVisible(image,false),false);
+  setQuickActionsOverride(image,"on");
+  assert.equal(getQuickActionsOverride(image),"on");
+  assert.equal(quickActionsVisible(image,false),true);
+  setQuickActionsOverride(image,"off");
+  assert.equal(quickActionsVisible(image,true),false);
+  setQuickActionsOverride(image,"global");
+  assert.equal(quickActionsVisible(image,true),true);
 });
 
 test("standalone canvas metadata is honest, bounded, and transparent",()=>{
@@ -41,7 +52,7 @@ test("Canvas payload round-trips semantic identity and real FCX extension state"
   assert.equal(restored.dataUrl,"data:image/png;base64,transparent");
   assert.deepEqual(restored.imagePaintLayer,paint);
   assert.equal(restored.quickActionsHidden,true);
-  assert.equal(objectMenuItems({quickActionsHidden:restored.quickActionsHidden}).find(item=>item.id==="edit").label,"Edit");
+  assert.equal(objectMenuItems({quickActionsOverride:restored.quickActionsHidden?"off":"global"}).find(item=>item.id==="edit").label,"Edit");
 });
 
 test("canvas pixels use the shared flood-fill and composition engine",()=>{

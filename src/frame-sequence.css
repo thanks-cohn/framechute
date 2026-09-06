@@ -205,6 +205,12 @@ body.toolbar-show-text .frame-sequence-transport-top::after {
   }
 }
 
+body.select-mode #workspace .block { cursor: pointer !important; }
+body.select-mode #workspace .block.is-quick-selected {
+  outline: 3px solid #1976d2 !important;
+  outline-offset: 3px;
+}
+
 /* Sequence panel --------------------------------------------------------- */
 .frame-sequence-panel {
   position: fixed;

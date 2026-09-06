@@ -437,6 +437,12 @@ body.toolbar-hidden .workspace {
   user-select: none;
 }
 
+.block-header { min-width: 0; }
+.block-header > .block-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block-header > .block-actions,
+.block-header > .source-badge,
+.block-header > .document-dirty { flex: 0 0 auto; }
+
 body.hide-block-headers #workspace .block > .block-header {
   display: none !important;
 }
