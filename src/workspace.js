@@ -634,9 +634,17 @@ registerBlockType("docx", {
     attachDocumentSave(block);
     const editor = block.querySelector(".docx-editor");
     block.addEventListener("framechute:release-resources",()=>{for(const url of runtimeSources.get(block)?.objectUrls||[])URL.revokeObjectURL(url);},{once:true});
-    const imageFiles = (event) => [...event.dataTransfer?.files || []].filter((file) => /^image\/(png|jpeg|gif|webp)$/i.test(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
-    editor.addEventListener("dragenter", (event) => { if(!imageFiles(event).length)return;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target"); }, true);
-    editor.addEventListener("dragover", (event) => { if(!imageFiles(event).length)return;event.preventDefault();event.stopPropagation();if(event.dataTransfer)event.dataTransfer.dropEffect="copy";workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target"); }, true);
+    const imageFile = (file) => file && (/^image\/(png|jpeg|gif|webp)$/i.test(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
+    const imageItems = (event) => [...event.dataTransfer?.items || []].filter((item) => item.kind === "file" && (/^image\/(png|jpeg|gif|webp)$/i.test(item.type) || imageFile(item.getAsFile?.())));
+    const imageFiles = (event) => {
+      const files = [...event.dataTransfer?.files || []].filter(imageFile);
+      if (files.length) return files;
+      return imageItems(event).map((item) => item.getAsFile?.()).filter(imageFile);
+    };
+    const ownsImageDrag = (event) => imageItems(event).length > 0 || imageFiles(event).length > 0;
+    const claimImageDrag = (event) => { if(!ownsImageDrag(event))return false;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target");return true; };
+    editor.addEventListener("dragenter", claimImageDrag, true);
+    editor.addEventListener("dragover", (event) => { if(!claimImageDrag(event))return;if(event.dataTransfer)event.dataTransfer.dropEffect="copy"; }, true);
     editor.addEventListener("dragleave", (event) => { if(!editor.contains(event.relatedTarget))editor.classList.remove("is-docx-drop-target"); }, true);
     editor.addEventListener("drop", async (event) => {
       const files=imageFiles(event);if(!files.length)return;event.preventDefault();event.stopPropagation();editor.classList.remove("is-docx-drop-target");workspace.classList.remove("is-drop-target");

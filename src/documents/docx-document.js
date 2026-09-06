@@ -76,37 +76,41 @@ export function parseDocx(bytes) {
   return { blocks, parts, originalXml: xml, relationships };
 }
 
-function runXml(run) {
+function runXml(run, drawingIds) {
   const props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}`;
   const pieces = String(run.text ?? "").split("\n").map((part, index) => `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
-  const images = (run.images || []).map((image) => imageXml(image)).join("");
+  const images = (run.images || []).map((image) => imageXml(image, drawingIds.next())).join("");
   return `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
 }
-function imageXml(image) {
+function imageXml(image, drawingId) {
   const width = Math.max(1, Math.round((image.width || 320) * 9525)), height = Math.max(1, Math.round((image.height || 240) * 9525));
-  return `<w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="1" name="Picture"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="${esc(image.relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+  return `<w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${drawingId}" name="Picture ${drawingId}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${drawingId}" name="Picture ${drawingId}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${esc(image.relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
 }
 
 export function addDocxImage(model, bytes, { mime = "image/png", width = 320, height = 240 } = {}) {
   const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1]?.replace("svg+xml", "svg") || "png";
   let number = 1; while (model.parts[`word/media/framechute${number}.${extension}`]) number += 1;
-  const part = `word/media/framechute${number}.${extension}`, relationshipId = `rIdFrameChute${number}`;
+  const part = `word/media/framechute${number}.${extension}`;
   model.parts[part] = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const relPath = "word/_rels/document.xml.rels";
   let rels = model.parts[relPath] ? strFromU8(model.parts[relPath]) : `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${REL}"></Relationships>`;
+  const relationshipIds = new Set([...rels.matchAll(/\bId=["']([^"']+)["']/g)].map((match) => match[1]));
+  let relationshipNumber = 1;
+  while (relationshipIds.has(`rIdFrameChute${relationshipNumber}`)) relationshipNumber += 1;
+  const relationshipId = `rIdFrameChute${relationshipNumber}`;
   rels = rels.replace(/<\/Relationships>\s*$/, `<Relationship Id="${relationshipId}" Type="${IMAGE_REL}" Target="media/${part.split("/").pop()}"/></Relationships>`);
   model.parts[relPath] = strToU8(rels); model.relationships?.set(relationshipId, part); model.packageDirty = true;
   const contentPath = "[Content_Types].xml";
   if (model.parts[contentPath]) { let types = strFromU8(model.parts[contentPath]); if (!new RegExp(`Extension=["']${extension}["']`, "i").test(types)) types = types.replace(/<\/Types>\s*$/, `<Default Extension="${extension}" ContentType="${mime}"/></Types>`); model.parts[contentPath] = strToU8(types); }
   return { kind: "image", relationshipId, part, mime, width, height };
 }
-function paragraphXml(p) {
+function paragraphXml(p, drawingIds) {
   const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${p.list ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' : ""}`;
-  return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map(runXml).join("")}</w:p>`;
+  return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map((run) => runXml(run, drawingIds)).join("")}</w:p>`;
 }
-function blockXml(block) {
-  if (block.type === "table") return `<w:tbl>${block.rows.map((row) => `<w:tr>${row.map((cell) => `<w:tc>${cell.map(paragraphXml).join("")}<w:tcPr/></w:tc>`).join("")}</w:tr>`).join("")}</w:tbl>`;
-  return paragraphXml(block);
+function blockXml(block, drawingIds) {
+  if (block.type === "table") return `<w:tbl>${block.rows.map((row) => `<w:tr>${row.map((cell) => `<w:tc>${cell.map((p) => paragraphXml(p, drawingIds)).join("")}<w:tcPr/></w:tc>`).join("")}</w:tr>`).join("")}</w:tbl>`;
+  return paragraphXml(block, drawingIds);
 }
 
 export function serializeDocx(model) {
@@ -136,7 +140,10 @@ export function serializeDocx(model) {
     parts["word/document.xml"] = strToU8(xml);
   } else {
     const section = model.originalXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] || "";
-    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${model.blocks.map(blockXml).join("")}${section}</w:body></w:document>`);
+    const usedDrawingIds = new Set([...model.originalXml.matchAll(/<wp:docPr\b[^>]*\bid=["'](\d+)["']/g)].map((match) => Number(match[1])));
+    let nextDrawingId = 1;
+    const drawingIds = { next() { while (usedDrawingIds.has(nextDrawingId)) nextDrawingId += 1; usedDrawingIds.add(nextDrawingId); return nextDrawingId++; } };
+    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${model.blocks.map((block) => blockXml(block, drawingIds)).join("")}${section}</w:body></w:document>`);
   }
   return new Blob([zipSync(parts, { level: 6 })], { type: CONTENT_TYPE });
 }
