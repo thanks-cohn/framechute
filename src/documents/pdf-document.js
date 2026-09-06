@@ -22,6 +22,14 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   await page.render({ canvasContext: canvas.getContext("2d"), viewport, transform: devicePixelRatio === 1 ? null : [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] }).promise;
   const content = await page.getTextContent();
   textLayer.replaceChildren();
+  for (const mask of sourceMasksForPage(edits, pageNumber)) {
+    const [left, top, right, bottom] = pdfRectToViewport(viewport, mask);
+    const element = document.createElement("div");
+    element.className = "pdf-source-mask";
+    element.setAttribute("aria-hidden", "true");
+    Object.assign(element.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px` });
+    textLayer.append(element);
+  }
   content.items.forEach((item, index) => {
     if (!item.str?.trim()) return;
     const [, , , d, x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
@@ -44,6 +52,20 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   return { viewport, content };
 }
 
+/** Return the fixed cover used by both the live preview and PDF serialization. */
+export function sourceMaskForEdit(edit) {
+  return {
+    x: edit.sourceX ?? edit.x,
+    y: edit.sourceY ?? edit.y,
+    width: Math.max(edit.sourceWidth ?? edit.width, 2),
+    height: Math.max(edit.sourceHeight ?? edit.height, 2)
+  };
+}
+
+export function sourceMasksForPage(edits, pageNumber) {
+  return edits.filter((edit) => edit.page === pageNumber).map(sourceMaskForEdit);
+}
+
 export function pdfRectToViewport(viewport, rect) {
   const points = viewport.convertToViewportRectangle([rect.x, rect.y, rect.x + rect.width, rect.y + rect.height]);
   return [Math.min(points[0], points[2]), Math.min(points[1], points[3]), Math.max(points[0], points[2]), Math.max(points[1], points[3])];
@@ -60,9 +82,10 @@ export async function serializeEditedPdf(model, edits) {
   for (const edit of edits) {
     const page = output.getPage(edit.page - 1);
     const size = Math.max(4, Number(edit.fontSize) || 12);
+    const mask = sourceMaskForEdit(edit);
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
-    page.drawRectangle({ x: edit.sourceX ?? edit.x, y: edit.sourceY ?? edit.y, width: Math.max(edit.sourceWidth ?? edit.width, 2), height: Math.max(edit.sourceHeight ?? edit.height, size), color: rgb(1, 1, 1) });
+    page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
     page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
   }
   return new Blob([await output.save()], { type: "application/pdf" });
