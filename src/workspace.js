@@ -620,7 +620,7 @@ registerBlockType("pdf", {
     });
     textLayer.addEventListener("keydown", (event) => {
       const text=event.target.closest('.pdf-edit-text[contenteditable="true"]');
-      if(text&&event.key==="Enter"){event.preventDefault();text.blur();}
+      if(text&&event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();text.blur();}
       if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();void travelPdfHistory(block,event.shiftKey?"redo":"undo");}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){event.preventDefault();void travelPdfHistory(block,"redo");}
