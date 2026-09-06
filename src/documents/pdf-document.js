@@ -29,11 +29,29 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = edits.find((edit) => edit.page === pageNumber && edit.index === index);
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
-    span.textContent = saved?.replacement ?? item.str;
-    Object.assign(span.style, { left: `${x}px`, top: `${y - height}px`, width: `${Math.max(item.width * scale, 8)}px`, height: `${height * 1.25}px`, fontSize: `${height}px` });
+    const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
+    if (saved) {
+      const [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
+      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px` });
+      span.classList.add("pdf-text-edit");
+      const move = document.createElement("button"); move.type="button"; move.className="pdf-move-handle"; move.title="Drag replacement"; move.textContent="↕"; span.append(move);
+      const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
+    } else {
+      Object.assign(span.style, { left: `${x}px`, top: `${y - height}px`, width: `${Math.max(item.width * scale, 8)}px`, height: `${height * 1.25}px`, fontSize: `${height}px` });
+    }
     textLayer.append(span);
   });
   return { viewport, content };
+}
+
+export function pdfRectToViewport(viewport, rect) {
+  const points = viewport.convertToViewportRectangle([rect.x, rect.y, rect.x + rect.width, rect.y + rect.height]);
+  return [Math.min(points[0], points[2]), Math.min(points[1], points[3]), Math.max(points[0], points[2]), Math.max(points[1], points[3])];
+}
+
+export function viewportRectToPdf(viewport, rect) {
+  const points = viewport.convertToPdfPoint(rect.left, rect.top).concat(viewport.convertToPdfPoint(rect.left + rect.width, rect.top + rect.height));
+  return { x: Math.min(points[0], points[2]), y: Math.min(points[1], points[3]), width: Math.abs(points[2]-points[0]), height: Math.abs(points[3]-points[1]) };
 }
 
 export async function serializeEditedPdf(model, edits) {
@@ -44,8 +62,8 @@ export async function serializeEditedPdf(model, edits) {
     const size = Math.max(4, Number(edit.fontSize) || 12);
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
-    page.drawRectangle({ x: edit.x, y: edit.y, width: Math.max(edit.width, 2), height: Math.max(edit.height, size), color: rgb(1, 1, 1) });
-    page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width * 2, 20) });
+    page.drawRectangle({ x: edit.sourceX ?? edit.x, y: edit.sourceY ?? edit.y, width: Math.max(edit.sourceWidth ?? edit.width, 2), height: Math.max(edit.sourceHeight ?? edit.height, size), color: rgb(1, 1, 1) });
+    page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }
