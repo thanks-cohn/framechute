@@ -182,7 +182,97 @@ Product rule:
 
 > Names may be arbitrarily long. Controls may never collide because of the name.
 
-## 8. Preserve the Simple/Advanced distinction
+## 8. Large image resizes must still show a preview
+
+Current problem: large requested output dimensions can cause the resize dialog to stop showing the preview or effectively cap preview generation.
+
+Required behavior:
+
+- **Img Size Change… must always provide a visual preview, including when the requested output is very large.**
+- Do not replace the preview with a generic `too large`, `preview unavailable`, or arbitrary size-cap state merely because the target dimensions exceed a convenient canvas/display threshold.
+- The preview does not need to allocate a full-size target bitmap merely to show the user the result.
+- For very large output dimensions, generate a bounded-memory proxy preview that preserves:
+  - final aspect ratio;
+  - crop/rotation/flip/paint/background/transparency semantics;
+  - the intended resize geometry;
+  - enough visual fidelity for the user to judge the result.
+- Clearly display the **real requested output dimensions** separately from the preview's internal proxy dimensions.
+- The actual export must still use the full requested dimensions subject only to real browser/encoder limits. Do not silently clamp the requested output to the preview size.
+- If the requested export exceeds an actual browser/encoder hard limit, say so clearly and distinguish that from preview generation.
+- Preview updates should remain responsive while typing dimensions; debounce/cancel stale preview work and avoid runaway memory use.
+
+Example:
+
+`12000 × 8000 requested → scaled visual proxy preview shown → label still says 12000 × 8000 output → export attempts the real 12000 × 8000 result.`
+
+Product rule:
+
+> Large output may use a smaller preview surface. It must never mean no preview.
+
+## 9. First-class Select Mode for multi-object media work
+
+FrameChute needs an explicit **Select Mode** so users can select a group of image/media objects and then act on the group.
+
+The first version should support at minimum:
+
+- images;
+- videos;
+- audio objects;
+- other already-supported media objects where selection is safe.
+
+Do not make this an image-only selection hack. Build it on the existing selection model so the same selection set can later power mixed-object document composition and group operations.
+
+### Entering / leaving Select Mode
+
+Expose a clear persistent control such as:
+
+`Select Mode  [ ON / OFF ]`
+
+When Select Mode is ON:
+
+- ordinary click toggles object selection instead of starting a move/edit gesture;
+- Shift/Ctrl/Cmd-click may extend/toggle selection consistently;
+- selected objects get clear but unobtrusive selection chrome;
+- clicking empty workspace may clear selection unless a modifier is held;
+- dragging empty workspace may provide a marquee/lasso rectangle if practical for this pass;
+- direct object move/resize/edit gestures should not accidentally fire just because the user is trying to select objects.
+
+When Select Mode is OFF:
+
+- return to normal FrameChute direct manipulation behavior;
+- existing selected objects may remain selected only if that is useful and non-confusing, otherwise clear them explicitly and consistently;
+- do not destroy or flatten object state.
+
+### Selection semantics
+
+- A selection can contain multiple media types at once, for example image + video + audio.
+- Right-clicking any member of an existing multi-selection should act on the selection set where the invoked command supports multiple items.
+- Commands that only support a single object should say so clearly or operate on the specifically invoked object; do not silently discard the rest of the selection.
+- Quick Actions should display the selected count and only show actions valid for the current selection.
+- Bulk image dialogs from this addendum should use this same selection set for `Selected images` scope.
+- Selection must survive harmless UI events such as opening a context menu/dialog; it should not evaporate merely because a popup opened.
+- Closing/deleting an object removes it from the selection model immediately.
+- FCX does not need to persist transient selection UI unless there is already a clean state slot for it; object state itself must remain unchanged.
+
+### Foundation for later features
+
+Implement Select Mode with an architecture that can later support:
+
+- Arrange into PDF;
+- contact sheet / stitch;
+- Resize All / Convert All;
+- ZIP selected;
+- Group/Ungroup;
+- align/distribute;
+- multi-object FrameSnap.
+
+Do not implement all of those in this pass. The requirement here is the reusable multi-object selection foundation.
+
+Product rule:
+
+> Select the things first. Then decide what to do with the set.
+
+## 10. Preserve the Simple/Advanced distinction
 
 Simple mode should emphasize direct file/object tasks. Advanced mode can expose timing, layered animation and deeper controls.
 
