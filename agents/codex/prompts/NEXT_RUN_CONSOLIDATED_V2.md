@@ -1,67 +1,107 @@
-# NEXT RUN — FrameChute correctness + UX pass (V2)
+# NEXT RUN — FrameChute authoritative correctness + UX pass
 
-This is the **single authoritative prompt** for the next Codex run. Work from current `main`. **Do not read the older prompt stack unless this file leaves a concrete implementation detail genuinely ambiguous.** Where older prompts conflict, this file wins.
+This is the **single authoritative prompt** for the next Codex run. Work from current `main`. Do not read older prompt files unless this file leaves a concrete implementation detail genuinely ambiguous. Where older prompts conflict, this file wins. Do not revive PR #46 or blindly merge stale PR #42.
 
-Do not revive PR #46 and do not merge stale PR #42 wholesale. Reimplement needed behavior on current `main`.
+Use up to 30 minutes. Prioritize visible correctness. At the 30-minute mark, **conclude active implementation and provide a handoff**.
 
 Core rules:
 
-> If an action feels obvious, FrameChute should support it directly.
-
+> Internal manipulation must never look like external ingestion.
+>
 > The viewport moves. The artwork does not.
-
+>
 > If I just put it there, Ctrl/Cmd+Z should take it back out.
-
+>
 > Select the things. Then do the obvious thing to the selection.
-
+>
 > The top header must always look clean, intentional, aesthetic, and professional.
-
-Use up to 30 minutes. Prioritize user-visible correctness.
 
 ---
 
-## 1. PDF / DOCX image drop, move, resize, undo
+## P0 — MOST IMPORTANT: grabbing/moving anything inside FrameChute must NEVER show `Drop into FrameChute`
 
-Audit at minimum:
+Fix this first and verify it before lower-priority polish.
+
+Audit the drag/drop and object-movement paths, especially:
 
 ```text
-src/documents/pdf-document.js
-src/documents/docx-document.js
-src/workspace.js
 src/web-drop.js
 src/drop-local-sources.js
 src/workspace-ingestion.js
+src/workspace.js
+src/layer-menu.js
+src/frameless-media.js
+src/documents/pdf-document.js
+src/documents/docx-document.js
 ```
 
-Required:
+Required contract:
 
-- Moving an existing FrameChute object must **never** show the global external-ingest overlay.
-- Moving/resizing an image already inside PDF/DOCX must never show it either.
-- External file/URL drags may show ingest UI until a document claims the drop.
-- PDF/DOCX valid image drop = document owns it, exactly one insertion, no duplicate workspace object.
-- Existing workspace images must be droppable into PDF/DOCX as a copy; original workspace object remains.
-- Prevent accidental native `dragstart` during internal manipulation.
+```text
+External OS/browser file or URL drag
+→ global `Drop into FrameChute` overlay MAY appear
 
-### PDF image insertion
+Grab/move existing FrameChute image/video/audio/PDF/DOCX/text/canvas/object
+→ global overlay MUST NOT appear, not even briefly
 
-Drop an eligible image on the current PDF page:
+Resize existing FrameChute object
+→ no global overlay
+
+Select/marquee existing FrameChute objects
+→ no global overlay
+
+Move/resize image already inside PDF/DOCX
+→ no global overlay
+
+Drag existing workspace image into PDF/DOCX intentionally as a copy
+→ document-local drop affordance may appear
+→ global overlay stays hidden
+→ original workspace image remains
+→ exactly one document insertion
+```
+
+Implementation requirements:
+
+- Internal manipulation is application pointer state, not external/native ingestion.
+- Prevent accidental native `dragstart` on internal images/media (`draggable=false`, prevent internal dragstart, or a robust ownership marker).
+- Global drag-depth/overlay logic must explicitly ignore internal drags.
+- PDF/DOCX must claim supported image drops before the global workspace router.
+- Clear drag ownership/overlay state on drop, pointer release, dragleave, cancel, Escape, and failed handoff.
+- Preserve real external file/URL drag-and-drop.
+
+Hard acceptance test:
+
+```text
+Pick up an existing FrameChute image and drag it around the workspace for 10 seconds.
+→ `Drop into FrameChute` never appears at any point.
+```
+
+Repeat with video, PDF/DOCX block movement, Select Mode, and document-image movement.
+
+---
+
+## 1. PDF / DOCX image insertion, move, resize, undo
+
+### PDF
+
+Drop an eligible image onto the current PDF page:
 
 ```text
 insert at pointer
-→ select
+→ select immediately
 → drag image body to move
-→ bottom-right handle to resize
+→ bottom-right handle resizes
 → preserve aspect ratio by default
-→ store page/PDF coordinates
+→ store canonical PDF/page coordinates
 → survive rerender/zoom
 → Save/Save As embeds it
 ```
 
-PNG/JPEG minimum; locally convert other browser-decodable formats if needed. Do not rasterize the whole PDF just to insert an image.
+Existing workspace image → PDF must insert a copy while leaving the workspace original intact. No global overlay and no duplicate workspace object.
 
-### DOCX image manipulation
+### DOCX
 
-Inserted and supported existing DOCX images:
+Inserted/supported existing images:
 
 ```text
 click → select
@@ -69,83 +109,37 @@ body drag → move
 bottom-right handle → resize
 ```
 
-Persist size/position honestly in OOXML. Do not make DOM-only edits that vanish on save.
+Persist size/position honestly in OOXML; no DOM-only movement that disappears on save.
 
 ### Undo/redo
 
 For both PDF and DOCX:
 
 ```text
-insert → Ctrl/Cmd+Z removes it
+insert image → Ctrl/Cmd+Z removes that just-inserted document copy
 redo → restores it
-move → undo restores old position
-resize → undo restores old size
+move → undo restores prior position
+resize → undo restores prior size
 delete → undo restores it
 ```
 
-Immediately after a drop, Undo must remove **that just-inserted document copy**, not an unrelated edit and not the original workspace image. One gesture = one history entry.
+One completed gesture = one history entry, not one per pointermove.
 
 ---
 
 ## 2. PDF editing correctness
 
-### Ghost/source text
-
-Old PDF source text must never reappear on hover.
-
-```text
-normal → canvas text visible
-hover editable region → outline/hit affordance only
-committed replacement → source stays masked
-hover replacement → controls/outline only
-```
-
-### Replacement editing affordance
-
-`Select replacement text to edit.` is currently non-clickable and confusing. Replace it with a real interaction:
-
-- direct click/double-click on editable text, or
-- an actual button/control with clear state.
-
-Do not leave action-looking text that cannot be clicked.
-
-### Multiline replacement fields
-
-```text
-Enter → newline
-Ctrl/Cmd+Enter → commit/finish
-```
-
-Field width controls wrap width; height is a real multiline area. Save/Save As should preserve line layout as closely as the serializer permits.
-
-### PDF bounded selection
-
-Allow a rectangular marquee inside a PDF page to select multiple movable PDF edit objects, at minimum replacement fields + inserted images.
-
-```text
-marquee → select objects → drag group → Ctrl/Cmd+Z restores positions
-```
-
-For original baked PDF text, use the existing replacement/mask model rather than pretending source PDF objects are directly movable.
+- Old/source PDF text must never reappear on hover after replacement; hover gives outline/hit affordance only.
+- Replace the non-clickable `Select replacement text to edit.` presentation with an actually usable interaction: direct click/double-click or a real button/control.
+- Multiline replacement fields: `Enter` = newline; `Ctrl/Cmd+Enter` = commit/finish. Width controls wrapping and height is a real multiline area.
+- Add a bounded rectangular marquee inside PDF to select multiple movable replacement fields + inserted images; drag the group together; Ctrl/Cmd+Z restores the move.
+- Original baked PDF text may become movable only through the existing replacement/mask model.
 
 ---
 
 ## 3. FCX persistence
 
-Current symptom: local video survives reopening while local image may disappear.
-
-Audit:
-
-```text
-src/fcx-portable.js
-src/fcx-format.mjs
-src/web-drop.js
-src/local-source-links.js
-```
-
-`Include Files` must package every local asset required to reconstruct the workspace, including all local/custom image marker families.
-
-Acceptance:
+Fix the current local-image restore gap.
 
 ```text
 local image + local video
@@ -154,95 +148,74 @@ local image + local video
 → BOTH restore automatically
 ```
 
-State Only: if source handle is unavailable, keep the object visible with a reconnect state. Never silently drop it.
+`Include Files` must package every required local asset, including all local/custom image marker families.
 
-Persist new PDF/DOCX inserted-image state and geometry sufficiently to restore current visible document state.
+State Only: unavailable handle leaves a visible reconnect object/state. Never silently drop the image.
 
----
-
-## 4. Expandable workspace
-
-Dragging a top-level FrameChute object against left/right/top/bottom should create more workspace rather than force the object into the viewport.
-
-- grow in useful chunks while intentionally dragging at an edge,
-- user can later scroll into the new area,
-- left/top growth uses origin + scroll compensation so artwork does not visibly jump,
-- passive scroll, resize, toolbar changes, rerender, etc. must not move artwork or create space,
-- persist extents/origin through FCX,
-- `Bring to Center` remains the explicit rescue command.
-
-Retire any passive reachability clamp that contradicts:
-
-> The viewport moves. The artwork does not.
+Persist current PDF/DOCX inserted-image state and geometry enough to reopen the visible document state.
 
 ---
 
-## 5. Simple vs Advanced right-click cleanup
+## 4. Simple-mode right-click cleanup
 
-In Simple mode hide completely:
+In **Simple / non-Advanced mode**, these must not appear at all in the right-click menu:
 
 ```text
-Create/Edit timed move
+Create timed move
+Edit timed move
 Preview timed move
 Return to move start
 Remove timed move
 Layer timing…
 ```
 
-Advanced may keep them.
+Do not merely disable them. Hide/omit them entirely. Advanced mode may keep them.
 
 ### Sync / independent exact rule
 
-`Sync with…` and `Make independent` exist only for **actual playable audio/video objects in Advanced mode**.
+`Sync with…` and `Make independent` are context actions only for **actual playable audio/video objects in Advanced mode**.
 
-Allowed examples:
-
-```text
-MP4/WebM video
-MP3/WAV/OGG audio
-```
+Allowed examples: MP4/WebM video, MP3/WAV/OGG audio.
 
 Never show them for image/GIF/screenshot, PDF, DOCX, text/note, canvas, CSV, archive, or other static/non-playable objects. Simple mode hides them for everything.
 
-Use actual media capability/object type (`<video>`, `<audio>`, canonical playable-media type), not filename text alone.
+Use real playable-media capability (`<video>`, `<audio>`, canonical playable-media type), not filename text alone.
 
 ---
 
-## 6. First-class Select Mode + bulk actions
+## 5. First-class Select Mode + bulk actions
 
-Add a visible top-toolbar control:
+Add a visible top-toolbar:
 
 ```text
 Select Mode [OFF/ON]
 ```
 
-It is available in Simple mode too.
+Available in Simple mode too.
 
 When ON:
 
 - click selects instead of starting move/edit,
 - Ctrl/Cmd-click toggles,
 - Shift-click extends/toggles consistently,
-- click empty workspace clears,
-- selected objects show quiet selection chrome,
-- opening menus/dialogs does not accidentally clear selection,
+- empty-workspace click clears,
+- selection chrome is clear but quiet,
+- menus/dialogs do not accidentally clear selection,
 - deleting an object removes it from selection,
-- selection gestures never trigger global ingest overlay.
+- selection gestures never show the global ingest overlay.
 
 Support ordinary top-level images, video, audio, PDF, DOCX, notes/text, canvas/generated visuals. Workspace marquee is desirable if safe; click multi-select is mandatory.
 
-When 2+ items are selected, show a compact bulk surface with count and only valid actions. Useful actions:
+When 2+ selected, show a compact bulk surface with count and only valid actions, including as applicable:
 
 ```text
 Close Selected
 Bring to Front
 Send to Back
 Export/ZIP Selected
-FrameSnap/Take Snapshot of Selection if existing primitives allow
+Take Snapshot/FrameSnap Selection
 Arrange into PDF…
 ```
-
-All-image selection may expose existing bulk resize/format operations.
 
 ### Arrange into PDF V1
 
@@ -255,13 +228,11 @@ select eligible items
 → optional Add result to Workspace
 ```
 
-Eligibility V1: images = one page each; PDFs = copy/import original pages where practical without rasterizing; generated images = images. Do not silently convert DOCX/video/web.
-
-Preserve aspect ratio. Basic Auto/Letter/A4 + Contain + Auto orientation is enough if practical.
+Images = one page each. PDFs should copy/import original pages where practical rather than rasterizing. Do not silently convert DOCX/video/web.
 
 ---
 
-## 7. Quick Actions UX — authoritative rule
+## 6. Quick Actions — authoritative UX
 
 Audit:
 
@@ -274,88 +245,54 @@ src/settings.js
 src/layer-menu.js
 ```
 
-### REMOVE `Clear`
+### Remove `Clear`
 
-The Quick Actions panel currently contains a `Clear` button. **Delete it from the Quick Actions UI.** It must not appear anywhere in the panel.
+Delete the `Clear` button from Quick Actions entirely.
 
-The panel header should be:
+Header:
 
 ```text
 Quick Actions                                      ×
 ```
 
-Requirements for `×`:
+The `×` is top-right, labeled `Close Quick Actions`, and only hides the panel. It must not clear selection, delete anything, or alter settings.
 
-- top-right of the Quick Actions panel,
-- accessible label `Close Quick Actions`,
-- closes/hides the panel only,
-- does **not** clear selection,
-- does **not** delete/close the selected object,
-- does **not** change Quick Actions settings,
-- does **not** change per-object enable state.
+### Global setting
 
-Do not rename `Clear` to another selection-clearing button. The selection-clear command can exist elsewhere if needed, but **not in the Quick Actions panel**.
-
-### Global Settings control
-
-Add an obvious Settings option, for example:
-
-```text
-[ ] Enable Quick Actions
-```
-
-or equivalent `Quick Actions [ON/OFF]` wording.
-
-Semantics:
-
-```text
-Global ON
-→ normal objects may show Quick Actions according to normal selection rules
-
-Global OFF
-→ Quick Actions stay hidden globally
-→ EXCEPT an individual image explicitly enabled from its right-click menu
-```
-
-Persist the global setting using existing settings storage.
-
-### Per-image right-click override
-
-Image right-click menu must expose:
+Add Settings control:
 
 ```text
 Quick Actions [ON/OFF]
 ```
 
-This is an **individual image override**, not a global switch.
+Global OFF hides Quick Actions by default.
 
-Required behavior:
+### Per-image override
+
+Image right-click menu exposes:
 
 ```text
-Global OFF + image override ON
-→ that image may show Quick Actions
-
-Global OFF + image override OFF/default
-→ hidden
-
-Global ON + image override OFF
-→ hidden for that image
-
-Global ON + image override ON/default
-→ visible according to normal selection rules
+Quick Actions [ON/OFF]
 ```
 
-For an image that has never been explicitly overridden, follow the global setting. The right-click toggle changes only the invoked image. Persist the per-image override across ordinary selection changes, frame/frameless changes, reload/workspace state, and FCX where object state is already persisted.
+This changes only that image.
 
-Do not let incidental selection, dialog open/close, or panel close resurrect Quick Actions against the effective global + per-image state.
+Semantics:
 
-The user specifically asked for the override on **images**. Do not add unnecessary per-object Quick Actions toggles to PDF/DOCX/text/audio/video unless already required elsewhere.
+```text
+Global OFF + image ON → Quick Actions may show for that image only
+Global OFF + image default/OFF → hidden
+Global ON + image OFF → hidden for that image
+Global ON + image default/ON → normal visibility
+```
+
+Persist global setting and per-image override through normal reload/workspace/FCX state where object state is already persisted.
 
 ---
 
-## 8. Image utilities that currently appear to do nothing
+## 7. Image utilities that currently appear to do nothing
 
-Reported no-op actions:
+These must visibly work immediately and be undoable:
 
 ```text
 Trim transparency
@@ -367,51 +304,23 @@ Straighten
 Perspective
 ```
 
-Audit:
+Use one canonical non-destructive image state + live-preview renderer. Preview and Save/Export must use the same state. Perspective must warp pixels, blur/pixelate must affect the chosen region, and fill background must go behind transparent pixels.
 
-```text
-src/actions/quick-actions.js
-src/actions/image-operations.js
-src/image-edit/paint-runtime.js
-```
-
-Build/refactor around one canonical non-destructive image state + live-preview path.
-
-Required:
-
-- every accepted operation visibly updates the current image immediately,
-- preview and Save/Export use the same state,
-- stable base source avoids cumulative quality loss/effect recursion,
-- stale async preview renders cannot overwrite newer edits,
-- revoke replaced object URLs,
-- only announce success after visible preview succeeds,
-- failure leaves previous image intact and reports error,
-- each listed operation participates in Ctrl/Cmd+Z/redo.
-
-Perspective must warp pixels, not only the DOM rectangle. Blur/pixelate affects only selected region. Fill background goes behind transparent pixels.
+Do not announce success until the visible image actually updates.
 
 ---
 
-## 9. Screenshot black-frame bug
+## 8. Screenshot black-frame bug
 
-Audit `src/actions/capture-actions.js`.
+Fix `src/actions/capture-actions.js` so Screenshot waits for a real delivered frame, not just `video.play()` + two RAFs.
 
-Do not use `video.play()` + two RAFs as the sole readiness test.
-
-Wait for an actual frame using a robust route such as:
-
-```text
-ImageCapture(track).grabFrame()
-or requestVideoFrameCallback()
-or event-based real-frame fallback after metadata/nonzero dimensions
-```
+Use a reliable path such as `ImageCapture(track).grabFrame()`, `requestVideoFrameCallback()`, or an event-based fallback after metadata + nonzero dimensions.
 
 Requirements:
 
-- nonzero dimensions,
-- real delivered frame,
-- exactly one PNG result object,
-- stop capture tracks on success/failure/cancel,
+- actual nonzero frame,
+- exactly one PNG object,
+- stop capture tracks promptly,
 - cancellation creates no object,
 - never create a black placeholder and claim success,
 - Screenshot must not start recording.
@@ -420,25 +329,25 @@ Manual browser test against bright/obvious content.
 
 ---
 
-## 10. Take Snapshot
+## 9. Take Snapshot
 
-Capture rectangle = union of outermost visible edges of included FrameChute objects, not viewport.
+Capture rectangle = union of the outermost visible edges of included workspace objects, not viewport.
 
 ```text
 Tight Bounds → object union + padding
-Square → same union, expand shorter dimension symmetrically, no distortion
+Square → same union, expand shorter side symmetrically, never distort
 ```
 
-Add two unchecked options with exact labels:
+Add unchecked options:
 
 ```text
 [ ] Create in Workspace
 [ ] Open Location After
 ```
 
-`Create in Workspace`: after successful save, reuse the exact rendered Blob to create exactly one normal FrameChute image. Do not rerender.
+`Create in Workspace`: after successful save, reuse the exact rendered Blob to create exactly one normal FrameChute image. No rerender.
 
-`Open Location After`: after successful save, use a real supported reveal route. `chrome.downloads` + `show(downloadId)` is acceptable in extension context if needed, with minimal permission. Never silently no-op.
+`Open Location After`: after successful save, use a real supported reveal route; in extension context `chrome.downloads` + `show(downloadId)` is acceptable with minimal permission. Never silently no-op.
 
 Both checked:
 
@@ -448,30 +357,32 @@ render once → save once → create one workspace image → reveal saved locati
 
 ---
 
+## 10. Expandable workspace
+
+Dragging a top-level object against left/right/top/bottom should create more workspace rather than force it back into the viewport.
+
+- grow only during intentional direct drag,
+- left/top use origin + scroll compensation so artwork does not jump,
+- passive scroll/resize/toolbar/rerender must not move artwork or create space,
+- persist extents/origin through FCX,
+- `Bring to Center` remains explicit recovery.
+
+---
+
 ## 11. Top header must always look professional
-
-Audit:
-
-```text
-src/workspace.html
-src/workspace.css
-src/toolbar-paradigm.js
-src/framechute-final-polish.css
-src/framechute-final-polish.js
-```
 
 At full width, ~50% desktop width, and narrow extension width:
 
-- keep one intentional compact header strip,
+- one compact intentional header strip,
 - no multi-row pileup,
 - no overlaps/collisions/crushed labels/random height growth,
 - balanced spacing among brand, core actions, Select Mode, Workspace, Snapshot, status,
 - low-priority text/status collapses before core actions,
 - responsive icon-only/short labels may activate without overwriting saved toolbar-text preference,
-- popup/dropdown panels float rather than increasing header height,
-- horizontal scrolling for one command strip is preferable to multi-row wrapping,
+- popup/dropdown panels float instead of increasing header height,
+- horizontal scrolling of one command strip is preferable to ugly wrapping,
 - consistent button heights/radii/padding/baselines,
-- toolbar resizing must never move artwork.
+- toolbar resizing never moves artwork.
 
 The header should look designed, not merely squeezed.
 
@@ -479,13 +390,13 @@ The header should look designed, not merely squeezed.
 
 ## 12. Preserve current good behavior
 
-Do not regress native Save/Save As, PDF replacement/source-mask work, PDF page controls/export, DOCX image ID/relationship hardening, Tight/Square snapshot behavior, real external ingestion, frameless media, object/workspace context-menu separation, FCX terminology, and spatial permanence.
+Do not regress native Save/Save As, PDF source masking/page controls/export, DOCX relationship/drawing-ID hardening, Tight/Square snapshot behavior, real external ingestion, frameless media, object/workspace context-menu separation, FCX terminology, and spatial permanence.
 
 ---
 
 ## 13. Validation
 
-Add focused tests for changed helpers/models and run:
+Run:
 
 ```bash
 node --test tests/*.test.mjs
@@ -494,54 +405,40 @@ git diff --check
 bash scripts/package-web-store.sh
 ```
 
-Manual browser smoke test at minimum:
+Manual smoke test minimum:
 
 ```text
-1. Move workspace image → no global overlay.
-2. Drop image into DOCX → Ctrl+Z removes; redo restores; move/resize works.
-3. Drop image into PDF → move/resize; Ctrl+Z/redo works.
-4. PDF replacement hover → old text never reappears.
-5. PDF multiline Enter → newline.
-6. FCX Include Files → local image + video both reopen.
-7. Every reported image utility visibly changes the image.
-8. Screenshot of bright content is not black.
-9. Take Snapshot options each work exactly once from one render.
-10. Select Mode selects several objects without drag/edit.
-11. Simple menu has no timed-move clutter.
-12. Advanced playable audio/video shows Sync/Independent; static objects do not.
-13. Quick Actions panel has × and NO Clear button.
-14. Global Quick Actions OFF hides panel; image right-click override ON can enable it only for that image.
-15. Header looks clean at full, half, and narrow widths.
+1. Drag existing workspace image for 10 seconds → NEVER see `Drop into FrameChute`.
+2. Move video/PDF/DOCX block → no global overlay.
+3. Drop image into DOCX → Ctrl+Z removes; redo restores; move/resize works.
+4. Drop image into PDF → move/resize; Ctrl+Z/redo works.
+5. PDF replacement hover → old text never reappears.
+6. PDF Enter → newline; Ctrl/Cmd+Enter commits.
+7. FCX Include Files → local image + video both reopen.
+8. Every reported image utility visibly changes the image.
+9. Screenshot of bright content is not black.
+10. Take Snapshot extra options work exactly once from one render.
+11. Select Mode selects several objects without drag/edit or global overlay.
+12. Simple right-click menu contains none of the timed-move items.
+13. Advanced playable audio/video shows Sync/Independent; static objects do not.
+14. Quick Actions has × and NO Clear button.
+15. Global Quick Actions OFF + one image ON enables only that image.
+16. Header looks clean at full, half, and narrow widths.
 ```
 
-Use up to 30 minutes.
-
-At the 30-minute mark, **conclude active implementation and provide a handoff**.
-
-Handoff must include:
+Priority if time is constrained:
 
 ```text
-completed
-remaining
-files changed
-tests/results
-manual browser results / anything not browser-tested
-known issues/risks
-exact next steps
-branch/commit/PR
+1. INTERNAL GRAB/MOVE OVERLAY BUG — P0
+2. PDF/DOCX drop + undo + move/resize
+3. PDF edit correctness
+4. FCX image persistence
+5. Simple menu cleanup + Quick Actions
+6. screenshot + image utility fixes
+7. responsive professional header
+8. Select Mode
+9. snapshot extras
+10. expandable workspace / Arrange into PDF polish
 ```
 
-If the full scope cannot fit safely, prioritize:
-
-```text
-1. document drop/undo/overlay correctness
-2. PDF edit correctness
-3. FCX image persistence
-4. Quick Actions Clear removal + close/global/per-image override
-5. screenshot + image utility fixes
-6. professional responsive header
-7. Select Mode foundation
-8. snapshot extras
-9. expandable workspace
-10. Arrange into PDF / marquee polish
-```
+Handoff must include completed, remaining, files changed, tests/results, manual browser results or untested items, risks/issues, exact next steps, branch, commit, and PR.
