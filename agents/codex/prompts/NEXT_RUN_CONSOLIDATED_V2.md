@@ -156,7 +156,7 @@ Persist current PDF/DOCX inserted-image state and geometry enough to reopen the 
 
 ---
 
-## 4. Simple-mode right-click cleanup
+## 4. Simple-mode right-click cleanup + image menu priority
 
 In **Simple / non-Advanced mode**, these must not appear at all in the right-click menu:
 
@@ -170,6 +170,34 @@ Layer timing…
 ```
 
 Do not merely disable them. Hide/omit them entirely. Advanced mode may keep them.
+
+### Image right-click menu: `Show image only` and `Shrink to Fit` must be near the top
+
+For image objects, keep these two actions in the **top group of normal image commands**, not buried near the bottom:
+
+```text
+Show image only
+Shrink to Fit
+```
+
+Preferred top composition after any compact Quick Actions setting/header controls:
+
+```text
+Grab / Move Object
+Close Object
+Show image only
+Shrink to Fit
+```
+
+Then follow with the rest of the image-specific commands such as resize/format/crop/edit/copy/open actions.
+
+Requirements:
+
+- `Show image only` enters the existing frameless-image state; if already frameless, use the corresponding restore wording.
+- `Shrink to Fit` is display/workspace sizing only, preserves aspect ratio, shrinks only when needed, and never modifies source pixels.
+- Neither command should be hidden behind Advanced mode.
+- Their position should remain near the top in both full-width and narrow/context-menu layouts.
+- Do not duplicate either action elsewhere in the same menu.
 
 ### Sync / independent exact rule
 
@@ -420,10 +448,11 @@ Manual smoke test minimum:
 10. Take Snapshot extra options work exactly once from one render.
 11. Select Mode selects several objects without drag/edit or global overlay.
 12. Simple right-click menu contains none of the timed-move items.
-13. Advanced playable audio/video shows Sync/Independent; static objects do not.
-14. Quick Actions has × and NO Clear button.
-15. Global Quick Actions OFF + one image ON enables only that image.
-16. Header looks clean at full, half, and narrow widths.
+13. Image right-click menu has Show image only + Shrink to Fit near the top.
+14. Advanced playable audio/video shows Sync/Independent; static objects do not.
+15. Quick Actions has × and NO Clear button.
+16. Global Quick Actions OFF + one image ON enables only that image.
+17. Header looks clean at full, half, and narrow widths.
 ```
 
 Priority if time is constrained:
@@ -433,7 +462,7 @@ Priority if time is constrained:
 2. PDF/DOCX drop + undo + move/resize
 3. PDF edit correctness
 4. FCX image persistence
-5. Simple menu cleanup + Quick Actions
+5. Simple menu cleanup + image menu priority + Quick Actions
 6. screenshot + image utility fixes
 7. responsive professional header
 8. Select Mode
