@@ -154,7 +154,35 @@ Acceptance checks:
 - video with controls/header/footer → Show video only → stale frame space disappears → video remains reachable and correctly sized;
 - restoring the frame can restore the framed presentation without corrupting source media or workspace state.
 
-## 7. Preserve the Simple/Advanced distinction
+## 7. Renaming must never break the restored object header
+
+Current bug/edge case: after renaming an object, switching it to frameless/media-only and later restoring its frame can cause the returned top object header controls to collide or overlap each other.
+
+The object name is user content. A long or newly changed name must never be allowed to push the Grab control, menu button, maximize/close controls, source badge, or other fixed header controls into each other.
+
+Required behavior:
+
+- Renaming an object must not change the structural geometry contract of the object's header.
+- The name field gets the flexible/truncatable space; fixed controls keep reserved non-shrinking space.
+- Use `min-width: 0`, overflow clipping/ellipsis, sensible flex/grid constraints, and explicit non-shrinking action groups as appropriate rather than relying on accidental available width.
+- Preserve access to the complete name via the editable field/title/tooltip as appropriate; visual truncation must not mutate the actual name.
+- Restoring a frame after `Show image only` / `Show video only` must recompute header layout against the current object width and current name.
+- If the restored framed shell is too narrow to fit its minimum header controls, enlarge only the frame width to the minimum safe header width; do not move the object merely to solve the collision.
+- The compact Grab affordance / object-menu control must not sit on top of the name field or close/maximize buttons.
+- Close Object and the menu affordance must remain reachable at narrow object widths.
+- The same rules apply after FCX restore and after browser/window resizing.
+
+Acceptance checks:
+
+1. Rename an image to a very long name → Show image only → restore image frame → header controls remain separated and usable; name truncates instead of colliding.
+2. Rename a video to a very long name → Show video only → restore frame → Grab/menu/close/player controls remain usable.
+3. Restore the same object from FCX at a narrower browser width → no header control collision and artwork position remains unchanged.
+
+Product rule:
+
+> Names may be arbitrarily long. Controls may never collide because of the name.
+
+## 8. Preserve the Simple/Advanced distinction
 
 Simple mode should emphasize direct file/object tasks. Advanced mode can expose timing, layered animation and deeper controls.
 
