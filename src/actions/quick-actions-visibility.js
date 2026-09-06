@@ -11,6 +11,7 @@ if (!workspace || !bar || !actions?.selection) {
 } else {
   const selection = actions.selection;
   let quickActionsEnabled = readQuickActionsEnabled();
+  let panelDismissed = false;
   const style = document.createElement("style");
   style.textContent = `
     .quick-actions-close {
@@ -82,7 +83,7 @@ if (!workspace || !bar || !actions?.selection) {
   }
 
   function shouldHideBar() {
-    if (!quickActionsEnabled) return true;
+    if (!quickActionsEnabled || panelDismissed) return true;
     const items = selection.items;
     if (!items.length) return true;
     return items.every(isImageBlock) && items.every(isHiddenFor);
@@ -99,17 +100,13 @@ if (!workspace || !bar || !actions?.selection) {
   closeButton.type = "button";
   closeButton.className = "quick-actions-close";
   closeButton.textContent = "×";
-  closeButton.title = "Hide Quick Actions for this object";
-  closeButton.setAttribute("aria-label", "Hide Quick Actions for selected object");
+  closeButton.title = "Close Quick Actions";
+  closeButton.setAttribute("aria-label", "Close Quick Actions");
   closeButton.addEventListener("click", (event) => {
     event.stopPropagation();
-    const images = selectedImagesOnly();
-    if (!images.length) return;
-    images.forEach((block) => setHiddenFor(block, true));
+    panelDismissed = true;
     applyBarVisibility();
-    if (status) status.textContent = images.length === 1
-      ? "Quick Actions hidden for this object. Open its menu to show them again."
-      : `Quick Actions hidden for ${images.length} selected objects. Open an object menu to show them again.`;
+    if (status) status.textContent = "Quick Actions closed. Your selection and preferences were preserved.";
   });
   bar.insertBefore(closeButton, bar.querySelector("progress"));
 
@@ -143,6 +140,7 @@ if (!workspace || !bar || !actions?.selection) {
       if(id==="duplicate")await actions.registry.run("object.duplicate",{selection:[block]});
       if(id==="save-as")await actions.registry.run("image.save-as",{selection:[block]});
       if(id==="open-file")window.dispatchEvent(new CustomEvent("framechute:open-file"));
+      if(id==="minimize"||id==="expand"||id==="center"||id==="grab")window.dispatchEvent(new CustomEvent("framechute:object-command",{detail:{block,command:id}}));
       if(id==="remove")block.querySelector(":scope > .block-header .remove-block")?.click();
     } catch(error) {
       console.error(error);
@@ -168,7 +166,12 @@ if (!workspace || !bar || !actions?.selection) {
     next=Math.max(0,Math.min(controls.length-1,next));controls[next]?.focus();controls[next]?.scrollIntoView({block:"nearest"});
   });
 
-  selection.addEventListener("change", applyBarVisibility);
+  selection.addEventListener("change", () => { panelDismissed = false; applyBarVisibility(); });
+  window.addEventListener("storage", event => {
+    if (event.key !== "framechute.quick-actions-enabled.v1") return;
+    quickActionsEnabled = readQuickActionsEnabled();
+    applyBarVisibility();
+  });
 
   const barObserver = new MutationObserver(() => applyBarVisibility());
   barObserver.observe(bar, { attributes: true, attributeFilter: ["hidden"] });

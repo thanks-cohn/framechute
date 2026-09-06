@@ -427,6 +427,17 @@ body.toolbar-hidden .workspace {
   resize: none;
 }
 
+.pdf-toolbar { position: relative; flex-wrap: nowrap; overflow-x: auto; overflow-y: visible; scrollbar-width: thin; }
+.pdf-toolbar > * { flex: 0 0 auto; }
+.pdf-toolbar details { position: static; }
+.pdf-toolbar summary { cursor: pointer; list-style: none; padding: 6px 9px; border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 7px; white-space: nowrap; }
+.pdf-toolbar summary::after { content: " ▾"; }
+.pdf-popdown { position: absolute; z-index: 80; bottom: calc(100% + 4px); display: grid; gap: 5px; min-width: 180px; max-width: min(300px, calc(100vw - 20px)); padding: 7px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 9px; background: Canvas; color: CanvasText; box-shadow: 0 10px 30px #0005; }
+.pdf-toolbar details:not([open]) .pdf-popdown { display: none; }
+.pdf-popdown button { width: 100%; text-align: left; }
+.pdf-edit-controls:not([hidden]) + .pdf-no-edit { display: none; }
+#pdf-image-export-dialog fieldset { margin: 10px 0; }
+
 .block-header {
   display: flex;
   align-items: center;
