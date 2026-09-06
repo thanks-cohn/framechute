@@ -2,148 +2,505 @@
 
 **Open it. Change it. Save it.**
 
-FrameChute is a lightweight browser workspace for the everyday file jobs that somehow still send people hunting through different apps, websites, subscriptions, and tabs.
-
-Drop something in. Paste it. Open it. Put it beside something else. Change it. Pull something useful out of it. Save the result.
-
-That is the idea.
-
-```text
-The usual way
-
-file
- ↓
-which app opens this?
- ↓
-editor / converter / PDF site / media app / another tab
- ↓
-export
- ↓
-open something else
-
-
-FrameChute
-
-file
- ↓
-FrameChute
- ↓
-what do you want to do with it?
- ↓
-move · edit · extract · resize · combine · convert · save
-```
-
 > **Your browser has tabs. FrameChute gives it a desk.**
 
----
+FrameChute is a local-first, browser-native workspace for everyday file work.
 
-## What FrameChute offers
-
-FrameChute gives different kinds of files one shared place to live and be worked on.
-
-You can put images, PDFs, Word documents, video, audio, CSV tables, ZIP/CBZ archives, notes, screenshots, recordings, and supported webpages onto the same workspace.
-
-They become things you can actually work with instead of files that immediately disappear into separate applications.
-
-You can:
-
-- open, drag, or paste files into the workspace
-- move and resize objects directly
-- keep related material beside each other
-- edit and convert images
-- crop, resize, rotate, flip, annotate, compress, and save images
-- work on many images at once
-- extract a frame from a video and keep working on it as an image
-- play local video and audio directly in the workspace
-- edit and rearrange PDFs
-- edit practical DOCX documents and save them again
-- inspect and clean CSV tables
-- open ZIP and CBZ archives and work with supported contents
-- capture screenshots
-- record the screen or microphone
-- create new result objects from things you extract or generate
-- save individual files normally
-- save the entire FrameChute workspace when you want to come back to it later
-
-The important part is not the number of tools.
-
-It is that the tools **work together**.
-
-A video frame can become an image. That image can be cropped, resized, annotated, converted, and saved. A PDF can sit beside the notes you are taking about it. A chart created from a CSV can become another movable object instead of a download you have to hunt for.
-
-> **The result of one action can become the starting point for the next.**
-
----
-
-## The kind of jobs FrameChute is for
-
-FrameChute is for the irritating little jobs that are too small to deserve a giant application but too common to ignore.
-
-Things like:
+Instead of deciding which application should open a file, put the file on the FrameChute workspace and decide what you want to do to it.
 
 ```text
-"Resize this image."
-"Resize this whole folder of images."
-"Pull this frame out of a video."
-"Turn these pictures into a PDF."
-"Reorder these PDF pages."
-"Open this CBZ."
-"Clean this CSV."
-"Convert this image to WebP."
-"Put this screenshot beside my notes."
-"Save this edited file somewhere else."
-"Why do I need another program just to do this?"
+Traditional desktop workflow
+
+File
+ ↓
+Which app?
+ ↓
+Open / import / convert
+ ↓
+Do one job
+ ↓
+Export
+ ↓
+Find another app for the next job
+
+
+FrameChute
+
+Open / Drop / Paste
+ ↓
+File becomes a workspace object
+ ↓
+Move · edit · extract · compare · combine · convert
+ ↓
+Keep the result in the workspace or Save As
 ```
 
-That last question is the one FrameChute is built around.
+FrameChute is deliberately not trying to become Photoshop, Word, Acrobat, Premiere, a spreadsheet suite, and a whiteboard all at once.
+
+The goal is smaller and, in practice, surprisingly broad:
+
+> **Give ordinary digital things one consistent place where obvious operations are immediate.**
 
 ---
 
-## It is a workspace, not a collection of disconnected tools
+## Contents
 
-A lot of web utility sites work like this:
-
-```text
-upload file
- ↓
-do one thing
- ↓
-download result
- ↓
-leave
-```
-
-FrameChute works more like this:
-
-```text
-bring the thing in
- ↓
-work on it
- ↓
-keep the result here if useful
- ↓
-combine it with something else
- ↓
-keep going
- ↓
-save when you are done
-```
-
-The workspace is spatial on purpose.
-
-A file does not have to become a tab, a modal, or a whole new application. It can simply sit where you put it.
-
-Images and video can also be made visually frameless, so after the controls fade away the workspace can show the content itself rather than a pile of miniature application windows.
+- [Install](#install)
+- [What FrameChute can do](#what-framechute-can-do)
+- [Supported kinds of material](#supported-kinds-of-material)
+- [Workspace and direct manipulation](#workspace-and-direct-manipulation)
+- [Images](#images)
+- [Video and audio](#video-and-audio)
+- [PDF](#pdf)
+- [DOCX and text](#docx-and-text)
+- [CSV and structured data](#csv-and-structured-data)
+- [ZIP and CBZ archives](#zip-and-cbz-archives)
+- [Capture tools](#capture-tools)
+- [Quick Actions and batch work](#quick-actions-and-batch-work)
+- [Snapshots and workspace export](#snapshots-and-workspace-export)
+- [Local-first privacy and security](#local-first-privacy-and-security)
+- [Simple and Advanced modes](#simple-and-advanced-modes)
+- [Example workflows](#example-workflows)
+- [Development and testing](#development-and-testing)
+- [Project structure](#project-structure)
+- [Current limitations](#current-limitations)
+- [Roadmap](#roadmap)
+- [Design principles](#design-principles)
+- [License](#license)
 
 ---
 
-## Save the file, or save the whole desk
+# Install
 
-FrameChute treats these as two different things.
+FrameChute is currently packaged as a **Manifest V3 Chrome/Chromium extension**. The current manifest version is **1.0.14**.
 
-### Save / Save As
+There is no npm build step required just to run the extension from source.
 
-Save the individual thing you are working on as a normal file.
+## Option A: clone the repository
+
+```bash
+git clone https://github.com/thanks-cohn/framechute.git
+cd framechute
+```
+
+Then in Chrome or another Chromium-family browser:
+
+1. Open the browser's extensions page.
+   - Chrome: `chrome://extensions`
+   - Edge: `edge://extensions`
+   - Brave: `brave://extensions`
+2. Turn on **Developer mode**.
+3. Choose **Load unpacked**.
+4. Select the repository folder that contains `manifest.json`.
+5. Pin FrameChute if you want quick access.
+6. Click the FrameChute extension icon to open the workspace.
+
+## Option B: download the repository as a ZIP
+
+1. On GitHub, choose **Code → Download ZIP**.
+2. Extract the ZIP somewhere permanent.
+3. Open your browser's extensions page.
+4. Enable **Developer mode**.
+5. Choose **Load unpacked**.
+6. Select the extracted folder containing `manifest.json`.
+
+Do not select the ZIP itself. Chromium expects an unpacked directory.
+
+## Updating an unpacked installation
+
+If you cloned the repository:
+
+```bash
+git pull
+```
+
+Then return to the browser's extensions page and press **Reload** on FrameChute.
+
+If you installed from a downloaded ZIP, replace the extracted files with the newer version and reload the extension.
+
+## Build a Chrome Web Store package
+
+The repository includes a release gate and packaging script:
+
+```bash
+bash scripts/package-web-store.sh
+```
+
+This requires a POSIX-compatible shell and Python 3 **for packaging only**. Python is not required to run FrameChute.
+
+A successful run creates a ZIP under:
+
+```text
+dist/flashframe-chrome-web-store-v<version>.zip
+```
+
+The release script verifies the manifest, required assets, package contents, permissions, host access, and several classes of forbidden runtime dependency before producing the ZIP.
+
+---
+
+# What FrameChute can do
+
+FrameChute treats files and generated results as objects on one shared spatial workspace.
+
+Today the project can work with combinations of:
+
+- images
+- local video
+- local audio
+- PDF documents
+- DOCX documents
+- plain text / notes
+- CSV tables
+- ZIP archives
+- CBZ comic archives
+- supported web / URL objects
+- screenshots
+- screen recordings
+- microphone recordings
+- generated charts
+- generated image results
+- generated PDFs
+- extracted archive contents
+
+The important part is that the output of one operation can immediately become the input to another.
+
+For example:
+
+```text
+video
+ ↓
+extract frame
+ ↓
+image object
+ ↓
+crop / resize / annotate / convert
+ ↓
+make PDF or Save As
+```
+
+Or:
+
+```text
+CSV
+ ↓
+clean / sort / filter
+ ↓
+quick chart
+ ↓
+image object
+ ↓
+place beside a PDF or notes
+```
+
+---
+
+# Supported kinds of material
+
+Exact codec and browser support still depend on Chromium and the operating system, but the current object model covers these broad classes:
+
+| Material | Typical examples | Current FrameChute role |
+| --- | --- | --- |
+| Images | PNG, JPEG, WebP and other browser-decodable images | View, move, resize, edit, transform, batch, save |
+| Video | MP4, WebM and browser-playable video | Play, seek, arrange, extract frames, advanced timing/sync |
+| Audio | MP3, WAV, OGG and browser-playable audio | Play, arrange, advanced timing/sync |
+| PDF | `.pdf` | Read, replace text, page operations, extract/merge/crop/save |
+| Word | `.docx` | Practical editing, formatting, tables, images, Save As DOCX |
+| Text | TXT, Markdown-like/plain textual sources | Notes, editing, find/replace, comparison, conversion |
+| CSV | `.csv` | Editable grid, filtering, cleaning, dedupe, charting, Save As |
+| Archives | ZIP, CBZ | Browse contents, open supported entries, CBZ image navigation |
+| URLs / web | supported direct URLs and web objects | Keep references/content alongside local work |
+| Capture | screen / microphone | Screenshot, screen recording, microphone recording |
+| Workspace | `.fcx` | Reopen a FrameChute session with supported state/assets |
+
+---
+
+# Workspace and direct manipulation
+
+The workspace is the core of FrameChute.
+
+Files are not meant to disappear into a modal or replace the entire application. They become objects that can sit beside one another.
+
+Current workspace behavior includes:
+
+- drag/drop/open/paste ingestion paths
+- movable top-level objects
+- resizable objects where the object type supports it
+- z-order / layering behavior
+- object naming
+- duplicate/copy workflows
+- maximize / restore style object presentation
+- explicit **Bring to Center** recovery
+- image/video frameless presentation
+- fading object chrome for media-focused viewing
+- object-specific right-click actions
+- contextual Quick Actions
+- Simple and Advanced interaction modes
+- native Save / Save As where supported
+- workspace-wide snapshot export
+- `.fcx` workspace save/reopen
+
+A central rule of the project is:
+
+> **The viewport moves. The artwork does not.**
+
+Passive browser resize, toolbar wrapping, scrolling, or other UI changes should not silently rewrite the user's object positions.
+
+---
+
+# Images
+
+Images are currently one of FrameChute's deepest utility surfaces.
+
+## Core image operations
+
+Current image tooling includes or exposes paths for:
+
+- crop
+- resize
+- rotate left/right
+- flip horizontal/vertical
+- format conversion
+- PNG / JPEG / WebP output
+- quality/compression control for lossy formats
+- transparent-background handling
+- Save As
+- batch conversion to ZIP
+- paint / image editing mode
+- trim transparent margins
+- make a selected color transparent
+- fill transparency with a background color
+- blur or pixelate a selected region
+- annotations
+- straighten
+- basic perspective correction
+
+Some of the more advanced transform operations are currently being hardened so that their live workspace preview, undo behavior, and exported result always use the same canonical image state. See [Current limitations](#current-limitations).
+
+## Multi-image operations
+
+FrameChute also includes multi-image workflows such as:
+
+- stitch images vertically or horizontally
+- create a contact sheet
+- generate common icon sizes
+- compare two images with an opacity slider
+- turn selected images into a PDF
+- batch convert/compress images with one configuration
+- ZIP selected results
+
+The source image is generally kept intact unless the user explicitly chooses a destructive/save route; many operations create a new result object instead.
+
+---
+
+# Video and audio
+
+Playable media can live directly on the workspace instead of forcing the user into a separate player application.
+
+Current media behavior includes:
+
+- local video playback
+- local audio playback
+- seeking
+- movable media objects
+- frameless media presentation
+- fading controls/chrome
+- extracting the currently decoded video frame as a PNG image object
+- screen-recording output as a workspace media object
+- microphone-recording output as an audio object
+- advanced timing/synchronization features for playable media
+
+Frame extraction is intentionally composable:
+
+```text
+seek video
+ ↓
+Extract Frame
+ ↓
+normal FrameChute image
+ ↓
+all normal image tools become available
+```
+
+Advanced `Sync with…` / independence behavior belongs to actual playable video/audio objects, not static images or documents.
+
+---
+
+# PDF
+
+FrameChute includes a practical PDF editor/utility layer built from PDF.js for rendering and pdf-lib for document mutation/export.
+
+Current PDF work includes:
+
+- render normal PDF pages locally
+- page navigation
+- rotate page
+- delete page
+- duplicate page
+- move/reorder page
+- extract page(s)
+- merge another PDF
+- crop page margins
+- conservative PDF re-save/compression attempt
+- export PDF page images
+- Save / Save As
+
+## PDF text replacement
+
+FrameChute also has a direct replacement-text model:
+
+- click/select editable text regions
+- replace text
+- move a committed replacement field
+- resize its field
+- change font size
+- nudge selected replacements
+- undo / redo replacement operations
+- keep the original source region masked in the live view
+- serialize the replacement back into a PDF
+
+The current replacement serializer uses a simple cover-and-redraw model. It is intentionally practical rather than a full Acrobat-style object editor.
+
+---
+
+# DOCX and text
+
+FrameChute can open and re-save practical Word documents without converting the whole workflow into a remote service.
+
+Current DOCX support includes:
+
+- parse paragraphs and runs
+- text editing
+- bold
+- italic
+- underline
+- paragraph styles
+- alignment
+- list representation
+- tables
+- embedded images
+- adding images to the DOCX package
+- preserving unique relationship/drawing identifiers for inserted images
+- Save As DOCX
+
+Where possible, ordinary text/format edits take a least-destructive path that patches the original OOXML package instead of rebuilding unrelated document content.
+
+For larger structural changes, FrameChute can rebuild the supported subset honestly rather than pretending unsupported Word behavior will be preserved perfectly.
+
+## Cross-document utilities
+
+The current action system also contains useful document/text operations:
+
+- Extract text from text/DOCX/PDF sources where selectable text exists
+- Compare two text-oriented documents
+- Find & Replace in text and DOCX
+- Convert text/DOCX content to a simple PDF
+- Convert text/PDF-extracted text to a simple DOCX
+
+These are intentionally lightweight conversions, not claims of perfect office-suite fidelity.
+
+---
+
+# CSV and structured data
+
+CSV files become editable table objects rather than inert downloads.
+
+Current CSV features include:
+
+- edit cells directly
+- add rows
+- remove rows
+- remove columns
+- click a header to sort
+- live find/filter rows
+- remove duplicate rows
+- split a column by delimiter
+- merge selected columns
+- normalize whitespace
+- remove blank rows during cleaning
+- capitalization cleanup
+- quick bar-chart generation
+- merge compatible CSV tables
+- Save As CSV
+
+Quick Chart creates an SVG image result that can then be treated like another visual object on the workspace.
+
+This is not yet a spreadsheet/formula engine. A richer grid/formula/reference system is a natural future substrate.
+
+---
+
+# ZIP and CBZ archives
+
+FrameChute can inspect supported archives locally.
+
+Current archive behavior includes:
+
+- ZIP tree/list browsing
+- open supported archive entries as new FrameChute result objects
+- CBZ image navigation
+- previous / next comic-page controls
+- safe archive-budget checks to reduce decompression abuse
+- persistence of supported archive state in the workspace
+
+Current archive snapshots intentionally have limits; archives over 100 MB are not embedded into workspace snapshots by this path yet.
+
+---
+
+# Capture tools
+
+FrameChute includes browser-native capture actions:
+
+- Screenshot
+- Record screen
+- Record microphone
+
+Screen and microphone permissions are requested when the user invokes the relevant action, rather than as broad always-on extension permissions.
+
+Captured results become normal workspace objects, so a screenshot can immediately be cropped/annotated/exported and a recording can sit beside the rest of the work.
+
+The screenshot path is currently being hardened around first-frame readiness on different Chromium/OS combinations. See [Current limitations](#current-limitations).
+
+---
+
+# Quick Actions and batch work
+
+Quick Actions are the contextual utility layer for selected objects.
+
+The underlying action registry supports both single-object and multi-object operations so the same mental model can scale from:
+
+```text
+resize this image
+```
+
+to:
+
+```text
+convert these images together
+```
+
+Current action families include:
+
+- rename
+- duplicate
+- Copy To… where the browser exposes a writable directory picker
+- image transforms and exports
+- image comparison / contact sheet / stitching / icon generation
+- image-to-PDF
+- document text extraction / comparison / conversion
+- CSV merge
+- video frame extraction
+- compress selected supported objects into a ZIP
+
+The Quick Actions presentation itself is being simplified so it stays contextual rather than becoming a permanent application sidebar.
+
+---
+
+# Snapshots and workspace export
+
+FrameChute has two different save concepts because they solve different problems.
+
+## Save / Save As
+
+Save the actual object as a normal file.
 
 Examples:
 
@@ -154,187 +511,431 @@ DOCX  → DOCX
 CSV   → CSV
 ```
 
-FrameChute should not force you into its own format just because you used FrameChute.
+FrameChute should not trap ordinary files inside a proprietary workspace format just because they were edited in FrameChute.
 
-### Export Workspace
+## Take Snapshot
 
-When you want the whole workspace back later, FrameChute can save a portable `.fcx` workspace containing the supported state and assets.
+Take Snapshot creates a flattened image of the used visual workspace.
+
+Current snapshot options include:
+
+- Tight Bounds
+- Square bounds
+- PNG
+- JPEG
+- WebP
+- scale control
+- quality control where relevant
+- transparent background where the output format supports it
+
+The snapshot bounds are based on visible workspace objects rather than simply capturing the browser viewport.
+
+## Export Workspace / Open Workspace
+
+When the whole desk matters, FrameChute can save a `.fcx` workspace.
+
+Conceptually:
 
 ```text
-your files
-+ their positions
+objects
++ positions
++ supported state
 + generated results
-+ workspace state
++ optionally packaged local assets
         ↓
       .fcx
 ```
 
-The file remains a file. The workspace remains a workspace.
+The portable workspace path supports **Include Files** and **State Only** style behavior so a workspace can choose between stronger portability and lighter references where appropriate.
+
+The project's persistence promise is:
+
+> **Everything just as it was, as far as the supported object model can honestly preserve it.**
 
 ---
 
-## Local-first
+# Local-first privacy and security
 
-FrameChute is designed to do ordinary work locally whenever practical.
+FrameChute is designed around the idea that ordinary file chores should not require uploading personal material to a third-party server.
 
-Your files do not need to be uploaded to a FrameChute server just so you can crop an image, inspect an archive, arrange files, edit a document, or perform other supported local actions.
-
-You choose the files and folders FrameChute is allowed to use. Browser security still applies.
-
-This matters because a basic file chore should not automatically require:
-
-- making an account
-- uploading personal material
-- waiting for a server
-- accepting another subscription
-- downloading the result from a temporary webpage
-
-For many jobs, the computer sitting in front of you is already perfectly capable of doing the work.
-
----
-
-# Who are the competitors?
-
-FrameChute overlaps with several excellent products, but usually in only one part of what it is trying to do.
-
-### [Photopea](https://www.photopea.com/)
-
-Photopea is an extremely capable browser photo editor and can work fully locally. It goes much deeper than FrameChute in professional image editing.
-
-FrameChute is not trying to beat Photopea at being Photoshop in a browser. The difference is that an image is only one kind of object in FrameChute. It can live beside a PDF, video, document, archive, table, note, or generated result and participate in the same workspace.
-
-### [Smallpdf](https://smallpdf.com/)
-
-Smallpdf is focused on making PDF jobs easy: edit, compress, convert, merge, split, sign, and related work.
-
-FrameChute wants those ordinary PDF chores to be part of a broader file workspace rather than a destination that begins and ends with PDFs.
-
-### [CloudConvert](https://cloudconvert.com/)
-
-CloudConvert supports a huge range of file conversions and is excellent at the specific job of turning one format into another.
-
-FrameChute treats conversion as one possible action on an object, not the entire experience. The converted result can remain in the workspace and immediately become useful for something else.
-
-### The less glamorous competitor
-
-The real competitor is often this:
+The current Chrome Web Store packaging gate enforces an unusually small extension security surface:
 
 ```text
-Downloads folder
-+ six browser tabs
-+ one heavy desktop app
-+ one random converter website
-+ "where did it save that?"
+Manifest V3
+Extension API permissions: NONE
+Host permissions: NONE
+Broad host access: NONE
+Remote executable code: NONE
+Native companion: NONE
+Python/EXE runtime dependency: NONE
 ```
 
-FrameChute is an attempt to collapse a surprising amount of that routine into one understandable place.
+The release script also rejects packaged remote script imports, `eval`, native-messaging dependencies, loopback/localhost dependencies, and several desktop-runtime artifacts.
 
-It is **not** claiming to replace the deepest professional features of Photoshop, Premiere, Word, Acrobat, or specialist conversion systems.
+FrameChute still uses browser permissions at the moment a user explicitly requests a browser-mediated capability, such as choosing a file/folder or starting screen/microphone capture.
 
-The proposition is simpler:
+The distinction is important:
 
-> **You should not need a professional suite for every thirty-second file chore.**
+> **FrameChute can browse what the user explicitly grants it access to.**
 
----
-
-# Why now?
-
-For a long time, the browser looked powerful while still being strangely helpless around ordinary local files.
-
-A webpage could show amazing things, but the moment you wanted to open a folder, save back to a file, perform heavy processing locally, or work seriously with media, the answer was often awkward, limited, or dependent on a server.
-
-That changed gradually.
-
-There was no single announcement saying "the browser can now become a small personal computing environment."
-
-Instead, the pieces arrived one by one:
-
-- browsers became fast enough to do serious work locally
-- WebAssembly made it practical to bring mature processing code into the browser
-- browsers gained much better access to user-approved local files and folders
-- true Save and Save As workflows became possible
-- local storage became much more capable
-- browser media tools became strong enough for serious audio/video work
-- background workers made heavy jobs less likely to freeze the interface
-- the libraries for PDFs, documents, archives, images, and media became dramatically more mature
-
-By roughly **2020 to 2022**, enough of those pieces existed at the same time that something like FrameChute stopped being merely a clever demo and started becoming a credible product.
-
-Today the browser is not just somewhere documents are viewed.
-
-It can increasingly be the place where the work itself happens.
+It should not quietly become a general filesystem or web surveillance surface.
 
 ---
 
-# Why wasn't this practical before?
+# Simple and Advanced modes
 
-Because the old browser model fought the idea.
+FrameChute is intended to stay approachable as capabilities grow.
 
-Historically, browsers were intentionally separated from the computer underneath them. That was important for security, but it also meant a browser application often could not behave like a normal local program.
+## Simple mode
 
-A few years ago, a FrameChute-like workflow would repeatedly run into problems such as:
+Simple mode is for the normal file-work flow:
 
 ```text
-can't really save back to the file
-can't comfortably browse a chosen folder
-processing is too slow
-video work needs a server
-large files are awkward
-local persistence is fragile
-browser libraries are not mature enough yet
+open
+move
+resize
+edit
+save
 ```
 
-So developers usually did the sensible thing and specialized.
+The goal is to keep timing, synchronization, and other specialist controls out of the way unless they are actually needed.
 
-One team built a photo editor.
-Another built a PDF service.
-Another built a converter.
-Another built a video editor.
-Another built a whiteboard.
+## Advanced mode
 
-Each solved one vertical very well.
+Advanced mode exposes deeper capabilities such as media timing/synchronization and other specialist object behavior.
 
-FrameChute is based on a different observation:
+The distinction is a product rule, not a limitation of the substrate:
 
-> **A lot of those "different" jobs are really the same human action: give me this digital thing and let me do something useful to it.**
-
-The technology needed to make that idea pleasant arrived slowly enough that it was easy not to notice the larger possibility.
+> **Power can exist without requiring every user to look at it all the time.**
 
 ---
 
-# Why an extension?
+# Example workflows
 
-Because the browser is already where an enormous amount of modern computer work begins.
-
-Images arrive there. Downloads arrive there. Documents arrive there. Videos arrive there. References, articles, screenshots, links, and copied material arrive there.
-
-FrameChute does not ask the user to leave that environment before the useful work can begin.
+## Video frame to finished image
 
 ```text
-see something
+Open video
  ↓
-open / drop / paste
+Seek to a frame
  ↓
-FrameChute
+Extract Frame
  ↓
-do the job
+Crop / resize / annotate / convert
+ ↓
+Save As or keep the result in the workspace
 ```
 
-The ambition is not to replace the operating system underneath the browser.
+## Several images to one PDF
 
-The operating system still handles the machine, hardware, security, networking, and filesystem.
+```text
+Select images
+ ↓
+Make PDF
+ ↓
+PDF object appears
+ ↓
+Continue working or Save As
+```
 
-FrameChute is interested in something higher up:
+## Clean a CSV and explain it visually
 
-> **the part of computing where a person has a thing and wants to do something to it.**
+```text
+Open CSV
+ ↓
+Filter / sort / dedupe / clean
+ ↓
+Quick Chart
+ ↓
+SVG image result
+ ↓
+Place beside notes or a PDF
+```
+
+## Inspect an archive
+
+```text
+Open ZIP / CBZ
+ ↓
+Browse entries
+ ↓
+Open supported entry
+ ↓
+Entry becomes another workspace object
+```
+
+## Compare documents
+
+```text
+Select two text-oriented documents
+ ↓
+Compare documents
+ ↓
+Comparison result becomes editable text
+```
+
+## Preserve the entire working session
+
+```text
+files + layout + generated results
+ ↓
+Export Workspace
+ ↓
+.fcx
+ ↓
+Open Workspace later
+```
 
 ---
 
-# The design rule
+# Development and testing
 
-FrameChute should remain understandable even as it becomes more capable.
+FrameChute is plain browser-side JavaScript/CSS/HTML plus packaged local libraries. The source tree is intentionally inspectable without requiring a large framework build system.
 
-The preferred interaction is:
+## Run tests
+
+With a current Node.js installation:
+
+```bash
+node --test tests/*.test.mjs
+```
+
+## Check JavaScript syntax
+
+For changed JavaScript files:
+
+```bash
+node --check path/to/file.js
+```
+
+## Check patch whitespace
+
+```bash
+git diff --check
+```
+
+## Run the release/package gate
+
+```bash
+bash scripts/package-web-store.sh
+```
+
+A normal development validation pass usually includes all four.
+
+## Runtime dependencies
+
+FrameChute packages the browser-side code and vendored libraries it needs with the extension. The Chrome Web Store release gate intentionally forbids a desktop companion or remote executable-code dependency.
+
+---
+
+# Project structure
+
+The exact tree changes as FrameChute grows, but the major areas are:
+
+```text
+manifest.json
+src/
+  workspace.html / workspace.js / workspace.css
+  actions/
+    quick-actions.js
+    image-operations.js
+    data-utilities.js
+    capture-actions.js
+    native-save.js
+    document-operations.js
+  documents/
+    pdf-document.js
+    docx-document.js
+  image-edit/
+  fcx-format.mjs
+  fcx-portable.js
+  workspace-snapshot.js
+  web-drop.js
+  drop-local-sources.js
+  media / gallery / toolbar / appearance modules
+vendor/
+assets/
+icons/
+tests/
+scripts/
+  package-web-store.sh
+agents/codex/prompts/
+```
+
+A recurring architectural preference is to extract testable helpers/modules instead of letting `workspace.js` become the implementation of everything.
+
+---
+
+# Current limitations
+
+FrameChute is ambitious, but the project is intentionally honest about where the current browser implementation is still being hardened.
+
+## Image transforms
+
+Several image operations already have raster/export implementations, but some are being unified around a stronger live-preview + undo model so the visible object and saved object can never disagree.
+
+## Screenshot first-frame readiness
+
+The current screenshot path is being hardened because some browser/OS combinations can deliver an unready/black first video frame if capture is sampled too early.
+
+## PDF editing
+
+PDF text replacement is currently a practical cover-and-redraw system, not arbitrary editing of every original PDF object. The current serializer uses a standard replacement font and a simple source cover.
+
+Very large PDFs are not yet handled with the range-loading / virtual-page / bounded-cache architecture needed for Sumatra-like huge-file behavior.
+
+## DOCX fidelity
+
+FrameChute is not a complete Microsoft Word layout engine. It supports a useful subset and tries to preserve untouched OOXML least-destructively where practical.
+
+## Snapshot fidelity
+
+Workspace snapshots can represent local visual objects well, but cross-origin iframes cannot be freely rasterized by browser security rules. Web content may therefore appear as a placeholder. Video snapshotting may use an available poster rather than an arbitrary live frame.
+
+## Archives
+
+Large archive persistence is deliberately bounded. The current archive object path does not embed archives over 100 MB into workspace snapshots.
+
+## Browser APIs
+
+Some Save As, folder, capture, and codec behavior depends on browser/OS support. Chrome/Chromium is the primary target today.
+
+---
+
+# Roadmap
+
+The roadmap follows one rule:
+
+> **Do not build twenty separate applications. Build enough universal primitives that twenty useful workflows emerge.**
+
+The following are directions, not claims about the current release.
+
+## Camera, zoom, and a larger world
+
+Planned spatial/camera work includes:
+
+```text
+Ctrl +     zoom in
+Ctrl -     zoom out
+Ctrl 0     100%
+Fit Selection
+Fit Workspace
+```
+
+Zoom should affect the **camera**, not rewrite object geometry.
+
+The workspace should also become truly expandable beyond the initial viewport in every direction:
+
+> **Push an object against an edge and FrameChute makes more desk.**
+
+Work should be frameable/centerable instead of naturally collapsing toward the upper-left corner.
+
+## Separate workspace UI from workspace zoom
+
+Toolbar, Settings, media controls, Quick Actions, dialogs, and context menus should live in a UI/chrome layer that stays human-readable while the workspace itself zooms.
+
+Quick Actions in particular is expected to evolve toward a floating, movable panel rather than behaving like a viewport-height fixed sidebar.
+
+## Select Mode and region/frame export
+
+The planned distinction is:
+
+```text
+Select Mode
+→ select actual objects
+→ move / group / batch / arrange
+
+Region / Frame tool
+→ draw a rectangle in world space
+→ export exactly that visual area
+```
+
+Region output should support normal image formats and eventually one-page PDF output without depending on the user's current camera zoom.
+
+## Better composition
+
+Planned composition work includes:
+
+- first-class multi-object Select Mode
+- marquee selection
+- bulk object actions
+- selection-specific FrameSnap
+- Arrange into PDF
+- deterministic page ordering
+- region snapshot/export
+
+## Drawing and explanation primitives
+
+FrameChute does not need hundreds of professional illustration tools to become useful for visual explanation.
+
+A small dependable primitive set can unlock a lot:
+
+- rectangle
+- ellipse
+- line
+- arrow
+- triangle/polygon
+- text box
+- panel/frame rectangle
+- speech bubble with movable tail
+- thought bubble
+- better brush size
+- hardness
+- opacity
+- smoothing
+- simple brush shapes
+- grouping
+- align/distribute
+- clipping/masks later
+
+Those primitives can support:
+
+- comics
+- storyboards
+- tutorials
+- annotated screenshots
+- classroom explainers
+- visual notes
+- diagrams
+- memes
+- simple page layouts
+- manuals and handouts
+
+A plausible comic workflow is already visible in the substrate:
+
+```text
+DOCX script
+ ↓
+copy dialogue into workspace
+ ↓
+arrange panel frames + images
+ ↓
+add speech bubbles / text
+ ↓
+frame the finished page
+ ↓
+export image or PDF
+```
+
+The goal is not Adobe-level complexity.
+
+The goal is enough reliable primitives that useful complexity can emerge from combination.
+
+## Richer documents and publishing
+
+Longer-term document work can build on the same substrate with stronger Markdown/typography, font handling, print/PDF layout, and richer cross-format conversion while keeping the local-first model.
+
+## Structured data
+
+CSV utilities are the beginning, not the end. A future grid primitive could add cells, formulas, references, sorting/filtering, charts, and spreadsheet-style workflows without requiring a separate application architecture.
+
+---
+
+# Design principles
+
+FrameChute is held together by a few rules.
+
+## 1. If an action feels obvious, support it directly
 
 ```text
 select the thing
@@ -342,130 +943,58 @@ select the thing
 do the obvious thing
  ↓
 see the result
- ↓
-save it or keep working
 ```
 
-Not:
+## 2. Files become objects
 
-```text
-learn an application
- ↓
-find the correct panel
- ↓
-understand its terminology
- ↓
-configure a workflow
- ↓
-finally perform a tiny task
-```
+A PDF, image, video, note, chart, archive entry, and generated result should be able to occupy the same conceptual workspace.
 
-That is why FrameChute favors direct manipulation, contextual actions, previews, Save As, optional result objects, and batch operations that reuse the same simple ideas.
+## 3. Results stay usable
+
+The output of one action should be able to become the input to another without a download/re-upload ritual.
+
+## 4. Native files remain native files
+
+Save an image as an image, a PDF as a PDF, a DOCX as a DOCX, and a CSV as a CSV whenever the operation honestly supports it.
+
+`.fcx` exists to preserve the **workspace**, not to replace ordinary file formats.
+
+## 5. Local-first by default
+
+If the browser and the user's computer can perform the operation locally, a server should not be mandatory merely because the software happens to run in a browser.
+
+## 6. The viewport moves. The artwork does not
+
+Passive UI changes are not permission to move the user's work.
+
+## 7. Power should compose from small guarantees
+
+> **Files become objects. Objects become scenes. Scenes can eventually become worlds.**
+
+FrameChute becomes more capable by strengthening universal primitives rather than by accumulating disconnected mini-applications.
 
 ---
 
-# A few current workflows
+# What FrameChute is not
 
-### Video frame to finished image
+FrameChute is not claiming to replace the deepest professional capabilities of Photoshop, Premiere, Word, Acrobat, Excel, Blender, or specialist conversion systems.
 
-```text
-video
- ↓
-seek
- ↓
-Extract Frame
- ↓
-image object
- ↓
-crop / resize / annotate / convert
- ↓
-Save As
-```
+It is aimed at a different problem:
 
-### Several images to one result
+> **You should not need a professional suite for every thirty-second file chore.**
 
-```text
-select images
- ↓
-stitch / contact sheet / PDF / batch action
- ↓
-result
- ↓
-keep working or save it
-```
-
-### PDF work
-
-```text
-open PDF
- ↓
-reorder / remove / duplicate / extract / merge pages
- ↓
-Save As PDF
-```
-
-### CSV work
-
-```text
-open CSV
- ↓
-edit / sort / clean / split / merge / chart
- ↓
-CSV or visual result
-```
-
-### Keep the whole session
-
-```text
-files + objects + layout + generated work
- ↓
-Export Workspace
- ↓
-.fcx
-```
-
----
-
-# Where FrameChute is going
-
-The long-term goal is not to bolt hundreds of unrelated buttons onto the browser.
-
-It is to keep expanding a small set of useful ideas:
-
-- files become objects
-- objects can be moved and changed directly
-- transformations can be previewed before committing
-- results can be saved, kept in the workspace, or both
-- one action can feed naturally into the next
-- batch work should feel like the same tool applied to many things
-- deeper image, document, media, spatial, and eventually time-based tools should share the same workspace rather than becoming separate mini-apps
-
-The test remains very simple:
-
-> **Why am I opening a giant application just to do this?**
-
-If FrameChute can make that job immediate, local, understandable, and saveable, then FrameChute has done its job.
-
----
-
-# Install
-
-## Chrome / Chromium
-
-The Chrome Web Store build is the straightforward way to use FrameChute.
-
-The GitHub repository generally contains the newest work first.
-
-## Current GitHub build
-
-Clone or download this repository, then open your Chromium browser's extension page:
-
-1. Turn on **Developer mode**.
-2. Choose **Load unpacked**.
-3. Select the FrameChute extension directory.
+A surprising amount of everyday computing is made of small transformations, comparisons, extractions, arrangements, and conversions. FrameChute tries to make those jobs feel like one coherent activity.
 
 ---
 
 # In one sentence
 
-**FrameChute is a lightweight, local-first browser workspace for opening, arranging, changing, extracting, combining, converting, and saving the everyday digital things that otherwise send you bouncing between applications and websites.**
+**FrameChute is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
+
+---
+
+# License
+
+See [`LICENSE`](LICENSE) for the repository's licensing terms.
+
+The current repository license is proprietary / all rights reserved rather than an open-source license. Do not assume that public source visibility grants permission to redistribute or create derivative versions outside the rights explicitly granted by the license.
