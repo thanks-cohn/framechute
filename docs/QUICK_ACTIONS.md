@@ -6,7 +6,7 @@ FrameChute's utility layer follows **select → act → save/result**. Clicking 
 
 - `actions/action-registry.js` owns registration, applicability, invocation, progress, cancellation, and bounded batch execution. Part 2 actions should register here rather than add another menu dispatch switch.
 - `actions/selection-model.js` is object-agnostic and supports single, homogeneous batch, and mixed selections. Utility blocks register through `FrameChuteWorkspace`, so creation, movement, duplication, capture, FCX export, and restore use the built-in lifecycle.
-- `actions/native-save.js` normalizes names and serializes before creating/truncating a writable destination. Native Save As remains separate from FCX **Export Snapshot**.
+- `actions/native-save.js` normalizes names and serializes before creating/truncating a writable destination. Native Save As remains separate from FCX **Export Workspace**.
 - `framechute:add-result-object` is the result bridge. Extraction/generation dispatches a Blob and `web-drop.js` creates a normal image object that is immediately selectable and editable.
 - `actions/image-operations.js` bakes non-destructive crop/size/rotation/flip/straighten/background/format state only when saving or generating a result.
 - `actions/data-utilities.js` provides local CSV tables and eagerly decoded ZIP/CBZ entry browsing guarded by advertised per-entry, cumulative expanded-size, and entry-count limits.

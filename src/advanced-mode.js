@@ -270,8 +270,10 @@ if (toolbar && advancedToolbar) {
   saved.setAttribute("aria-label", "Saved FrameChutes");
   const restore = proxyButton("Restore", "restore-frame");
   const reconnect = proxyButton("Reconnect all", "reconnect-all");
-  const exportSnapshot = proxyButton("Export Snapshot", "export-fcx", "Export a portable FrameChute snapshot");
-  frames.append(save, saved, restore, reconnect, exportSnapshot);
+  const openWorkspace = proxyButton("Open Workspace", "import-fcx", "Open an editable portable FrameChute workspace");
+  const exportWorkspace = proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace");
+  const takeSnapshot = proxyButton("Take Snapshot", "take-snapshot", "Save the used visual canvas as a flattened image");
+  frames.append(save, saved, restore, reconnect, openWorkspace, exportWorkspace, takeSnapshot);
   classic.append(add, frames);
   advancedToolbar.insertAdjacentElement("afterend", classic);
 

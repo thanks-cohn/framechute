@@ -478,7 +478,7 @@ loopVideosInput.addEventListener("change", () => {
   }
 });
 
-settingsMini.addEventListener("click", () => {
+settingsMini?.addEventListener("click", () => {
   setDockCollapsed(settingsDock, settingsExpand, SETTINGS_DOCK_KEY, !settingsDock.classList.contains("is-collapsed"));
 });
 

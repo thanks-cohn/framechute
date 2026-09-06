@@ -1,14 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, writeQuickActionsEnabled } from "../src/actions/object-menu-model.mjs";
+import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "../src/actions/object-menu-model.mjs";
 import { canvasMetadata, createCanvasPayload, deserializeCanvasPayload, normalizeCanvasSize, serializeCanvasPayload, transparentRgba, validateCanvasSize } from "../src/standalone-canvas.mjs";
 import { compositeRgba, floodFill } from "../src/image-edit/paint-layer.mjs";
 
 test("object menu reflects per-object Quick Actions visibility",()=>{
   assert.equal(objectMenuItems({quickActionsHidden:true}).find(item=>item.id==="quick-actions").label,"Show Quick Actions for This Object");
   assert.equal(objectMenuItems({quickActionsHidden:false}).find(item=>item.id==="quick-actions").label,"Hide Quick Actions for This Object");
-  assert.deepEqual(objectMenuItems().filter(item=>item.id).map(item=>item.id),["quick-actions-global","open-file","remove","quick-actions","shrink-fit","fit-workspace","fit-width","fit-height","actual-size","shrink-all","edit","duplicate","save-as"]);
+  assert.deepEqual(objectMenuItems().filter(item=>item.id).map(item=>item.id),["quick-actions-global","open-file","minimize","expand","center","grab","remove","quick-actions","shrink-fit","fit-workspace","fit-width","fit-height","actual-size","shrink-all","edit","duplicate","save-as"]);
   assert.equal(objectMenuItems().find(item=>item.id==="remove").label,"Close Object");
+});
+
+test("workspace commands are omitted for an individual object target", () => {
+  assert.equal(showWorkspaceActionsForTarget(true), false);
+  assert.equal(showWorkspaceActionsForTarget(false), true);
 });
 
 test("standalone canvas metadata is honest, bounded, and transparent",()=>{

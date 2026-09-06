@@ -55,7 +55,7 @@ function installSetting() {
     <input id="setting-legacy-workspace-save" type="checkbox">
     <span>
       <strong>Legacy local Save / Restore</strong>
-      <small>Optional legacy browser-state saving. It may not reconstruct every local source, permission, or media relationship. For a dependable whole-workspace return, use Export Snapshot (.fcx). Individual edited files should use Save / Save As.</small>
+      <small>Optional legacy browser-state saving. It may not reconstruct every local source, permission, or media relationship. For a dependable portable workspace, use Export Workspace (.fcx). Individual edited files should use Save / Save As.</small>
     </span>
   `;
 
