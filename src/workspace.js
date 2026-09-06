@@ -17,6 +17,8 @@ import { writeCompleteBlob, saveDocumentAs } from "./documents/document-save.js"
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
+import { saveBlobAs } from "./actions/native-save.js";
+import { zipSync } from "./vendor/fflate.mjs";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -249,6 +251,51 @@ function toggleMaximize(block) {
   bringToFront(block);
 }
 
+async function canvasBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("The page image could not be encoded.")), type, quality));
+}
+
+async function exportPdfImages(block) {
+  const dialog = document.querySelector("#pdf-image-export-dialog");
+  const form = dialog.querySelector("form");
+  form.reset();
+  dialog.showModal();
+  const submitted = await new Promise(resolve => {
+    const close = () => resolve(dialog.returnValue === "export");
+    dialog.addEventListener("close", close, { once: true });
+  });
+  if (!submitted) return;
+  const data = new FormData(form), format = data.get("format"), scale = Math.max(.25, Math.min(4, Number(data.get("scale")) || 1));
+  const quality = Math.max(.1, Math.min(1, Number(data.get("quality")) || .9));
+  const mime = `image/${format}`, extension = format === "jpeg" ? "jpg" : format;
+  const runtime = runtimeSources.get(block), editedBlob = await runtime.serialize();
+  const edited = await openPdfDocument(new Uint8Array(await editedBlob.arrayBuffer()));
+  const pages = data.get("scope") === "all" ? Array.from({ length: edited.pageCount }, (_, index) => index + 1) : [Number(block.dataset.currentPage || 1)];
+  const files = {}, digits = Math.max(4, String(edited.pageCount).length);
+  try {
+    for (const pageNumber of pages) {
+      setStatus(`Exporting PDF page ${pageNumber} of ${edited.pageCount}…`);
+      const page = await edited.pdf.getPage(pageNumber), viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const blob = await canvasBlob(canvas, mime, format === "png" ? undefined : quality);
+      files[`page-${String(pageNumber).padStart(digits, "0")}.${extension}`] = new Uint8Array(await blob.arrayBuffer());
+      // zipSync requires all encoded entries at the end, but the much larger
+      // decoded page bitmap does not need to remain allocated between pages.
+      canvas.width = 0; canvas.height = 0;
+      page.cleanup?.();
+    }
+  } finally { await edited.pdf.destroy(); }
+  const base = (block.querySelector(".block-name")?.value || "document").replace(/\.pdf$/i, "");
+  if (pages.length === 1) {
+    const filename = Object.keys(files)[0];
+    await saveBlobAs({ blob: new Blob([files[filename]], { type: mime }), filename: `${base}-${filename}`, extension, mimeType: mime, description: "PDF page image" });
+  } else {
+    await saveBlobAs({ blob: new Blob([zipSync(files)], { type: "application/zip" }), filename: `${base}-images.zip`, extension: "zip", mimeType: "application/zip", description: "PDF page images" });
+  }
+  setStatus(`${pages.length} PDF page image${pages.length === 1 ? "" : "s"} exported.`);
+}
+
 function attachBlockInteractions(block) {
   const header = block.querySelector(".block-header");
   const removeButton = block.querySelector(".remove-block");
@@ -296,6 +343,24 @@ function attachBlockInteractions(block) {
     header.addEventListener("pointercancel", finish);
   });
 }
+
+window.addEventListener("framechute:object-command", event => {
+  const { block, command } = event.detail || {};
+  if (!(block instanceof HTMLElement) || !block.isConnected) return;
+  if (command === "expand") { block.querySelector(":scope > .block-header .maximize-block")?.click(); return; }
+  if (command === "grab") return;
+  if (block.classList.contains("is-maximized")) block.querySelector(":scope > .block-header .maximize-block")?.click();
+  block.style.width = "400px"; block.style.height = "400px";
+  if (command === "center") {
+    const workspaceRect = workspace.getBoundingClientRect(), toolbarBottom = toolbar?.getBoundingClientRect().bottom || 0;
+    const visibleLeft = Math.max(0, workspaceRect.left), visibleRight = Math.min(innerWidth, workspaceRect.right);
+    const visibleTop = Math.max(toolbarBottom, workspaceRect.top), visibleBottom = Math.min(innerHeight, workspaceRect.bottom);
+    block.style.left = `${(visibleLeft + visibleRight) / 2 - workspaceRect.left - 200}px`;
+    block.style.top = `${(visibleTop + visibleBottom) / 2 - workspaceRect.top - 200}px`;
+    bringToFront(block);
+  }
+  workspace.dispatchEvent(new CustomEvent("flashframe:workspace-changed", { bubbles: true }));
+});
 
 function setDocumentDirty(block, dirty) {
   block.dataset.documentDirty = String(Boolean(dirty));
@@ -518,6 +583,10 @@ registerBlockType("pdf", {
 
   initialize(block) {
     attachDocumentSave(block);
+    block.querySelectorAll(".pdf-toolbar details").forEach(details => details.addEventListener("toggle", () => {
+      if (!details.open) return;
+      block.querySelectorAll(".pdf-toolbar details").forEach(other => { if (other !== details) other.open = false; });
+    }));
     block.querySelector(".pdf-prev").addEventListener("click", () => {
       setPdfPage(block, clampInteger(block.querySelector(".pdf-page").value, 1) - 1);
     });
@@ -535,7 +604,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-move").addEventListener("click", () => { const to = Number(prompt("Move current page to position", block.dataset.currentPage || "1")); if (to) void applyPdfPageOperation(block, { type: "move", page: Number(block.dataset.currentPage || 1), to }); });
     block.querySelector(".pdf-extract").addEventListener("click", async()=>{const runtime=runtimeSources.get(block),page=Number(block.dataset.currentPage||1),blob=await runtime.serialize(),bytes=await extractPdfPages(new Uint8Array(await blob.arrayBuffer()),[page]);window.dispatchEvent(new CustomEvent("framechute:add-result-object",{detail:{blob:new Blob([bytes],{type:"application/pdf"}),name:`${block.querySelector('.block-name').value}-page-${page}.pdf`,kind:"pdf"}}));});
     block.querySelector(".pdf-merge").addEventListener("click",async()=>{try{const [handle]=await showOpenFilePicker({multiple:false,types:[{description:"PDF",accept:{"application/pdf":[".pdf"]}}]});if(!handle)return;const runtime=runtimeSources.get(block),base=await runtime.serialize(),added=await handle.getFile(),after=Number(block.dataset.currentPage||runtime.model.pageCount),bytes=await mergePdfBytes(new Uint8Array(await base.arrayBuffer()),new Uint8Array(await added.arrayBuffer()),after);await replacePdfRuntime(block,bytes,after+1);setStatus(`${added.name} inserted. Use Save As to preserve the original.`);}catch(error){if(error.name!=="AbortError")setStatus(error.message);}});
-    block.querySelector(".pdf-images").addEventListener("click",async()=>{const runtime=runtimeSources.get(block);for(let number=1;number<=runtime.model.pageCount;number++){const page=await runtime.model.pdf.getPage(number),viewport=page.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));window.dispatchEvent(new CustomEvent("framechute:add-result-object",{detail:{blob,name:`page-${number}.png`,kind:"image"}}));}});
+    block.querySelector(".pdf-images").addEventListener("click",()=>void exportPdfImages(block).catch(error=>setStatus(error.message)));
     block.querySelector(".pdf-crop").addEventListener("click",async()=>{const margin=Number(prompt("Crop all margins by PDF points (72 = 1 inch)","18"));if(!Number.isFinite(margin))return;const runtime=runtimeSources.get(block),blob=await runtime.serialize(),page=Number(block.dataset.currentPage||1),bytes=await cropPdfMargins(new Uint8Array(await blob.arrayBuffer()),page,{left:margin,right:margin,top:margin,bottom:margin});await replacePdfRuntime(block,bytes,page);});
     block.querySelector(".pdf-compress").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),blob=await runtime.serialize(),original=new Uint8Array(await blob.arrayBuffer()),candidate=await conservativelyCompressPdf(original),choice=chooseSmallerPdf(original,candidate);if(!choice.changed){setStatus(`No smaller safe PDF was produced (${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes); the current PDF was kept.`);return;}await replacePdfRuntime(block,choice.bytes,Number(block.dataset.currentPage||1));setStatus(`PDF compressed conservatively: ${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes. Embedded images were not recompressed.`);});
 

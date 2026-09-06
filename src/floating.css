@@ -178,7 +178,7 @@ body.toolbar-hidden .workspace {
 
 .settings-dock.is-collapsed {
   width: max-content;
-  min-width: 184px;
+  min-width: 142px;
   max-width: calc(100vw - 16px);
 }
 
@@ -188,10 +188,11 @@ body.toolbar-hidden .workspace {
 }
 
 .settings-dock.is-collapsed .settings-mini {
-  display: grid;
-  flex: 0 0 42px;
-  width: 42px;
+  display: none;
 }
+
+.settings-dock.is-collapsed .dock-head { flex-wrap: nowrap; }
+.settings-dock.is-collapsed .dock-expand { width: 38px; }
 
 .settings-dock.is-collapsed .dock-head {
   width: 100%;

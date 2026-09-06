@@ -68,6 +68,8 @@ button:disabled {
   border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
   background: color-mix(in srgb, Canvas 94%, transparent);
   backdrop-filter: blur(12px);
+  white-space: nowrap;
+  overflow: visible;
 }
 
 body.toolbar-hidden .toolbar {
@@ -84,6 +86,7 @@ body.toolbar-hidden .toolbar {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 0 1 auto;
 }
 
 .toolbar-command {
@@ -147,6 +150,9 @@ body.toolbar-show-text .toolbar-command-label {
 .toolbar-saved-panel select {
   width: 100%;
 }
+
+.workspace-file-actions { margin-bottom: 10px; }
+.toolbar-snapshot { color: #171717; background: #f7cf4b; border-color: #9a7a00; }
 
 .toolbar-actions {
   display: flex;
@@ -426,6 +432,18 @@ body.toolbar-hidden .workspace {
 .block.is-maximized {
   resize: none;
 }
+
+.pdf-toolbar { position: relative; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.pdf-toolbar > * { flex: 0 0 auto; }
+.pdf-toolbar details { position: static; }
+.pdf-toolbar summary { cursor: pointer; list-style: none; padding: 6px 9px; border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 7px; white-space: nowrap; }
+.pdf-toolbar summary::after { content: " ▾"; }
+.pdf-popdown { position: absolute; z-index: 80; bottom: calc(100% + 4px); display: grid; gap: 5px; min-width: 180px; max-width: min(300px, calc(100vw - 20px)); padding: 7px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 9px; background: Canvas; color: CanvasText; box-shadow: 0 10px 30px #0005; }
+.pdf-toolbar details:not([open]) .pdf-popdown { display: none; }
+.pdf-popdown button { width: 100%; text-align: left; }
+.pdf-popdown.pdf-popdown-portal { position: fixed; z-index: 2147483646; }
+.pdf-edit-controls:not([hidden]) + .pdf-no-edit { display: none; }
+#pdf-image-export-dialog fieldset { margin: 10px 0; }
 
 .block-header {
   display: flex;
@@ -746,12 +764,12 @@ body.hide-block-headers .compact-drag-handle {
 
 @media (max-width: 900px) {
   .toolbar {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    gap: 7px;
+    flex-wrap: nowrap;
   }
 
   .toolbar-primary {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .frame-actions {
@@ -760,9 +778,7 @@ body.hide-block-headers .compact-drag-handle {
   }
 
   .status {
-    width: 100%;
-    max-width: none;
-    margin-left: 0;
+    display: none;
   }
 
   .settings-dock {
@@ -772,6 +788,19 @@ body.hide-block-headers .compact-drag-handle {
   .video-dock {
     top: 430px;
   }
+}
+
+@media (max-width: 650px) {
+  .brand { width: 24px; overflow: hidden; font-size: 0; }
+  .brand::after { content: "F"; font-size: 17px; }
+  body.toolbar-show-text .toolbar-command-label { display: none; }
+  .toolbar { min-height: 50px; padding: 7px 8px; }
+  .toolbar-primary { gap: 4px; }
+}
+
+@media (max-width: 470px) {
+  #frame-sequence-slot { display: none; }
+  .toolbar-command { padding-inline: 7px; }
 }
 /* System-font fallback keeps this ordinary and usable if classic decoration is unavailable. */
 .workspace-file-menu{position:fixed;z-index:100001;padding:4px;border:2px solid #111;border-radius:5px;background:#ddd;box-shadow:inset 1px 1px #fff,3px 3px #0005;font:13px Geneva,Charcoal,system-ui,sans-serif}.workspace-file-menu[hidden]{display:none}.workspace-file-menu button{min-width:138px;padding:6px 14px;border:1px solid #111;border-radius:3px;background:#eee;color:#111;font:inherit;text-align:left;cursor:pointer}.workspace-file-menu button:focus-visible{outline:2px solid #111;outline-offset:1px}

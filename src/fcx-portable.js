@@ -129,12 +129,12 @@ async function exportFcx() {
     await addBackground(state, mode, entries, table);
     const manifest = { format: FCX_FORMAT, version: FCX_VERSION, createdAt: new Date().toISOString(), app: "FrameChute", assetMode: mode, assets: table };
     const json = (value) => new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
-    setStatus("Packaging portable .fcx snapshot…");
+    setStatus("Packaging portable .fcx workspace…");
     const blob = await createZip([["manifest.json", json(manifest)], ["state.json", json(state)], ...entries]);
     const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
     anchor.href = url; anchor.download = `${cleanName(state.name)}-${new Date().toISOString().slice(0, 16).replace(/[T:]/g, "-")}.fcx`; anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setStatus(`Downloaded ${mode === "embedded" ? "portable snapshot with files" : "state-only snapshot"}.`);
+    setStatus(`Downloaded ${mode === "embedded" ? "portable workspace with files" : "state-only workspace"}.`);
   } catch (error) { console.error(error); setStatus(`Could not export .fcx: ${error.message}`); }
   finally { exportButton.disabled = false; }
 }
@@ -210,14 +210,14 @@ async function importFcx(file) {
     if (!detail.promise) throw new Error("The workspace restorer is unavailable.");
     await detail.promise;
     const missing = sourceReferences(state).filter(({ source }) => source.missingWithoutOriginal).length;
-    setStatus(`Snapshot restored${missing ? `; ${missing} local source${missing === 1 ? " needs" : "s need"} reconnecting` : ""}.${resumeIds.size ? " Select Resume Snapshot to restart previously playing media." : ""}`);
+    setStatus(`Workspace opened${missing ? `; ${missing} local source${missing === 1 ? " needs" : "s need"} reconnecting` : ""}.${resumeIds.size ? " Select Resume Media to restart previously playing media." : ""}`);
   } catch (error) { console.error(error); setStatus(`Could not open .fcx: ${error.message}`); }
   finally { importButton.disabled = false; }
 }
 
 async function pickFcx() {
   try {
-    const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "FrameChute snapshot", accept: { "application/zip": [".fcx"] } }] });
+    const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "FrameChute workspace", accept: { "application/zip": [".fcx"] } }] });
     await importFcx(await handle.getFile());
   } catch (error) { if (error?.name !== "AbortError") { console.error(error); setStatus(`Could not open .fcx: ${error.message}`); } }
 }
@@ -235,7 +235,7 @@ resumeButton.addEventListener("click", async () => {
   // deliberately staggered by asynchronous autoplay/decoder work.
   const results = await playConcurrently(media);
   const blocked = results.filter((result) => result.status === "rejected").length;
-  if (!blocked) { resumeButton.hidden = true; resumeIds.clear(); setStatus("Snapshot playback resumed."); }
+  if (!blocked) { resumeButton.hidden = true; resumeIds.clear(); setStatus("Workspace playback resumed."); }
   else setStatus(`${blocked} media item${blocked === 1 ? "" : "s"} could not resume; use its play control.`);
 });
 

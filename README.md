@@ -156,9 +156,9 @@ CSV   → CSV
 
 FrameChute should not force you into its own format just because you used FrameChute.
 
-### Export Snapshot
+### Export Workspace
 
-When you want the whole workspace back later, FrameChute can save a `.fcx` snapshot containing the supported workspace state and assets.
+When you want the whole workspace back later, FrameChute can save a portable `.fcx` workspace containing the supported state and assets.
 
 ```text
 your files
@@ -419,7 +419,7 @@ CSV or visual result
 ```text
 files + objects + layout + generated work
  ↓
-Export Snapshot
+Export Workspace
  ↓
 .fcx
 ```
