@@ -1,4 +1,5 @@
 import { readQuickActionsEnabled, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
+import { genericAdvancedVisibility } from "./actions/context-menu-model.mjs";
 
 const workspace = document.querySelector("#workspace");
 
@@ -49,24 +50,26 @@ menu.className = "flashframe-layer-menu";
 menu.hidden = true;
 menu.setAttribute("role", "menu");
 menu.innerHTML = `
-  <button class="workspace-menu-action" type="button" data-layer-action="open-workspace" role="menuitem">Open Workspace…</button>
   <button class="workspace-menu-action" type="button" data-layer-action="export-workspace" role="menuitem">Export Workspace…</button>
   <button class="workspace-menu-action" type="button" data-layer-action="take-snapshot" role="menuitem">Take Snapshot…</button>
   <div class="flashframe-layer-menu-separator workspace-menu-action" role="separator"></div>
   <button type="button" data-layer-action="quick-actions" role="menuitem">Quick Actions</button>
-  <button type="button" data-layer-action="open-file" role="menuitem">Open File…</button>
+  <div class="layer-submenu-owner"><button type="button" class="layer-submenu-trigger" aria-haspopup="menu">Open <span>›</span></button><div class="layer-submenu" role="menu"><button type="button" data-layer-action="open-file" role="menuitem">Open File…</button><button class="workspace-menu-action" type="button" data-layer-action="open-workspace" role="menuitem">Open Workspace…</button></div></div>
   <button type="button" data-layer-action="minimize" role="menuitem">Minimize</button>
-  <button type="button" data-layer-action="expand" role="menuitem">Expand</button>
-  <button type="button" data-layer-action="center" role="menuitem">Bring to Center</button>
   <button type="button" data-layer-action="grab" role="menuitem" title="Move Object: choose Grab, then drag the object from its visible image or video">Grab / Move Object <span class="flashframe-layer-menu-shortcut">G</span></button>
   <button type="button" data-layer-action="close" class="flashframe-layer-menu-close" role="menuitem">Close Object</button>
   <div class="flashframe-layer-menu-separator" role="separator"></div>
-  <button type="button" data-layer-action="front" role="menuitem">Bring to front</button>
-  <button type="button" data-layer-action="back" role="menuitem">Send to back</button>
+  <div class="layer-submenu-owner"><button type="button" class="layer-submenu-trigger" aria-haspopup="menu">Arrange <span>›</span></button><div class="layer-submenu" role="menu">
+    <button type="button" data-layer-action="front" role="menuitem">Bring to front</button>
+    <button type="button" data-layer-action="back" role="menuitem">Send to back</button>
+    <button type="button" data-layer-action="center" role="menuitem">Bring to Center</button>
+    <button type="button" data-layer-action="expand" role="menuitem">Expand / Restore Size</button>
+  </div></div>
   <div class="flashframe-layer-menu-separator sync-separator" role="separator"></div>
   <button type="button" data-layer-action="sync" role="menuitem">Sync with…</button>
   <button type="button" data-layer-action="independent" role="menuitem">Make independent</button>
   <div class="flashframe-layer-menu-separator sync-separator" role="separator"></div>
+  <div class="layer-submenu-owner"><button type="button" class="layer-submenu-trigger" aria-haspopup="menu">Show <span>›</span></button><div class="layer-submenu" role="menu">
   <button type="button" data-layer-action="show-toolbar" role="menuitem">Show top bar</button>
   <button type="button" data-layer-action="show-settings" role="menuitem">Show Settings</button>
   <button type="button" data-layer-action="show-media-player" role="menuitem">Show media player</button>
@@ -75,6 +78,7 @@ menu.innerHTML = `
   <button type="button" data-layer-action="object-header" role="menuitem">Hide object header</button>
   <button type="button" data-layer-action="object-footer" role="menuitem">Hide object footer</button>
   <button type="button" data-layer-action="frameless" role="menuitem">Show image only</button>
+  </div></div>
   <div class="flashframe-layer-menu-separator frameless-separator" role="separator"></div>
   <button type="button" data-layer-action="timed-edit" role="menuitem">Create timed move</button>
   <button type="button" data-layer-action="timed-play" role="menuitem">Preview timed move</button>
@@ -92,7 +96,7 @@ style.textContent = `
     z-index: 2147483647;
     min-width: 178px;
     max-height: calc(100vh - 16px);
-    overflow-y: auto;
+    overflow: visible;
     overscroll-behavior: contain;
     padding: 6px;
     border: 1px solid rgba(255,255,255,.16);
@@ -141,6 +145,9 @@ style.textContent = `
     margin: 5px 4px;
     background: rgba(255,255,255,.14);
   }
+  .layer-submenu-owner { position: relative; }
+  .layer-submenu { display:none;position:fixed;z-index:2147483647;min-width:190px;padding:6px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(20,22,24,.98);box-shadow:0 14px 34px rgba(0,0,0,.38) }
+  .layer-submenu.is-open { display:block; }
   .block.is-menu-grabbed {
     outline: 2px solid #f7cf4b;
     outline-offset: 2px;
@@ -208,17 +215,17 @@ function showMenu(block, x, y) {
   window.dispatchEvent(new CustomEvent("framechute:close-context-menus", { detail: { except: menu } }));
   targetBlock = block;
   menu.hidden = false;
-  const timed = Boolean(block) && (block.dataset.timedMedia === "true" || Boolean(block.querySelector("video, audio")));
   const advanced = window.frameChuteAdvancedMode === true;
+  const visibility = genericAdvancedVisibility({ advanced, block });
   menu.querySelectorAll(".workspace-menu-action").forEach(item => { item.hidden = !showWorkspaceActionsForTarget(Boolean(block)); });
   menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
   menu.querySelector('[data-layer-action="expand"]').textContent = block?.classList.contains("is-maximized") ? "Restore Size" : "Expand";
   menu.querySelector('[data-layer-action="front"]').hidden = !block;
   menu.querySelector('[data-layer-action="back"]').hidden = !block;
   menu.querySelector('[data-layer-action="grab"]').hidden = !block;
-  menu.querySelector('[data-layer-action="sync"]').hidden = !advanced || !timed;
-  menu.querySelector('[data-layer-action="independent"]').hidden = !advanced || !timed;
-  menu.querySelectorAll(".sync-separator").forEach(separator => { separator.hidden = !advanced || !timed; });
+  menu.querySelector('[data-layer-action="sync"]').hidden = !visibility.supportsMediaSync;
+  menu.querySelector('[data-layer-action="independent"]').hidden = !visibility.supportsMediaSync;
+  menu.querySelectorAll(".sync-separator").forEach(separator => { separator.hidden = !visibility.supportsMediaSync; });
   const isImage = block?.dataset.customKind === "image"
     || block?.dataset.customLocalKind === "image"
     || Boolean(block?.querySelector(":scope > .image-frame"));
@@ -243,8 +250,8 @@ function showMenu(block, x, y) {
   objectFooterButton.textContent = footerHidden
     ? (frameless ? "Show footer" : "Restore object footer")
     : "Hide object footer";
-  framelessButton.hidden = !isVisualMedia;
-  framelessButton.textContent = block.classList.contains("is-frameless-media")
+  framelessButton.hidden = !advanced || !isVisualMedia;
+  framelessButton.textContent = block?.classList.contains("is-frameless-media")
     ? `Restore ${isVideo ? "video" : "image"} frame`
     : `Show ${isVideo ? "video" : "image"} only`;
   menu.querySelector(".frameless-separator").hidden = !isVisualMedia;
@@ -287,6 +294,13 @@ workspace.addEventListener("contextmenu", (event) => {
 });
 
 menu.addEventListener("click", (event) => {
+  const submenuTrigger = event.target.closest(".layer-submenu-trigger");
+  if (submenuTrigger) {
+    const submenu=submenuTrigger.nextElementSibling,rect=submenuTrigger.getBoundingClientRect();
+    menu.querySelectorAll(".layer-submenu.is-open").forEach(node=>{if(node!==submenu)node.classList.remove("is-open")});submenu.classList.toggle("is-open");
+    submenu.style.top=`${Math.min(rect.top,innerHeight-submenu.getBoundingClientRect().height-8)}px`;submenu.style.left=`${rect.right+submenu.getBoundingClientRect().width>innerWidth-8?rect.left-submenu.getBoundingClientRect().width:rect.right}px`;
+    submenu.querySelector("button:not([hidden])")?.focus();return;
+  }
   const button = event.target.closest("button[data-layer-action]");
   if (!button) return;
 
@@ -413,6 +427,7 @@ menu.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape") {
     event.preventDefault();
+    const submenu=menu.querySelector(".layer-submenu.is-open");if(submenu){submenu.classList.remove("is-open");submenu.previousElementSibling?.focus();return;}
     hideMenu();
   }
 });

@@ -96,7 +96,7 @@ if (!workspace || !bar || !actions?.selection) {
     if (close) close.hidden = selectedImagesOnly().length === 0;
   }
 
-  const closeButton = document.createElement("button");
+  const closeButton = bar.querySelector(".quick-actions-close") || document.createElement("button");
   closeButton.type = "button";
   closeButton.className = "quick-actions-close";
   closeButton.textContent = "×";
@@ -108,7 +108,7 @@ if (!workspace || !bar || !actions?.selection) {
     applyBarVisibility();
     if (status) status.textContent = "Quick Actions closed. Your selection and preferences were preserved.";
   });
-  bar.insertBefore(closeButton, bar.querySelector("progress"));
+  if (!closeButton.isConnected) bar.querySelector(".quick-actions-heading")?.append(closeButton);
 
   const menu = document.createElement("div");
   menu.className = "framechute-object-context-menu"; menu.hidden = true; menu.setAttribute("role", "menu");

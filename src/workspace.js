@@ -440,6 +440,26 @@ function selectPdfEdit(block, span) {
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
 
+window.addEventListener("framechute:pdf-context-command", event => {
+  const { block, action, value }=event.detail||{},runtime=runtimeSources.get(block);if(!runtime?.pageData)return;
+  let edit=selectedPdfEdit(block);
+  if(action==="add-text"){
+    const surface=block.querySelector(".pdf-text-layer").getBoundingClientRect(),left=Math.max(0,event.detail.clientX-surface.left),top=Math.max(0,event.detail.clientY-surface.top);
+    const geometry=viewportRectToPdf(runtime.pageData.viewport,{left,top,width:180,height:72});pushPdfHistory(runtime);
+    const index=-Date.now();runtime.edits.push({kind:"text",id:`text:${crypto.randomUUID?.()||Date.now()}`,page:Number(block.dataset.currentPage),index,text:"New text",...geometry,fontFamily:"Helvetica",fontSize:12,rotation:0,verticalAlign:"top"});
+  } else if(!edit && action==="delete" && event.detail.selected?.matches(".pdf-text-item")){
+    const span=event.detail.selected,index=Number(span.dataset.index),original=runtime.pageData.content.items[index];if(!original)return;
+    const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);pushPdfHistory(runtime);
+    runtime.edits.push({kind:"replacement",page:Number(block.dataset.currentPage),index,original:original.str,replacement:"",...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:Math.max(4,geometry.height*.8),rotation:0});
+  } else if(!edit)return;
+  else if(action==="delete"){pushPdfHistory(runtime);runtime.edits.splice(runtime.edits.indexOf(edit),1);}
+  else if(action==="duplicate"){pushPdfHistory(runtime);runtime.edits.push({...structuredClone(edit),id:`text:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now(),x:edit.x+8,y:edit.y-8});}
+  else if(action==="font"&&value!==edit.fontFamily){pushPdfHistory(runtime);edit.fontFamily=value;}
+  else if(action==="text-size"){const size=Number(prompt("Text size in points",String(edit.fontSize)));if(!Number.isFinite(size))return;pushPdfHistory(runtime);edit.fontSize=Math.max(4,Math.min(144,size));}
+  else return;
+  setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);
+});
+
 async function loadPdfHandle(block, handle, state = {}) {
   const file = await fileFromHandle(handle);
   if (!file) throw new Error("PDF could not be read");
@@ -628,6 +648,7 @@ registerBlockType("pdf", {
       if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();void travelPdfHistory(block,event.shiftKey?"redo":"undo");}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){event.preventDefault();void travelPdfHistory(block,"redo");}
+      if(!text&&selectedPdfEdit(block)&&["Delete","Backspace"].includes(event.key)){event.preventDefault();const runtime=runtimeSources.get(block);pushPdfHistory(runtime);runtime.edits.splice(runtime.edits.indexOf(selectedPdfEdit(block)),1);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);return;}
       const edit=selectedPdfEdit(block);if(edit&&!text&&event.key.startsWith("Arrow")){event.preventDefault();pushPdfHistory(runtimeSources.get(block));const amount=event.shiftKey?10:1;if(event.key==="ArrowLeft")edit.x-=amount;if(event.key==="ArrowRight")edit.x+=amount;if(event.key==="ArrowDown")edit.y-=amount;if(event.key==="ArrowUp")edit.y+=amount;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);}
     });
     textLayer.addEventListener("focusout", (event) => {

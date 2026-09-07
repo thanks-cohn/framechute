@@ -79,6 +79,14 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     }
     textLayer.append(span);
   });
+  edits.filter(edit => edit.page === pageNumber && edit.kind === "text").forEach(edit => {
+    const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
+    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);
+    const text=document.createElement("span");text.className="pdf-edit-text";text.textContent=saved.text;span.append(text);
+    Object.assign(span.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`,fontSize:`${saved.fontSize*scale}px`});
+    const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
+    const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
+  });
   return { viewport, content };
 }
 
@@ -109,7 +117,7 @@ export function layoutPdfText(edit, font) {
   const value = normalizePdfEdit(edit), lineHeight = value.fontSize * 1.2;
   const limit = Math.max(1, Math.floor(value.height / lineHeight));
   const allLines = font ? wrapPdfText(value.text, font, value.fontSize, value.width) : value.text.replace(/\r\n?/g, "\n").split("\n");
-  return { ...value, lineHeight, lines: allLines.slice(0, limit), overflow: allLines.length > limit };
+  return { ...value, lineHeight, firstBaseline: value.y + value.height - value.fontSize, lines: allLines.slice(0, limit), overflow: allLines.length > limit };
 }
 
 export function pdfRectToViewport(viewport, rect) {
@@ -136,7 +144,7 @@ export async function serializeEditedPdf(model, edits) {
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
     if (edit.kind === "replacement") page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
-    edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.y - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
+    edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.firstBaseline - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }
