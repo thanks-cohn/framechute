@@ -25,8 +25,9 @@ export function canClaimImageDrop(event) {
 
 export function claimDocumentDrop(owner, event) {
   if (!canClaimImageDrop(event)) return false;
-  session ||= { block: null, kind: "external-image", sourceBlobProvider: null };
-  session.owner = "document"; session.claimedBy = owner;
+  // External drags are owned by the local handler/event propagation only. A
+  // persistent claim would incorrectly follow the pointer back to workspace.
+  if (session?.block?.isConnected) { session.owner = "document"; session.claimedBy = owner; }
   return true;
 }
 

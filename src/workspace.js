@@ -23,6 +23,7 @@ import { zipSync } from "./vendor/fflate.mjs";
 import { PDFDocument } from "./vendor/pdf-lib.mjs";
 import { createSimpleDocx } from "./actions/document-operations.js";
 import { beginInternalDrag, claimDocumentDrop, endInternalDrag, imageBlobsForDrop, isInternalFrameChuteDrag } from "./drag-ownership.mjs";
+import { customImageSourceBlob } from "./custom-image-source.mjs";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -1046,6 +1047,7 @@ window.FrameChuteWorkspace = Object.freeze({
   captureBlock,
   async sourceBlob(block) {
     const type = block.dataset.blockType;
+    if (["image", "canvas"].includes(block.dataset.customKind)) return customImageSourceBlob(block, { resolveHandle });
     const definition = blockTypes.get(type); if (definition?.exportBlob) return definition.exportBlob(block);
     if (type === "text") return new Blob([block.querySelector(".text-editor")?.value || ""], { type: "text/plain" });
     const runtime = runtimeSources.get(block);
