@@ -63,7 +63,22 @@ export function sourceMaskForEdit(edit) {
 }
 
 export function sourceMasksForPage(edits, pageNumber) {
-  return edits.filter((edit) => edit.page === pageNumber).map(sourceMaskForEdit);
+  return edits.filter((edit) => edit.page === pageNumber && (edit.kind || "replacement") === "replacement").map(sourceMaskForEdit);
+}
+
+/** Normalize legacy replacements and new fields behind one PDF edit-object contract. */
+export function normalizePdfEdit(edit) {
+  const kind = edit.kind || "replacement";
+  return { ...edit, kind, id: edit.id || `${kind}:${edit.page}:${edit.index ?? "new"}`, text: edit.text ?? edit.replacement ?? "",
+    width: Math.max(2, Number(edit.width) || 2), height: Math.max(2, Number(edit.height) || Number(edit.fontSize) * 1.2 || 14.4),
+    fontFamily: edit.fontFamily || "Helvetica", fontSize: Math.max(4, Number(edit.fontSize) || 12), rotation: Number(edit.rotation) || 0 };
+}
+
+/** Shared bounded multiline rule: explicit lines are preserved and clipped to field height. */
+export function layoutPdfText(edit) {
+  const value = normalizePdfEdit(edit), lineHeight = value.fontSize * 1.2;
+  const limit = Math.max(1, Math.floor(value.height / lineHeight));
+  return { ...value, lineHeight, lines: value.text.replace(/\r\n?/g, "\n").split("\n").slice(0, limit), overflow: value.text.split(/\r\n?|\n/).length > limit };
 }
 
 export function pdfRectToViewport(viewport, rect) {
@@ -79,14 +94,14 @@ export function viewportRectToPdf(viewport, rect) {
 export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
   const font = await output.embedFont(StandardFonts.Helvetica);
-  for (const edit of edits) {
+  for (const rawEdit of edits) {
+    const edit = layoutPdfText(rawEdit);
     const page = output.getPage(edit.page - 1);
-    const size = Math.max(4, Number(edit.fontSize) || 12);
-    const mask = sourceMaskForEdit(edit);
+    const size = edit.fontSize;
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
-    page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
-    page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
+    if (edit.kind === "replacement") page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
+    edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.y - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }

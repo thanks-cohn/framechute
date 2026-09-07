@@ -35,7 +35,12 @@ function parseRun(run, relationships, parts) {
     return "";
   }).join("");
   const images = [...run.children].filter((node) => ["drawing", "pict"].includes(local(node))).map((node) => imageFromNode(node, relationships, parts));
-  return { text, images, bold: descendant(props, "b").length > 0, italic: descendant(props, "i").length > 0, underline: descendant(props, "u").length > 0 };
+  const enabled = (name) => {
+    const property = descendant(props, name)[0];
+    const value = property?.getAttributeNS?.(W, "val") || property?.getAttribute?.("w:val") || property?.getAttribute?.("val");
+    return Boolean(property) && !["0", "false", "none", "off"].includes(String(value || "").toLowerCase());
+  };
+  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u") };
 }
 
 function parseParagraph(paragraph, relationships, parts) {

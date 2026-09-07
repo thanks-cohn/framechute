@@ -13,9 +13,10 @@ import {
   resolveHandle,
   storeHandle
 } from "./file-access.js";
-import { writeCompleteBlob, saveDocumentAs } from "./documents/document-save.js";
+import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
+import { editorNodeToRuns } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
 import { saveBlobAs } from "./actions/native-save.js";
 import { zipSync } from "./vendor/fflate.mjs";
@@ -375,9 +376,8 @@ async function saveNativeDocument(block, saveAs = false) {
   const extension = block.dataset.blockType;
   const filename = block.querySelector(".block-name")?.value || source?.displayName || `document.${extension}`;
   const options = { serialize: runtime.serialize, filename, extension, mimeType: extension === "pdf" ? "application/pdf" : DOCX_MIME, handleKey: source?.handleKey };
-  let result;
-  if (!saveAs) result = await writeCompleteBlob(runtime.handle, runtime.serialize);
-  if (saveAs || !result?.saved) result = await saveDocumentAs(options);
+  const result = await saveDocument({ serialize: runtime.serialize, handle: runtime.handle, saveAs,
+    saveAsWriter: (blob) => saveDocumentAs({ ...options, blob }) });
   if (!result.saved) return;
   if (result.handle) {
     runtime.handle = result.handle;
@@ -681,7 +681,8 @@ registerBlockType("pdf", {
 });
 
 function docxBlocksFromEditor(editor) {
-  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: [...node.childNodes].map((child) => child.nodeType === 1 && child.matches("img[data-docx-relationship]") ? ({ text: "", images: [{ kind: "image", relationshipId: child.dataset.docxRelationship, part: child.dataset.docxPart, mime: child.dataset.docxMime, width: Number(child.dataset.docxWidth) || child.width, height: Number(child.dataset.docxHeight) || child.height }] }) : ({ text: child.textContent || "", bold: child.nodeType === 1 && ["B", "STRONG"].includes(child.tagName), italic: child.nodeType === 1 && ["I", "EM"].includes(child.tagName), underline: child.nodeType === 1 && child.tagName === "U" })).filter((run) => run.text.length || run.images?.length) });
+  const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
+  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: editorNodeToRuns(node, imageRun) });
   const blocks = [];
   for (const node of editor.children) {
     if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
@@ -699,7 +700,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     const tag = heading ? `h${heading[1]}` : "p";
     const element = document.createElement(tag); element.style.textAlign = p.alignment || "left";
     for (const run of p.runs || []) {
-      if (run.text) { const span = document.createElement(run.bold ? "strong" : run.italic ? "em" : run.underline ? "u" : "span"); span.textContent = run.text; element.append(span); }
+      if (run.text) { const span = document.createElement("span"); span.textContent = run.text; span.style.fontWeight=run.bold?"bold":"";span.style.fontStyle=run.italic?"italic":"";span.style.textDecoration=run.underline?"underline":"";element.append(span); }
       for (const image of run.images || []) {
         if (image.unsupported || !model?.parts?.[image.part]) { const placeholder=document.createElement("span");placeholder.className="docx-image-unavailable";placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;placeholder.contentEditable="false";element.append(placeholder);continue; }
         const img=document.createElement("img"),url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));urls.push(url);

@@ -635,7 +635,7 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-text-item[contenteditable="true"] { color: #111; background: white; outline: 2px solid #276ee8; z-index: 2; }
 .pdf-text-edit { color: #111; background: transparent; outline: none; overflow: hidden; z-index: 2; }
 .pdf-text-edit.is-selected { outline: 2px solid #276ee8; overflow: visible; z-index: 3; }
-.pdf-edit-text { display: block; min-width: 100%; min-height: 100%; overflow: hidden; }
+.pdf-edit-text { display: block; min-width: 100%; min-height: 100%; overflow: hidden; white-space: pre-wrap; }
 .pdf-move-handle, .pdf-resize-handle { display: none; position: absolute; padding: 0; border: 1px solid #276ee8; background: #fff; color: #174a9c; z-index: 4; }
 .pdf-text-edit.is-selected .pdf-move-handle, .pdf-text-edit.is-selected .pdf-resize-handle { display: block; }
 .pdf-move-handle { left: -18px; top: -18px; width: 18px; height: 18px; cursor: move; font-size: 11px; }

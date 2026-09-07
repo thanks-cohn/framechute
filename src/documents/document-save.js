@@ -16,10 +16,7 @@ async function writableHandle(handle) {
   return permission === "granted";
 }
 
-export async function writeCompleteBlob(handle, serialize) {
-  // Serialization deliberately precedes createWritable: a parser/generator
-  // failure can never truncate the user's existing document.
-  const blob = await serialize();
+export async function writeBlobToHandle(handle, blob) {
   if (!(blob instanceof Blob)) throw new TypeError("Document serializer did not return a Blob");
   if (!await writableHandle(handle)) return { saved: false, reason: "unwritable" };
   const writer = await handle.createWritable();
@@ -33,9 +30,27 @@ export async function writeCompleteBlob(handle, serialize) {
   return { saved: true, handle, blob };
 }
 
-export async function saveDocumentAs({ serialize, filename, extension, mimeType, handleKey }) {
-  const suggestedName = normalizeDocumentFilename(filename, extension);
+export async function writeCompleteBlob(handle, serialize) {
+  // Serialization deliberately precedes createWritable: a parser/generator
+  // failure can never truncate the user's existing document.
+  return writeBlobToHandle(handle, await serialize());
+}
+
+/** Serialize canonical visible state once, then apply Save/Save As policy. */
+export async function saveDocument({ serialize, handle, saveAs = false, saveAsWriter }) {
   const blob = await serialize();
+  if (!(blob instanceof Blob)) throw new TypeError("Document serializer did not return a Blob");
+  if (!saveAs) {
+    const result = await writeBlobToHandle(handle, blob);
+    if (result.saved) return result;
+  }
+  if (typeof saveAsWriter !== "function") return { saved: false, reason: "unwritable" };
+  return saveAsWriter(blob);
+}
+
+export async function saveDocumentAs({ serialize, blob: suppliedBlob, filename, extension, mimeType, handleKey }) {
+  const suggestedName = normalizeDocumentFilename(filename, extension);
+  const blob = suppliedBlob || await serialize();
   if (!(blob instanceof Blob)) throw new TypeError("Document serializer did not return a Blob");
 
   if (typeof window.showSaveFilePicker === "function") {
@@ -49,7 +64,7 @@ export async function saveDocumentAs({ serialize, filename, extension, mimeType,
       if (error?.name === "AbortError") return { saved: false, cancelled: true };
       throw error;
     }
-    const result = await writeCompleteBlob(handle, async () => blob);
+    const result = await writeBlobToHandle(handle, blob);
     if (result.saved && handleKey) await storeHandle(handleKey, handle);
     return result;
   }
@@ -62,4 +77,3 @@ export async function saveDocumentAs({ serialize, filename, extension, mimeType,
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
   return { saved: true, downloaded: true, blob };
 }
-
