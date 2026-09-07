@@ -50,3 +50,10 @@ test("multiline layout preserves repeated spaces and honestly clips to field hei
   assert.deepEqual(layout.lines, ["hello  world", "second line"]);
   assert.equal(layout.lineHeight, 12); assert.equal(layout.overflow, true);
 });
+
+test("canonical layout applies width wrapping before height clipping", () => {
+  const font = { widthOfTextAtSize: value => value.length * 5 };
+  const layout = layoutPdfText({ kind: "text", page: 1, x: 0, y: 50, width: 15, height: 24, fontSize: 10, text: "abcdef\nthird" }, font);
+  assert.deepEqual(layout.lines, ["abc", "def"]);
+  assert.equal(layout.overflow, true);
+});
