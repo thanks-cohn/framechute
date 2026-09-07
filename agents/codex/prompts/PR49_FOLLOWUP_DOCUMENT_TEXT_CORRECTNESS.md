@@ -1,181 +1,390 @@
-# PR #49 follow-up — finish the document text primitive before merge
+# PR #49 follow-up — 30-minute document substrate snowball pass
 
-Work on the existing PR #49 branch. Do not start a separate feature branch unless required. Preserve the current deterministic PDF font/layout work; this follow-up exists because the current PR is a useful foundation but is not yet a complete, browser-honest document-text slice.
+Work on the existing PR #49 branch. Preserve the good deterministic PDF text/font work already in this PR. Do **not** treat the remaining issues as a stack of unrelated tickets.
 
-Use up to 30 minutes. At the 30-minute mark, **conclude active implementation and provide a handoff**.
+Use up to 30 minutes. The goal is to solve the **roots** of as many document problems as possible so future requests become thin adapters instead of new systems. At the 30-minute mark, **conclude active implementation and provide a handoff**.
 
-## Goal
+## Mission
 
-Finish one reusable **document text correctness substrate** instead of scattering fixes:
+FrameChute should not need ten more document-fix runs if three carefully chosen substrate passes can do the job.
+
+For this run, concentrate on the reusable document core:
 
 ```text
-canonical PDF edit object
-+ deterministic multiline layout
-+ live preview that matches serialization
-+ reliable Save / Save As
-+ canonical DOCX run formatting
+1. one canonical rich-text/run model
+2. one canonical PDF edit-object model
+3. one shared document Save / Save As contract
+4. one reusable document-image geometry model
+5. preview == serialization == reopen
 ```
 
-The result should make later font, color, style, web-conversion, and Chemium work cheaper.
+Prefer one helper/model with several callers over three local patches.
+
+Core law:
+
+> Fix the representation and pipeline once; let many UI features become small projections of it.
+
+Do not spend the 30 minutes making surface polish beautiful while the underlying model is still inconsistent.
 
 ---
 
-## P0 — PDF multiline preview must actually match saved PDF
+# PHASE 0 — fast audit, then commit to root causes
 
-PR #49 now stores newlines and serializes them line-by-line, but verify the live editor/render path visibly preserves them after rerender.
-
-Audit `src/workspace.css` and the PDF text-layer CSS. The editable text element must support deterministic whitespace/multiline presentation, e.g. an appropriate `white-space: pre-wrap` / wrapping rule, rather than collapsing `\n` and repeated spaces after rerender.
-
-Required behavior:
+Spend only a short initial pass locating the actual data boundaries:
 
 ```text
-edit field to:
-hello  world
-second line
-
-→ blur/rerender
-→ still visibly shows two spaces and the second line
-→ Save As
-→ reopened PDF matches the same line structure
+DOM/editor state
+→ canonical document model
+→ serializer
+→ save destination
+→ reopen/parser
 ```
 
-Width remains the wrap boundary. Height is a real field boundary: do not silently paint endless lines outside the field. Choose one honest V1 policy and use it in preview + serialization (clip overflow or constrain line count consistently). Avoid preview/export disagreement.
+For each bug below, fix the earliest reusable boundary that can prevent the whole class of bug.
 
-Keep Enter = newline, Ctrl/Cmd+Enter = commit, Tab = deterministic indentation.
+Examples:
 
-Add focused tests for whitespace/newline preservation and any height/overflow helper you introduce.
+- underline disappearing in Word is primarily a DOM → run-model normalization problem, not a one-off `<w:u>` patch;
+- PDF newline mismatch is primarily a shared layout/preview contract problem, not a CSS-only patch;
+- Save vs Save As divergence is primarily one write contract problem, not two button handlers;
+- inserted image resize/rotate/morph should eventually be geometry on a document object, not separate DOM tricks for PDF and DOCX.
 
 ---
 
-## P0 — PDF Save / Save As must be verified, not assumed
+# P0 ROOT 1 — canonical rich-text run formatting for DOCX and future Chemium conversion
 
-The larger V4 prompt explicitly called broken PDF Save / Save As a correctness blocker. PR #49 did not change the destination-write path.
+Fix the reported DOCX round-trip bug where underline can look correct in FrameChute but disappear after saving and opening in Microsoft Word.
 
-Audit the shared document save path:
+The OOXML serializer already knows how to emit underline. Fix the more general source of truth: **DOM/editor formatting must normalize into a canonical run style model.**
+
+Create/refactor a reusable run-style reader/model with at least:
 
 ```text
-visible canonical PDF edit state
-→ serialize once
-→ Save writes current writable handle when available
-→ Save As chooses/writes a new target
-→ success only after bytes are actually written
+bold: boolean
+italic: boolean
+underline: boolean
 ```
 
-Requirements:
-
-- Save As from a PDF opened from bytes/download-only must still produce the edited PDF.
-- Save must use the current writable handle when available.
-- If overwrite cannot happen, report honestly and route/offer Save As; never clear dirty state on a failed write.
-- After a successful Save As, the new handle/name should become the current target when the platform supplies one.
-- Do not serialize two subtly different versions for save vs save-as.
-
-Add unit-level coverage around the save decision/helper where possible. If browser picker APIs cannot be automated, isolate the decision logic so it is testable and state the manual check required.
-
----
-
-## PDF text field primitive — complete the thin vertical slice
-
-Do not build a whole PDF editor, but make the canonical edit object capable of representing both replacement text and a newly inserted text field.
-
-Preferred model fields:
+Design it so these can be added later without replacing the model:
 
 ```text
-kind: replacement | text
-page
-id/index
-x / y
-width / height
-text/replacement
+strike
 fontFamily
 fontSize
-rotation
-z/order
-source mask fields only when replacing baked PDF text
+color
+background/highlight
+link
 ```
 
-### Add Text Field
-
-Add one straightforward creation route inside PDF context, ideally reusable by the future PDF-specific context menu:
-
-```text
-Add Text Field
-→ click or drag on current page
-→ new editable field appears
-→ type multiline text
-→ move/resize
-→ font + font size controls apply
-→ undo removes it
-→ redo restores it
-→ Save/Save As serializes it
-```
-
-Do not give a new text field a source mask because there is no baked source text to cover.
-
-If time is too tight, land the canonical model + creation helper + one toolbar/button route; do not create a second incompatible implementation later.
-
----
-
-## DOCX underline / formatting round-trip correctness
-
-Fix the reported bug where underline can appear in FrameChute but disappear after saving the DOCX and opening it in Microsoft Word.
-
-The OOXML serializer already knows how to emit underline. The fragile part is DOM → canonical run extraction and combined formatting.
-
-Do not special-case only `<u>`.
-
-Create/refactor a reusable run-format reader so it recognizes inherited/nested formatting from the editable DOM, including at least:
-
-```text
-bold
-italic
-underline
-```
-
-It must handle equivalent browser DOM such as:
+The reader must recognize nested/inherited/equivalent browser DOM, not just literal tags:
 
 ```html
 <u>text</u>
 <span style="text-decoration: underline">text</span>
 <strong><u>text</u></strong>
 <span style="font-weight:700;text-decoration:underline">text</span>
+<em><strong><u>text</u></strong></em>
 ```
 
-Formatting must be combinable, not mutually exclusive. A run may be bold + italic + underline simultaneously.
+Formatting is combinable. A run may be bold + italic + underline simultaneously.
 
-Canonical run → OOXML must emit all applicable run properties, preserving the least-destructive package path when possible.
+Canonical run → OOXML should emit all active properties while preserving the existing least-destructive package path whenever possible.
 
-Add round-trip tests that inspect/reparse the saved DOCX model/package:
+### Required tests
+
+Round trip through the actual DOCX model/serializer/parser where practical:
 
 ```text
-underline only → survives
+underline → survives
 bold + underline → both survive
 italic + underline → both survive
 bold + italic + underline → all survive
 ```
 
-Prefer testing serialized OOXML/reparse behavior rather than merely testing DOM appearance.
+Inspect/reparse `word/document.xml`; do not test only visual DOM.
 
-This run-format primitive should be designed so later font family, font size, color, strike, and Chemium/DOCX conversion can extend the same model.
+### Snowball requirement
+
+Keep the run model format-neutral enough that later:
+
+```text
+DOCX → Chemium/Markdown
+Chemium → DOCX
+Chemium → HTML
+```
+
+can reuse the same semantic style flags instead of parsing browser tags again.
 
 ---
 
-## Preserve the good part of PR #49
+# P0 ROOT 2 — canonical PDF text/edit object + one layout contract
 
-Keep the existing improvements unless a test proves they need adjustment:
+PR #49 introduced useful primitives (`PDF_STANDARD_FONTS`, font resolution, deterministic line layout). Finish the abstraction so both replacement text and newly created text fields are instances of one edit-object model.
+
+Preferred conceptual model:
+
+```text
+kind: replacement | text | image
+id
+page
+x / y
+width / height
+rotation
+z/order
+
+text fields:
+text
+fontFamily
+fontSize
+
+replacement-only:
+sourceX / sourceY / sourceWidth / sourceHeight
+source index/reference
+
+image fields later/if time:
+asset/source reference
+aspect ratio
+transform/warp geometry
+```
+
+Do not force every current property name to change if migration risk is high; introduce normalization/helpers so callers see one contract.
+
+## Multiline + whitespace must match live preview, serialization, and reopen
+
+Current PR serializes lines deterministically. Verify the live preview uses the same whitespace semantics.
+
+Required behavior:
+
+```text
+hello  world
+second line
+
+→ blur/rerender
+→ two spaces remain visible
+→ newline remains visible
+→ Save As
+→ reopened PDF has the same line structure
+```
+
+Use an explicit preview rule such as `white-space: pre-wrap` where appropriate. Width is wrap width.
+
+Height must be meaningful. Do not preview unlimited lines inside a bounded field but serialize them outside it. Choose one honest V1 rule and share it between preview and serialization:
+
+```text
+clip overflow
+OR
+limit rendered lines to field height
+```
+
+Expose/helper-test the layout result rather than duplicating line math in DOM and serializer.
+
+Keep:
+
+```text
+Enter = newline
+Ctrl/Cmd+Enter = commit
+Tab = deterministic indentation
+```
+
+## Add Text Field as a thin proof of the model
+
+If the model is made general enough, add one simple creation route:
+
+```text
+Add Text Field
+→ click/drag current PDF page
+→ type
+→ move/resize
+→ font/font size
+→ undo/redo
+→ Save/Save As
+```
+
+A new field has no source mask.
+
+If full UI cannot fit in time, still land the model/helper + serializer support + one minimal toolbar entry rather than inventing an incompatible system next run.
+
+---
+
+# P0 ROOT 3 — one shared document Save / Save As contract
+
+Broken/unreliable PDF Save / Save As is a correctness blocker. Fix the write pipeline at the shared document boundary rather than only the PDF buttons.
+
+Target contract:
+
+```text
+canonical visible document state
+→ serialize exactly once for this save operation
+→ choose destination policy
+→ write bytes
+→ only then clear dirty state / report success
+```
+
+One helper should be usable by PDF, DOCX, and future Chemium where practical.
+
+Required semantics:
+
+```text
+Save
+→ use current writable handle if available
+→ if unavailable/unwritable, do not fake success; route/offer Save As
+
+Save As
+→ choose/write new target
+→ edited bytes are exactly the bytes written
+→ returned handle/name becomes current target when available
+```
+
+A file opened from embedded bytes/download-only state must still be Save-As-able.
+
+Do not generate separate subtly different serialized blobs for Save and Save As.
+
+Do not clear `documentDirty` until write success is known.
+
+### Test the policy, not browser chrome
+
+If file-picker APIs cannot run in Node, isolate destination/save-decision logic behind injected adapters so tests can cover:
+
+```text
+writable handle → Save writes handle
+no handle → Save requests/falls back to Save As policy
+failed write → dirty remains true
+successful Save As → returned handle/name adopted
+serialize called once per save operation
+```
+
+---
+
+# P1 ROOT 4 — reusable document-image object geometry
+
+If P0 roots are stable with time remaining, do **not** jump to random UI polish. Establish the image-object substrate that can serve both PDF and DOCX.
+
+The strategic FrameChute differentiator is:
+
+```text
+image from workspace/OS
+→ drag into PDF or DOCX
+→ it becomes a real document edit object
+→ move / resize / rotate
+→ later warp/morph
+→ save
+```
+
+Create or extract a format-neutral geometry representation/helper such as:
+
+```text
+x / y
+width / height
+rotation
+aspectLocked
+z/order
+optional four-corner quad / warp points later
+```
+
+PDF and DOCX serializers can have different adapters, but movement/resize/history should operate on the same conceptual geometry.
+
+### Thin vertical slice if time permits
+
+Prefer one of these complete slices over two half implementations:
+
+```text
+A. PDF inserted image → move/resize/rotate → undo → save
+OR
+B. DOCX inserted image → resize/rotate where OOXML support is honest → save
+```
+
+Existing workspace-image → document must remain a copy; source remains in workspace. Global `Drop into FrameChute` must never appear during internal document manipulation.
+
+### Future-proofing
+
+Do not fake warp/morph with CSS if it cannot serialize. Instead make room for a future quad/perspective representation:
+
+```text
+p0 p1 p2 p3
+```
+
+so SVG/image morphing can later become a serializer adapter problem rather than another document-specific editor.
+
+---
+
+# P1 ROOT 5 — small document command/context layer only if it falls out naturally
+
+If the PDF edit-object model is in place, a minimal PDF-specific command registry/context is useful because future `Add Text Field`, image transform, duplicate, delete, Save, Save As should not be hardcoded into one giant generic menu.
+
+Do not spend large time building polished nested menus in this run. It is enough to introduce a reusable command applicability model or event path that later menu UI can consume.
+
+Example conceptual commands:
+
+```text
+pdf.addText
+pdf.editText
+pdf.deleteEditObject
+pdf.duplicateEditObject
+document.save
+document.saveAs
+```
+
+This is lower priority than correctness/model work.
+
+---
+
+# KEEP / VERIFY the good work already in PR #49
+
+Preserve unless tests reveal a defect:
 
 - packaged standard PDF font inventory,
 - safe font resolver/fallback,
-- deterministic line layout,
-- embed only fonts actually used,
-- font-family UI,
-- Enter/newline, Ctrl/Cmd+Enter commit, Tab indentation,
+- deterministic PDF text layout,
+- embedding only fonts actually used,
+- font-family picker,
+- font-size control,
+- Enter/newline,
+- Ctrl/Cmd+Enter commit,
+- Tab indentation,
 - focused PDF text tests.
 
-Do not broaden this follow-up into camera/zoom, stitching, image editor, Quick Actions, or the entire V4 backlog. Those remain subsequent primitive passes. The point here is to make the **document text primitive genuinely complete enough to merge**.
+The current PR is small because it implemented one useful foundation. This follow-up should make that foundation connect to the actual save/reopen/document-model pipeline.
 
 ---
 
-## Validation
+# DO NOT spend this run on unrelated large surfaces
+
+Unless a tiny change is directly enabled by the new substrate, leave these for the next root pass:
+
+```text
+camera/zoom/world expansion
+Quick Actions floating UI
+full image editor/color picker
+stitching/composition
+region export
+comic primitives
+responsive header redesign
+```
+
+The purpose is not to solve fewer things; it is to avoid context-switching into independent systems before the document substrate is trustworthy.
+
+---
+
+# 30-minute execution strategy
+
+Use judgment rather than mechanically spending equal time per section.
+
+Suggested sequence:
+
+```text
+0–5 min    audit current branch + identify shared boundaries
+5–18 min   implement P0 shared models/pipelines
+18–25 min  complete thin vertical slices + tests
+25–30 min  validation, fix regressions, handoff
+```
+
+If a root fix unlocks several small features cheaply, take them. If a feature requires a second bespoke architecture, defer it and document the exact adapter needed next.
+
+Measure success by **future work eliminated**, not button count.
+
+---
+
+# Validation
 
 Run:
 
@@ -186,19 +395,31 @@ git diff --check
 bash scripts/package-web-store.sh
 ```
 
-Manual browser checks if Chromium is available:
+Manual checks if Chromium/Word are available:
 
 ```text
-1. PDF field Enter visibly survives blur/rerender.
-2. Repeated spaces visibly survive rerender.
-3. Font + font size preview and saved PDF agree.
-4. Save As edited PDF → reopen → edits are present.
-5. Save to writable target → reopen → edits are present.
-6. Add Text Field → multiline → move/resize → undo/redo → save.
-7. DOCX underline → Save As → open in Microsoft Word → underline remains.
-8. DOCX bold+italic+underline → all three remain in Word.
+1. PDF multiline + repeated spaces survive blur/rerender.
+2. PDF font + font size preview match saved PDF.
+3. PDF Save As → reopen → visible edits survive.
+4. PDF Save to writable handle → reopen → visible edits survive.
+5. Add Text Field, if implemented → multiline/move/resize/undo/save.
+6. DOCX underline → Save As → Microsoft Word still shows underline.
+7. DOCX bold + italic + underline → all survive together in Word.
+8. Inserted document image slice, if implemented → geometry survives save/reopen.
 ```
 
-If Word itself is unavailable in the environment, validate the produced `word/document.xml` and reparse the saved DOCX, and list Microsoft Word verification as a manual user check.
+If Microsoft Word is unavailable, inspect/reparse the resulting DOCX package and explicitly mark Word as a user manual check.
 
-Handoff must include completed, remaining, files changed, tests/results, manual checks or untested items, risks/issues, exact next steps, branch, commit, and PR.
+At the 30-minute mark, **conclude active implementation and provide a handoff** containing:
+
+- reusable primitives landed,
+- user-visible bugs/features those primitives solved,
+- remaining thin adapters,
+- files changed,
+- tests/results,
+- manual checks performed/not performed,
+- risks/issues,
+- exact next highest-leverage root pass,
+- branch,
+- commit,
+- PR.
