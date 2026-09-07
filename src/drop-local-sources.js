@@ -8,6 +8,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { classifyLocalFile, extensionOf } from "./media-types.js";
+import { clearExternalDropOverlay, installExternalDropGuard, isExternalDrag } from "./external-drop-guard.mjs";
 
 const MARKER = "__FLASHFRAME_LOCAL_DROP_V1__";
 const workspace = document.querySelector("#workspace");
@@ -17,6 +18,8 @@ const addTextButton = document.querySelector("#add-text");
 const objectUrls = new WeakMap();
 let dropOffset = 0;
 let dragDepth = 0;
+
+installExternalDropGuard(workspace);
 
 if (!document.querySelector('link[data-flashframe-web-drop-style="true"]')) {
   const link = document.createElement("link");
@@ -906,6 +909,7 @@ window.FrameChuteIngest = Object.freeze({
 });
 
 workspace.addEventListener("dragenter", (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   if (![...event.dataTransfer?.items || []].some((item) => item.kind === "file")) return;
   event.preventDefault();
   dragDepth += 1;
@@ -913,6 +917,7 @@ workspace.addEventListener("dragenter", (event) => {
 });
 
 workspace.addEventListener("dragover", (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   if (![...event.dataTransfer?.items || []].some((item) => item.kind === "file")) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
@@ -925,6 +930,7 @@ workspace.addEventListener("dragleave", () => {
 });
 
 workspace.addEventListener("drop", async (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   const items = [...event.dataTransfer?.items || []].filter((item) => item.kind === "file");
   if (!items.length) return;
 

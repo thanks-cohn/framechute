@@ -9,6 +9,7 @@ import {
 } from "./file-access.js";
 import { classifyLocalFile, looksLikeImageUrl, nativeImagePickerExtensions } from "./media-types.js";
 import { parseCsv } from "./actions/csv.js";
+import { clearExternalDropOverlay, installExternalDropGuard, isExternalDrag } from "./external-drop-guard.mjs";
 
 const MARKER = "__FLASHFRAME_CUSTOM_BLOCK_V1__";
 const LEGACY_EMBED_KIND = "you" + "tube";
@@ -21,6 +22,8 @@ const openUrlButton = document.querySelector("#open-url");
 const customObjectUrls = new WeakMap();
 let customOffset = 0;
 let dragDepth = 0;
+
+installExternalDropGuard(workspace);
 
 function setStatus(message) {
   if (status) status.textContent = message;
@@ -613,12 +616,14 @@ openUrlButton?.addEventListener("click", () => {
 });
 
 workspace.addEventListener("dragenter", (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   event.preventDefault();
   dragDepth += 1;
   workspace.classList.add("is-drop-target");
 });
 
 workspace.addEventListener("dragover", (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
   workspace.classList.add("is-drop-target");
@@ -630,6 +635,7 @@ workspace.addEventListener("dragleave", () => {
 });
 
 workspace.addEventListener("drop", async (event) => {
+  if (!isExternalDrag(event)) { dragDepth = 0; clearExternalDropOverlay(workspace); return; }
   event.preventDefault();
   dragDepth = 0;
   workspace.classList.remove("is-drop-target");

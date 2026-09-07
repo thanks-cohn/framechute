@@ -1,5 +1,9 @@
+import { clearExternalDropOverlay, installExternalDropGuard, isExternalDrag } from "./external-drop-guard.mjs";
+
 const workspace = document.querySelector("#workspace");
 const mediaDock = document.querySelector("#video-dock");
+
+installExternalDropGuard(workspace);
 
 function cloneDragEvent(type, event) {
   return new DragEvent(type, {
@@ -29,7 +33,7 @@ function forwardToWorkspace(type, event) {
 
 if (workspace && mediaDock) {
   mediaDock.addEventListener("dragenter", (event) => {
-    if (!event.dataTransfer) return;
+    if (!isExternalDrag(event)) { clearExternalDropOverlay(workspace); return; }
     event.preventDefault();
     event.stopPropagation();
     workspace.classList.add("is-drop-target");
@@ -37,7 +41,7 @@ if (workspace && mediaDock) {
   });
 
   mediaDock.addEventListener("dragover", (event) => {
-    if (!event.dataTransfer) return;
+    if (!isExternalDrag(event)) { clearExternalDropOverlay(workspace); return; }
     event.preventDefault();
     event.stopPropagation();
     try { event.dataTransfer.dropEffect = "copy"; } catch {}
