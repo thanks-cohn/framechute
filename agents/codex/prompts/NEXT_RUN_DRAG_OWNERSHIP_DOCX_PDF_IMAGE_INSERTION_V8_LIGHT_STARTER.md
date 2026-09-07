@@ -1,0 +1,5 @@
+Read and execute `agents/codex/prompts/NEXT_RUN_DRAG_OWNERSHIP_DOCX_PDF_IMAGE_INSERTION_V8.md` from the latest `main`. Treat it as the single authoritative prompt for this run.
+
+The three blocking outcomes are: existing FrameChute images can be picked up/moved without ever triggering the global “Drop into FrameChute” overlay; images can be dropped into DOCX again from both the OS and existing FrameChute image objects; and images can be dropped into PDF from both the OS and existing FrameChute image objects, with PDF insertion using canonical editable state that saves/reopens correctly. Fix the shared drag-ownership model rather than applying another overlay-removal patch. Preserve merged PR #53 document work and external workspace ingest.
+
+Use the available runtime aggressively. At approximately the 30-minute reliability checkpoint, **conclude active implementation and provide a handoff** exactly as required by the authoritative prompt so a continuation run can immediately resume if needed.
