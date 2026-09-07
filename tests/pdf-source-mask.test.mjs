@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sourceMaskForEdit, sourceMasksForPage } from "../src/documents/pdf-document.js";
+import { layoutPdfText, normalizePdfEdit, sourceMaskForEdit, sourceMasksForPage } from "../src/documents/pdf-document.js";
 
 const edit = {
   page: 2, index: 4, replacement: "GOODBYE",
@@ -38,4 +38,22 @@ test("restored history snapshots determine mask and replacement records together
   current = redo.pop();
   assert.deepEqual(current, [edit]);
   assert.deepEqual(sourceMasksForPage(current, 2), [sourceMaskForEdit(edit)]);
+});
+
+test("legacy replacements normalize to the shared edit-object model", () => {
+  assert.deepEqual(normalizePdfEdit(edit), { ...edit, kind: "replacement", id: "replacement:2:4", text: "GOODBYE", fontFamily: "Helvetica", rotation: 0 });
+  assert.deepEqual(sourceMasksForPage([{ ...edit, kind: "text" }], 2), []);
+});
+
+test("multiline layout preserves repeated spaces and honestly clips to field height", () => {
+  const layout = layoutPdfText({ kind: "text", page: 1, x: 0, y: 50, width: 100, height: 24, fontSize: 10, text: "hello  world\nsecond line\nclipped" });
+  assert.deepEqual(layout.lines, ["hello  world", "second line"]);
+  assert.equal(layout.lineHeight, 12); assert.equal(layout.overflow, true);
+});
+
+test("canonical layout applies width wrapping before height clipping", () => {
+  const font = { widthOfTextAtSize: value => value.length * 5 };
+  const layout = layoutPdfText({ kind: "text", page: 1, x: 0, y: 50, width: 15, height: 24, fontSize: 10, text: "abcdef\nthird" }, font);
+  assert.deepEqual(layout.lines, ["abc", "def"]);
+  assert.equal(layout.overflow, true);
 });

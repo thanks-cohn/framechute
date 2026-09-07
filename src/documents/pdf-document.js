@@ -3,6 +3,33 @@ import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs"
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
 
+export const PDF_STANDARD_FONTS = Object.freeze([
+  ["Helvetica", StandardFonts.Helvetica], ["Helvetica Bold", StandardFonts.HelveticaBold],
+  ["Helvetica Oblique", StandardFonts.HelveticaOblique], ["Times Roman", StandardFonts.TimesRoman],
+  ["Times Bold", StandardFonts.TimesRomanBold], ["Times Italic", StandardFonts.TimesRomanItalic],
+  ["Courier", StandardFonts.Courier], ["Courier Bold", StandardFonts.CourierBold],
+  ["Courier Oblique", StandardFonts.CourierOblique]
+]);
+const PDF_FONT_MAP = new Map(PDF_STANDARD_FONTS);
+
+export function resolvePdfStandardFont(name) { return PDF_FONT_MAP.get(name) || StandardFonts.Helvetica; }
+
+/** Deterministic width-aware wrapping that preserves explicit lines and whitespace. */
+export function wrapPdfText(text, font, size, maxWidth) {
+  const width = Math.max(2, Number(maxWidth) || 2), lines = [];
+  for (const paragraph of String(text ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    if (!paragraph) { lines.push(""); continue; }
+    let line = "";
+    for (const character of paragraph) {
+      const candidate = line + character;
+      if (line && font.widthOfTextAtSize(candidate, size) > width) { lines.push(line); line = character; }
+      else line = candidate;
+    }
+    lines.push(line);
+  }
+  return lines.length ? lines : [""];
+}
+
 export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });
@@ -40,7 +67,10 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
     if (saved) {
       const [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
-      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px` });
+      const previewFamily = saved.fontFamily?.startsWith("Times") ? "Times New Roman, serif" : saved.fontFamily?.startsWith("Courier") ? "Courier New, monospace" : "Arial, sans-serif";
+      const previewWeight = saved.fontFamily?.includes("Bold") ? "700" : "400";
+      const previewStyle = /Oblique|Italic/.test(saved.fontFamily || "") ? "italic" : "normal";
+      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px`, fontFamily: previewFamily, fontWeight: previewWeight, fontStyle: previewStyle });
       span.classList.add("pdf-text-edit");
       const move = document.createElement("button"); move.type="button"; move.className="pdf-move-handle"; move.title="Drag replacement"; move.textContent="↕"; span.append(move);
       const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
@@ -63,7 +93,23 @@ export function sourceMaskForEdit(edit) {
 }
 
 export function sourceMasksForPage(edits, pageNumber) {
-  return edits.filter((edit) => edit.page === pageNumber).map(sourceMaskForEdit);
+  return edits.filter((edit) => edit.page === pageNumber && (edit.kind || "replacement") === "replacement").map(sourceMaskForEdit);
+}
+
+/** Normalize legacy replacements and new fields behind one PDF edit-object contract. */
+export function normalizePdfEdit(edit) {
+  const kind = edit.kind || "replacement";
+  return { ...edit, kind, id: edit.id || `${kind}:${edit.page}:${edit.index ?? "new"}`, text: edit.text ?? edit.replacement ?? "",
+    width: Math.max(2, Number(edit.width) || 2), height: Math.max(2, Number(edit.height) || Number(edit.fontSize) * 1.2 || 14.4),
+    fontFamily: edit.fontFamily || "Helvetica", fontSize: Math.max(4, Number(edit.fontSize) || 12), rotation: Number(edit.rotation) || 0 };
+}
+
+/** Shared layout rule: preserve/wrap whitespace, then clip lines to field height. */
+export function layoutPdfText(edit, font) {
+  const value = normalizePdfEdit(edit), lineHeight = value.fontSize * 1.2;
+  const limit = Math.max(1, Math.floor(value.height / lineHeight));
+  const allLines = font ? wrapPdfText(value.text, font, value.fontSize, value.width) : value.text.replace(/\r\n?/g, "\n").split("\n");
+  return { ...value, lineHeight, lines: allLines.slice(0, limit), overflow: allLines.length > limit };
 }
 
 export function pdfRectToViewport(viewport, rect) {
@@ -78,15 +124,19 @@ export function viewportRectToPdf(viewport, rect) {
 
 export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
-  const font = await output.embedFont(StandardFonts.Helvetica);
-  for (const edit of edits) {
+  const fonts = new Map();
+  for (const rawEdit of edits) {
+    const normalized = normalizePdfEdit(rawEdit);
+    const fontName = resolvePdfStandardFont(normalized.fontFamily);
+    let font = fonts.get(fontName);
+    if (!font) { font = await output.embedFont(fontName); fonts.set(fontName, font); }
+    const edit = layoutPdfText(normalized, font);
     const page = output.getPage(edit.page - 1);
-    const size = Math.max(4, Number(edit.fontSize) || 12);
-    const mask = sourceMaskForEdit(edit);
+    const size = edit.fontSize;
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
-    page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
-    page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
+    if (edit.kind === "replacement") page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
+    edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.y - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }

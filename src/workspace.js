@@ -13,9 +13,10 @@ import {
   resolveHandle,
   storeHandle
 } from "./file-access.js";
-import { writeCompleteBlob, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf } from "./documents/pdf-document.js";
+import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
+import { editorNodeToRuns } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
 import { saveBlobAs } from "./actions/native-save.js";
 import { zipSync } from "./vendor/fflate.mjs";
@@ -375,9 +376,8 @@ async function saveNativeDocument(block, saveAs = false) {
   const extension = block.dataset.blockType;
   const filename = block.querySelector(".block-name")?.value || source?.displayName || `document.${extension}`;
   const options = { serialize: runtime.serialize, filename, extension, mimeType: extension === "pdf" ? "application/pdf" : DOCX_MIME, handleKey: source?.handleKey };
-  let result;
-  if (!saveAs) result = await writeCompleteBlob(runtime.handle, runtime.serialize);
-  if (saveAs || !result?.saved) result = await saveDocumentAs(options);
+  const result = await saveDocument({ serialize: runtime.serialize, handle: runtime.handle, saveAs,
+    saveAsWriter: (blob) => saveDocumentAs({ ...options, blob }) });
   if (!result.saved) return;
   if (result.handle) {
     runtime.handle = result.handle;
@@ -436,6 +436,7 @@ function selectPdfEdit(block, span) {
   span.classList.add("is-selected");block.dataset.selectedPdfIndex=span.dataset.index;controls.hidden=false;
   const runtime=runtimeSources.get(block),edit=runtime?.edits.find(item=>item.page===Number(block.dataset.currentPage)&&item.index===Number(span.dataset.index));
   if(edit)controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
+  if(edit)controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
 
@@ -583,6 +584,8 @@ registerBlockType("pdf", {
 
   initialize(block) {
     attachDocumentSave(block);
+    const fontSelect = block.querySelector(".pdf-font-family");
+    PDF_STANDARD_FONTS.forEach(([label]) => fontSelect.add(new Option(label, label)));
     block.querySelectorAll(".pdf-toolbar details").forEach(details => details.addEventListener("toggle", () => {
       if (!details.open) return;
       block.querySelectorAll(".pdf-toolbar details").forEach(other => { if (other !== details) other.open = false; });
@@ -620,7 +623,8 @@ registerBlockType("pdf", {
     });
     textLayer.addEventListener("keydown", (event) => {
       const text=event.target.closest('.pdf-edit-text[contenteditable="true"]');
-      if(text&&event.key==="Enter"){event.preventDefault();text.blur();}
+      if(text&&event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();text.blur();}
+      if(text&&event.key==="Tab"){event.preventDefault();document.execCommand("insertText",false,"    ");}
       if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();void travelPdfHistory(block,event.shiftKey?"redo":"undo");}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){event.preventDefault();void travelPdfHistory(block,"redo");}
@@ -631,7 +635,7 @@ registerBlockType("pdf", {
       if (!text) return;
       text.removeAttribute("contenteditable");if(text.dataset.cancel){delete text.dataset.cancel;return;}
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
-      const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.textContent || "";
+      const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
       const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
       if(replacement===(existing?.replacement??original.str))return;
       pushPdfHistory(runtime);
@@ -639,7 +643,7 @@ registerBlockType("pdf", {
       else if(existing)existing.replacement=replacement;
       else {
         const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);
-        runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontSize:geometry.height*.8,rotation:0});
+        runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:geometry.height*.8,rotation:0});
       }
       setDocumentDirty(block,true);void setPdfPage(block,page);
     });
@@ -652,6 +656,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
     block.querySelector(".pdf-redo").addEventListener("click",()=>void travelPdfHistory(block,"redo"));
     block.querySelector(".pdf-font-size").addEventListener("change",event=>{const runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!edit)return;const size=Math.max(4,Math.min(144,Number(event.target.value)||edit.fontSize));if(size===edit.fontSize)return;pushPdfHistory(runtime);edit.fontSize=size;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);});
+    fontSelect.addEventListener("change",event=>{const runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!edit||edit.fontFamily===event.target.value)return;pushPdfHistory(runtime);edit.fontFamily=event.target.value;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);});
 
 
     block.querySelector(".reconnect-source").addEventListener("click", async () => {
@@ -681,7 +686,8 @@ registerBlockType("pdf", {
 });
 
 function docxBlocksFromEditor(editor) {
-  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: [...node.childNodes].map((child) => child.nodeType === 1 && child.matches("img[data-docx-relationship]") ? ({ text: "", images: [{ kind: "image", relationshipId: child.dataset.docxRelationship, part: child.dataset.docxPart, mime: child.dataset.docxMime, width: Number(child.dataset.docxWidth) || child.width, height: Number(child.dataset.docxHeight) || child.height }] }) : ({ text: child.textContent || "", bold: child.nodeType === 1 && ["B", "STRONG"].includes(child.tagName), italic: child.nodeType === 1 && ["I", "EM"].includes(child.tagName), underline: child.nodeType === 1 && child.tagName === "U" })).filter((run) => run.text.length || run.images?.length) });
+  const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
+  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: editorNodeToRuns(node, imageRun) });
   const blocks = [];
   for (const node of editor.children) {
     if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
@@ -699,7 +705,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     const tag = heading ? `h${heading[1]}` : "p";
     const element = document.createElement(tag); element.style.textAlign = p.alignment || "left";
     for (const run of p.runs || []) {
-      if (run.text) { const span = document.createElement(run.bold ? "strong" : run.italic ? "em" : run.underline ? "u" : "span"); span.textContent = run.text; element.append(span); }
+      if (run.text) { const span = document.createElement("span"); span.textContent = run.text; span.style.fontWeight=run.bold?"bold":"";span.style.fontStyle=run.italic?"italic":"";span.style.textDecoration=run.underline?"underline":"";element.append(span); }
       for (const image of run.images || []) {
         if (image.unsupported || !model?.parts?.[image.part]) { const placeholder=document.createElement("span");placeholder.className="docx-image-unavailable";placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;placeholder.contentEditable="false";element.append(placeholder);continue; }
         const img=document.createElement("img"),url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));urls.push(url);
