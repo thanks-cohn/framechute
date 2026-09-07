@@ -15,6 +15,7 @@ const status = document.querySelector("#status");
 const addTextButton = document.querySelector("#add-text");
 
 const objectUrls = new WeakMap();
+import { shouldGenericWorkspaceIngest, shouldShowGlobalIngest } from "./drag-ownership.mjs";
 let dropOffset = 0;
 let dragDepth = 0;
 
@@ -906,6 +907,7 @@ window.FrameChuteIngest = Object.freeze({
 });
 
 workspace.addEventListener("dragenter", (event) => {
+  if (!shouldShowGlobalIngest(event)) return;
   if (![...event.dataTransfer?.items || []].some((item) => item.kind === "file")) return;
   event.preventDefault();
   dragDepth += 1;
@@ -913,6 +915,7 @@ workspace.addEventListener("dragenter", (event) => {
 });
 
 workspace.addEventListener("dragover", (event) => {
+  if (!shouldShowGlobalIngest(event)) return;
   if (![...event.dataTransfer?.items || []].some((item) => item.kind === "file")) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
@@ -925,6 +928,7 @@ workspace.addEventListener("dragleave", () => {
 });
 
 workspace.addEventListener("drop", async (event) => {
+  if (!shouldGenericWorkspaceIngest(event)) return;
   const items = [...event.dataTransfer?.items || []].filter((item) => item.kind === "file");
   if (!items.length) return;
 
