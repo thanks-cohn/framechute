@@ -18,6 +18,27 @@ export function canvasMetadata(width, height, background = "transparent") {
   return { version: 1, ...validateCanvasSize(width, height), background };
 }
 
+const escapeXml = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+export function canvasSceneToSvg(scene) {
+  const { width, height } = validateCanvasSize(scene?.width, scene?.height);
+  const body = (scene.layers || []).map(layer => {
+    if (layer.type === "rect") return `<rect x="${Number(layer.x)||0}" y="${Number(layer.y)||0}" width="${Number(layer.width)||0}" height="${Number(layer.height)||0}" fill="${escapeXml(layer.fill||"none")}"/>`;
+    if (layer.type === "text") return `<text x="${Number(layer.x)||0}" y="${Number(layer.y)||0}" font-size="${Number(layer.size)||16}" fill="${escapeXml(layer.fill||"#000")}">${escapeXml(layer.text)}</text>`;
+    if (layer.type === "path") return `<path d="${escapeXml(layer.d)}" fill="${escapeXml(layer.fill||"none")}" stroke="${escapeXml(layer.stroke||"#000")}"/>`;
+    if (layer.type === "image" && /^data:image\//.test(layer.href||"")) return `<image href="${escapeXml(layer.href)}" x="${Number(layer.x)||0}" y="${Number(layer.y)||0}" width="${Number(layer.width)||0}" height="${Number(layer.height)||0}"/>`;
+    return "";
+  }).join("");
+  const background = scene.background && scene.background !== "transparent" ? `<rect width="100%" height="100%" fill="${escapeXml(scene.background)}"/>` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${background}${body}</svg>`;
+}
+
+export function canvasExportDescriptor(scene, format, options = {}) {
+  const normalized = String(format).toLowerCase().replace("jpg", "jpeg");
+  if (normalized === "svg") return { extension: "svg", mimeType: "image/svg+xml", text: canvasSceneToSvg(scene) };
+  if (!["png", "jpeg", "webp"].includes(normalized)) throw new TypeError(`Unsupported Canvas export: ${format}`);
+  return { extension: normalized === "jpeg" ? "jpg" : normalized, mimeType: `image/${normalized}`, quality: Math.max(0, Math.min(1, Number(options.quality) || .9)), flatten: true };
+}
+
 export function transparentRgba(width, height) {
   const size = validateCanvasSize(width, height);
   return new Uint8ClampedArray(size.width * size.height * 4);
@@ -54,3 +75,4 @@ if (button) button.addEventListener("click", () => {
   dialog.addEventListener("close", () => { if (dialog.returnValue === "create") { const { width, height } = validateCanvasSize(dialog.querySelector('[name=width]').value, dialog.querySelector('[name=height]').value); if (status) status.textContent = `Creating ${width} × ${height} canvas…`; window.dispatchEvent(new CustomEvent("framechute:add-canvas", { detail: { width, height } })); } dialog.remove(); });
   document.body.append(dialog); dialog.showModal();
 });
+if (typeof document !== "undefined") document.querySelector("#new-canvas-menu")?.addEventListener("click", () => button?.click());

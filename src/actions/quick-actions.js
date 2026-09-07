@@ -15,8 +15,26 @@ const transforms = new WeakMap();
 
 const bar = document.createElement("aside");
 bar.className = "quick-actions"; bar.hidden = true; bar.setAttribute("aria-label", "Quick Actions");
-bar.innerHTML = '<div class="quick-actions-heading"><strong class="quick-actions-title">Quick Actions</strong><button class="quick-actions-close" type="button" aria-label="Close Quick Actions" title="Close Quick Actions">×</button></div><span class="quick-actions-count"></span><div class="quick-actions-buttons"></div><progress hidden></progress>';
+bar.innerHTML = '<div class="quick-actions-heading"><strong class="quick-actions-title">Quick Actions</strong><span class="quick-actions-window-controls"><button class="quick-actions-collapse" type="button" aria-label="Minimize Quick Actions" title="Minimize Quick Actions">−</button><button class="quick-actions-close" type="button" aria-label="Close Quick Actions" title="Close Quick Actions">×</button></span></div><span class="quick-actions-count"></span><div class="quick-actions-buttons"></div><progress hidden></progress>';
 document.body.append(bar);
+
+const QUICK_ACTIONS_COLLAPSED_KEY = "framechute.quick-actions-collapsed.v1";
+let quickActionsCollapsed = false;
+try { quickActionsCollapsed = localStorage.getItem(QUICK_ACTIONS_COLLAPSED_KEY) === "true"; } catch { /* best effort */ }
+function applyQuickActionsCollapsed() {
+  bar.classList.toggle("is-collapsed", quickActionsCollapsed);
+  const control = bar.querySelector(".quick-actions-collapse");
+  control.textContent = quickActionsCollapsed ? "□" : "−";
+  control.title = quickActionsCollapsed ? "Maximize Quick Actions" : "Minimize Quick Actions";
+  control.setAttribute("aria-label", control.title);
+  control.setAttribute("aria-expanded", String(!quickActionsCollapsed));
+}
+bar.querySelector(".quick-actions-collapse").addEventListener("click", event => {
+  event.stopPropagation(); quickActionsCollapsed = !quickActionsCollapsed;
+  try { localStorage.setItem(QUICK_ACTIONS_COLLAPSED_KEY, String(quickActionsCollapsed)); } catch { /* best effort */ }
+  applyQuickActionsCollapsed();
+});
+applyQuickActionsCollapsed();
 
 function kind(block) {
   if (block.dataset.customKind === "image" || block.querySelector(".image-frame")) return "image";
