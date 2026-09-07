@@ -20,6 +20,8 @@ import { editorNodeToRuns } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
 import { saveBlobAs } from "./actions/native-save.js";
 import { zipSync } from "./vendor/fflate.mjs";
+import { PDFDocument } from "./vendor/pdf-lib.mjs";
+import { createSimpleDocx } from "./actions/document-operations.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -1142,6 +1144,30 @@ openPdfButton.addEventListener("click", () => void addPickedBlock({ type: "pdf",
 openDocxButton.addEventListener("click", () => void addPickedBlock({ type: "docx", picker: pickDocxFile }));
 openGalleryButton.addEventListener("click", () => void addPickedBlock({ type: "gallery", picker: pickImageDirectory }));
 openVideoButton.addEventListener("click", () => void addPickedBlock({ type: "video", picker: pickVideoFile }));
+
+document.querySelector("#new-docx")?.addEventListener("click", async () => {
+  const blob=createSimpleDocx("");
+  window.dispatchEvent(new CustomEvent("framechute:add-result-object",{detail:{blob,name:"Untitled.docx",kind:"docx"}}));
+  setStatus("Blank editable DOCX created.");
+});
+document.querySelector("#new-pdf")?.addEventListener("click", async () => {
+  const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+  const blob=new Blob([await pdf.save()],{type:"application/pdf"});
+  window.dispatchEvent(new CustomEvent("framechute:add-result-object",{detail:{blob,name:"Untitled.pdf",kind:"pdf"}}));
+  setStatus("Blank editable PDF created.");
+});
+document.querySelector("#new-webx")?.addEventListener("click", async () => {
+  const block=await createBlock({type:"text",name:"Untitled.webx",state:{text:"<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>Untitled</title></head><body>\n\n</body></html>"}});
+  if(block){block.dataset.utilityKind="webx";block.querySelector(".text-editor")?.focus();setStatus("New WEBX semantic source created.");}
+});
+
+const openWebx=document.querySelector("#open-webx"),openWebxInput=document.querySelector("#open-webx-input");
+openWebx?.addEventListener("click",()=>openWebxInput?.click());
+openWebxInput?.addEventListener("change",async()=>{
+  const file=openWebxInput.files?.[0];openWebxInput.value="";if(!file)return;
+  const block=await createBlock({type:"text",name:file.name,state:{text:await file.text()}});
+  if(block){block.dataset.utilityKind="webx";setStatus(`${file.name} opened as a WEBX editing object.`);}
+});
 
 window.addEventListener("framechute:open-document-handle", (event) => {
   const { handle, file, point } = event.detail || {};

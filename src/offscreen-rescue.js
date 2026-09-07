@@ -23,6 +23,7 @@ if (workspace) {
   document.head.append(style);
 
   let frame = 0;
+  let gestureActive = false;
 
   function number(value, fallback = 0) {
     const parsed = Number.parseFloat(value);
@@ -62,6 +63,9 @@ if (workspace) {
   function updateReachability({ rescueNegative = false } = {}) {
     frame = 0;
     const blocks = [...workspace.querySelectorAll(".block")];
+    const expansionEnabled = gestureActive && document.body.classList.contains("toolbar-hidden");
+    const stableWidth = Math.max(BASE_WIDTH, number(workspace.style.width, BASE_WIDTH), window.innerWidth);
+    const stableHeight = Math.max(BASE_HEIGHT, number(workspace.style.height, BASE_HEIGHT), window.innerHeight);
     let maxRight = BASE_WIDTH;
     let maxBottom = BASE_HEIGHT;
     let anyOffscreen = false;
@@ -93,8 +97,8 @@ if (workspace) {
       }
     }
 
-    workspace.style.width = `${Math.ceil(Math.max(BASE_WIDTH, maxRight, window.innerWidth))}px`;
-    workspace.style.height = `${Math.ceil(Math.max(BASE_HEIGHT, maxBottom, window.innerHeight))}px`;
+    workspace.style.width = `${Math.ceil(expansionEnabled ? Math.max(stableWidth, maxRight) : stableWidth)}px`;
+    workspace.style.height = `${Math.ceil(expansionEnabled ? Math.max(stableHeight, maxBottom) : stableHeight)}px`;
     workspace.classList.toggle("framechute-scroll-reachable", anyOffscreen);
     document.documentElement.dataset.framechuteOffscreen = anyOffscreen ? "true" : "false";
 
@@ -110,9 +114,10 @@ if (workspace) {
 
   // Grow the scrollable canvas while a block is being moved or resized.
   // Only a completed direct gesture may rescue truly negative coordinates.
+  workspace.addEventListener("pointerdown", event => { gestureActive = Boolean(event.target.closest?.(".block")); }, true);
   workspace.addEventListener("pointermove", () => schedule(), true);
-  document.addEventListener("pointerup", () => schedule({ rescueNegative: true }), true);
-  document.addEventListener("pointercancel", () => schedule({ rescueNegative: true }), true);
+  document.addEventListener("pointerup", () => { schedule({ rescueNegative: true }); gestureActive = false; }, true);
+  document.addEventListener("pointercancel", () => { schedule({ rescueNegative: true }); gestureActive = false; }, true);
 
   // Viewport changes must never rewrite artwork coordinates.
   window.addEventListener("resize", () => schedule());

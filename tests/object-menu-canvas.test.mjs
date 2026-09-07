@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "../src/actions/object-menu-model.mjs";
-import { canvasMetadata, createCanvasPayload, deserializeCanvasPayload, normalizeCanvasSize, serializeCanvasPayload, transparentRgba, validateCanvasSize } from "../src/standalone-canvas.mjs";
+import { canvasExportDescriptor, canvasMetadata, canvasSceneToSvg, createCanvasPayload, deserializeCanvasPayload, normalizeCanvasSize, serializeCanvasPayload, transparentRgba, validateCanvasSize } from "../src/standalone-canvas.mjs";
 import { compositeRgba, floodFill } from "../src/image-edit/paint-layer.mjs";
 
 test("object menu reflects per-object Quick Actions visibility",()=>{
@@ -63,4 +63,12 @@ test("global Quick Actions preference is persistent and independent",()=>{
   writeQuickActionsEnabled(false,storage);
   assert.equal(readQuickActionsEnabled(storage),false);
   assert.equal(objectMenuItems({quickActionsEnabled:false})[0].label,"Quick Actions  [ OFF ]");
+});
+
+test("Canvas export adapters preserve vectors and describe raster formats",()=>{
+  const scene={width:320,height:200,background:"transparent",layers:[{type:"rect",x:2,y:3,width:20,height:30,fill:"#f00"},{type:"text",x:8,y:40,text:"A&B",size:14}]};
+  const svg=canvasSceneToSvg(scene);
+  assert.match(svg,/^<svg/);assert.match(svg,/<rect /);assert.match(svg,/<text /);assert.match(svg,/A&amp;B/);
+  assert.equal(canvasExportDescriptor(scene,"SVG").mimeType,"image/svg+xml");
+  assert.deepEqual(["PNG","JPG","WEBP"].map(format=>canvasExportDescriptor(scene,format).mimeType),["image/png","image/jpeg","image/webp"]);
 });

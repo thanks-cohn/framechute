@@ -11,6 +11,12 @@
   touch-action: none;
 }
 
+/* Keep transformed media inside the composed frame. Frameless mode opts out. */
+.block:has(> .image-frame):not(.is-frameless-media) { overflow: hidden; }
+.block:has(> .image-frame):not(.is-frameless-media) > .image-frame { position:relative;z-index:0;max-width:100%;max-height:calc(100% - 76px);object-fit:contain;transform-origin:center }
+.block:has(> .image-frame):not(.is-frameless-media) > .block-header,
+.block:has(> .image-frame):not(.is-frameless-media) > .block-toolbar { position:relative;z-index:2 }
+
 /* For frameless images, the transparent outer block is not itself interactive.
    Only the clipped visible image and its resize corner can receive the mouse. */
 .block.is-frameless-media:has(> .image-frame) {
