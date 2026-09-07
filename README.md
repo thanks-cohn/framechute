@@ -993,8 +993,3 @@ A surprising amount of everyday computing is made of small transformations, comp
 
 ---
 
-# License
-
-See [`LICENSE`](LICENSE) for the repository's licensing terms.
-
-The current repository license is proprietary / all rights reserved rather than an open-source license. Do not assume that public source visibility grants permission to redistribute or create derivative versions outside the rights explicitly granted by the license.
