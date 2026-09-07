@@ -623,6 +623,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-page").addEventListener("change", (event) => {
       void setPdfPage(block, event.currentTarget.value);
     });
+    block.querySelector(".pdf-add-page").addEventListener("click", () => void applyPdfPageOperation(block, { type: "add", page: Number(block.dataset.currentPage || 1), to:Number(block.dataset.currentPage || 1)+1 }));
     block.querySelector(".pdf-rotate").addEventListener("click", () => void applyPdfPageOperation(block, { type: "rotate", page: Number(block.dataset.currentPage || 1), degrees: 90 }));
     block.querySelector(".pdf-delete").addEventListener("click", () => void applyPdfPageOperation(block, { type: "delete", page: Number(block.dataset.currentPage || 1) }).catch((error) => setStatus(error.message)));
     block.querySelector(".pdf-duplicate").addEventListener("click", () => void applyPdfPageOperation(block, { type: "duplicate", page: Number(block.dataset.currentPage || 1) }));
@@ -710,11 +711,11 @@ registerBlockType("pdf", {
 
 function docxBlocksFromEditor(editor) {
   const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
-  const paragraph = (node) => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list: node.tagName === "LI", alignment: node.style.textAlign || "left", runs: editorNodeToRuns(node, imageRun) });
+  const paragraph = (node, list="") => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list, alignment: node.style.textAlign || "left", runs: editorNodeToRuns(node, imageRun) });
   const blocks = [];
   for (const node of editor.children) {
     if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
-    else if (["UL", "OL"].includes(node.tagName)) for (const item of node.children) blocks.push(paragraph(item));
+    else if (["UL", "OL"].includes(node.tagName)) for (const item of node.children) blocks.push(paragraph(item,node.tagName === "OL" ? "number" : "bullet"));
     else blocks.push(paragraph(node));
   }
   return blocks;
@@ -728,7 +729,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     const tag = heading ? `h${heading[1]}` : "p";
     const element = document.createElement(tag); element.style.textAlign = p.alignment || "left";
     for (const run of p.runs || []) {
-      if (run.text) { const span = document.createElement("span"); span.textContent = run.text; span.style.fontWeight=run.bold?"bold":"";span.style.fontStyle=run.italic?"italic":"";span.style.textDecoration=run.underline?"underline":"";element.append(span); }
+      if (run.text) { const span = run.hyperlink ? document.createElement("a") : document.createElement("span"); span.textContent = run.text;if(run.hyperlink)span.href=run.hyperlink; span.style.fontWeight=run.bold?"bold":"";span.style.fontStyle=run.italic?"italic":"";span.style.textDecoration=run.underline?"underline":"";if(run.fontFamily)span.style.fontFamily=run.fontFamily;if(run.fontSize)span.style.fontSize=`${run.fontSize}pt`;element.append(span); }
       for (const image of run.images || []) {
         if (image.unsupported || !model?.parts?.[image.part]) { const placeholder=document.createElement("span");placeholder.className="docx-image-unavailable";placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;placeholder.contentEditable="false";element.append(placeholder);continue; }
         const img=document.createElement("img"),url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));urls.push(url);
@@ -738,9 +739,11 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     }
     parent.append(element); return element;
   };
+  let activeList=null;
   for (const item of blocks || []) {
     if (item.type === "table") { const table = document.createElement("table"); for (const row of item.rows) { const tr = table.insertRow(); for (const cell of row) { const td = tr.insertCell(); for (const p of cell) addParagraph(p, td); } } editor.append(table); }
-    else addParagraph(item);
+    else if(item.list){const tag=item.list==="number"?"OL":"UL";if(!activeList||activeList.tagName!==tag){activeList=document.createElement(tag);editor.append(activeList);}const li=addParagraph(item,activeList);if(li.tagName!=="LI"){const replacement=document.createElement("li");replacement.replaceChildren(...li.childNodes);li.replaceWith(replacement);}}
+    else {activeList=null;addParagraph(item);}
   }
   return urls;
 }
@@ -784,6 +787,14 @@ registerBlockType("docx", {
     }, true);
     editor.addEventListener("input", () => setDocumentDirty(block, true));
     for (const [selector, command] of [[".docx-bold", "bold"], [".docx-italic", "italic"], [".docx-underline", "underline"]]) block.querySelector(selector).addEventListener("click", () => { editor.focus(); document.execCommand(command); setDocumentDirty(block, true); });
+    const command=(name,value=null)=>{editor.focus();document.execCommand("styleWithCSS",false,true);document.execCommand(name,false,value);setDocumentDirty(block,true);};
+    block.querySelector(".docx-font-family").addEventListener("change",event=>command("fontName",event.target.value));
+    block.querySelector(".docx-font-size").addEventListener("change",event=>{command("fontSize","7");editor.querySelectorAll('font[size="7"]').forEach(font=>{font.style.fontSize=`${event.target.value}pt`;font.removeAttribute("size");});});
+    block.querySelector(".docx-style").addEventListener("change",event=>command("formatBlock",event.target.value));
+    block.querySelector(".docx-align").addEventListener("change",event=>command(`justify${event.target.value}`));
+    block.querySelector(".docx-bullets").addEventListener("click",()=>command("insertUnorderedList"));
+    block.querySelector(".docx-numbering").addEventListener("click",()=>command("insertOrderedList"));
+    block.querySelector(".docx-link").addEventListener("click",()=>{const url=prompt("Link URL","https://");if(url)command("createLink",url);});
     block.querySelector(".reconnect-source").addEventListener("click", async () => { try { await reconnectSource(block, pickDocxFile, (handle) => loadDocxHandle(block, handle, this.capture(block))); } catch (error) { console.error(error); setStatus("Could not reconnect that DOCX."); } });
   },
   capture(block) { const runtime=runtimeSources.get(block);return { blocks: docxBlocksFromEditor(block.querySelector(".docx-editor")), scrollTop: block.querySelector(".docx-editor").scrollTop, dirty: block.dataset.documentDirty === "true", embeddedBlob:getSourceRecord(block)?null:runtime?.serialize?.()||null }; },

@@ -154,7 +154,9 @@ export async function transformPdfPages(bytes, operation) {
   const pdf = await PDFDocument.load(source.slice(), { ignoreEncryption: false });
   const count = pdf.getPageCount();
   const pageIndex = Math.max(0, Math.min(count - 1, Number(operation.page) - 1));
-  if (operation.type === "rotate") {
+  if (operation.type === "add") {
+    const reference=pdf.getPage(pageIndex),{width,height}=reference.getSize();pdf.insertPage(pageIndex+1,[width,height]);
+  } else if (operation.type === "rotate") {
     const page = pdf.getPage(pageIndex);
     page.setRotation(degrees((page.getRotation().angle + Number(operation.degrees || 90) + 360) % 360));
   } else if (operation.type === "delete") {
