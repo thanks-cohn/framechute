@@ -1,84 +1,97 @@
-FLASHFRAME PROPRIETARY SOFTWARE LICENSE
+FRAMECHUTE PROPRIETARY PERSONAL-USE LICENSE
 ALL RIGHTS RESERVED
 
-Copyright (c) 2026 Flashframe contributors and applicable rights holders.
+Copyright (c) 2026 FrameChute contributors and applicable rights holders.
 All rights reserved.
 
-Flashframe is proprietary software. It is not licensed under the MIT License or
-any other open-source license.
+FrameChute is proprietary, source-available software. It is NOT licensed under
+the MIT License or any other open-source license.
 
-Except for the limited end-user permission expressly stated below, no license
-or permission is granted to the source code, software, documentation, artwork,
-branding, or other materials in this repository.
+The fact that the source code is publicly visible or downloadable does not make
+FrameChute open source and does not grant permission to reuse it in another
+project, product, service, extension, application, library, or commercial work.
 
-1. AUTHORIZED END-USER USE
+1. PERSONAL AND RECREATIONAL USE
 
-You may install and use an official, unmodified release of Flashframe that is
-distributed by the applicable Flashframe rights holder or through an authorized
-distribution channel, solely for its intended end-user purpose.
+Subject to these terms, you may download or clone an official copy of
+FrameChute, install it, and use it for personal, recreational, hobby,
+educational, or evaluation purposes, provided that the use is non-commercial.
 
-This limited permission does not grant any right to copy, reproduce, publish,
-redistribute, sublicense, sell, lease, mirror, host, transmit, or otherwise
-provide Flashframe or any portion of it to another person or service.
+You may make copies that are reasonably necessary to install, run, back up, or
+personally evaluate an authorized copy of FrameChute.
+
+This permission is a limited personal-use license. Ownership of FrameChute and
+its source code remains with the applicable rights holders.
 
 2. SOURCE CODE
 
-Source code made visible through an authorized repository host is provided for
-inspection only. Visibility of source code does not grant a license to copy,
-download for reuse, reproduce, modify, adapt, translate, publish, redistribute,
-mirror, sublicense, sell, commercialize, or create derivative works from it.
+Source code made available through an authorized repository may be downloaded
+and inspected for the personal, non-commercial purposes described above.
+Public availability does not grant permission to copy FrameChute code into
+another project, publish modified versions, distribute derivative works, or
+claim FrameChute or its code as your own.
 
-No permission is granted to use Flashframe source code, in whole or in part, in
-another project, product, extension, application, service, library, dataset,
-training corpus, or other work.
+Unless you have prior written permission from the applicable rights holder, you
+may not reuse, adapt, translate, incorporate, port, repackage, or derive another
+software product or service from FrameChute or substantial portions of its
+source code.
 
-3. COPYING AND REDISTRIBUTION PROHIBITED
+3. COMMERCIAL USE PROHIBITED
 
-Unless you have prior written permission from the applicable Flashframe rights
-holder, you may not:
+Without prior written permission from the applicable FrameChute rights holder,
+you may not use FrameChute or its source code, in whole or in substantial part,
+for any commercial, business, revenue-generating, monetized, or for-profit
+purpose.
 
-(a) copy or reproduce Flashframe or substantial portions of it, except for
-    copies necessarily created by an authorized installation or ordinary
-    execution of an official release;
+This includes, without limitation:
 
-(b) redistribute, republish, mirror, upload, share, sublicense, or otherwise
-    make Flashframe or its source code available to third parties;
+(a) selling, licensing, renting, leasing, sublicensing, or charging for
+    FrameChute or a modified version of it;
 
-(c) create or distribute forks, clones, modified versions, translations,
-    adaptations, derivative works, or competing products based on Flashframe;
+(b) incorporating FrameChute source code into a paid product, service,
+    extension, application, library, platform, or hosted offering;
 
-(d) remove, obscure, alter, or misrepresent copyright, ownership, attribution,
-    trademark, or license notices;
+(c) rebranding, white-labeling, cloning, or repackaging FrameChute for
+    commercial distribution;
 
-(e) sell, rent, lease, monetize, commercially exploit, or include Flashframe or
-    its source code in any paid or revenue-generating product or service; or
+(d) using FrameChute source code to create a competing commercial product or
+    service;
 
-(f) reverse engineer, decompile, or disassemble distributed Flashframe software
-    except to the limited extent applicable law expressly permits such activity
-    notwithstanding this restriction.
+(e) monetizing distribution of FrameChute or a derivative work through sales,
+    subscriptions, advertising, sponsorship, paid access, or other commercial
+    consideration; or
 
-4. HOSTING AND DISTRIBUTION PLATFORMS
+(f) removing or obscuring ownership, copyright, attribution, trademark, or
+    license notices in order to present FrameChute or its code as belonging to
+    another person or organization.
 
-Nothing in this license is intended to prevent an authorized repository host,
-browser-extension store, or other authorized distribution platform from
-hosting, storing, scanning, reviewing, transmitting, installing, or delivering
-Flashframe as necessary to provide its platform services on behalf of the
-rights holder or an authorized end user.
+4. REDISTRIBUTION AND DERIVATIVE WORKS
 
-Those platform rights do not grant other users permission to reuse, copy, or
-redistribute Flashframe outside the platform's necessary operation.
+Except for copies reasonably necessary for the personal use allowed in Section
+1, you may not redistribute, republish, mirror, sublicense, sell, commercially
+exploit, or otherwise provide FrameChute or substantial portions of its source
+code to third parties without prior written permission.
+
+You may not distribute modified versions, derivative works, clones, or ports of
+FrameChute without prior written permission.
+
+Nothing in this license is intended to interfere with rights that an authorized
+repository host or distribution platform must have in order to host, display,
+scan, transmit, back up, or deliver the repository or official releases as part
+of operating that platform.
 
 5. NO TRADEMARK OR BRAND LICENSE
 
-No permission is granted to use the Flashframe name, logos, icons, artwork,
-branding, trade dress, or other marks except as necessary to identify an
-officially distributed copy of Flashframe.
+No permission is granted to use the FrameChute name, logos, icons, artwork,
+branding, trade dress, or other marks except as reasonably necessary to
+identify an official copy of FrameChute being used under this license.
 
 6. THIRD-PARTY MATERIAL
 
-This license applies only to material for which the applicable Flashframe
-rights holder has authority to set these terms. Third-party materials, if any,
-remain subject to their own licenses and rights.
+This license applies only to material for which the applicable FrameChute
+rights holder has authority to set these terms. Third-party components,
+libraries, fonts, media, or other materials remain subject to their own
+licenses and rights.
 
 7. PRIOR LICENSE GRANTS
 
@@ -88,22 +101,22 @@ an earlier version under different terms.
 
 8. TERMINATION
 
-Any permission granted by this license terminates automatically upon violation
-of these terms. Upon termination, you must stop all unauthorized use and, to
-the extent permitted by law, delete unauthorized copies in your possession or
+The permissions granted by this license terminate automatically if you violate
+these terms. Upon termination, you must stop the unauthorized use and, to the
+extent permitted by law, delete unauthorized copies in your possession or
 control.
 
 9. NO WARRANTY
 
-FLASHFRAME IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+FRAMECHUTE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
 KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR
 A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT
 PERMITTED BY LAW, THE AUTHORS AND RIGHTS HOLDERS SHALL NOT BE LIABLE FOR ANY
-CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR RELATED TO FLASHFRAME OR ITS
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR RELATED TO FRAMECHUTE OR ITS
 USE.
 
-10. SEPARATE WRITTEN PERMISSION
+10. COMMERCIAL OR OTHER PERMISSION
 
-Any copying, redistribution, modification, derivative work, commercial use, or
-other use not expressly allowed above requires prior written permission from
-the applicable Flashframe rights holder.
+Any commercial use, redistribution, derivative work, incorporation into another
+product, or other use not expressly allowed above requires prior written
+permission from the applicable FrameChute rights holder.
