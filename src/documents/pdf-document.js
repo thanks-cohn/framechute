@@ -3,6 +3,33 @@ import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs"
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
 
+export const PDF_STANDARD_FONTS = Object.freeze([
+  ["Helvetica", StandardFonts.Helvetica], ["Helvetica Bold", StandardFonts.HelveticaBold],
+  ["Helvetica Oblique", StandardFonts.HelveticaOblique], ["Times Roman", StandardFonts.TimesRoman],
+  ["Times Bold", StandardFonts.TimesRomanBold], ["Times Italic", StandardFonts.TimesRomanItalic],
+  ["Courier", StandardFonts.Courier], ["Courier Bold", StandardFonts.CourierBold],
+  ["Courier Oblique", StandardFonts.CourierOblique]
+]);
+const PDF_FONT_MAP = new Map(PDF_STANDARD_FONTS);
+
+export function resolvePdfStandardFont(name) { return PDF_FONT_MAP.get(name) || StandardFonts.Helvetica; }
+
+/** Deterministic PDF text layout that preserves explicit lines and whitespace. */
+export function layoutPdfText(text, font, size, maxWidth) {
+  const width = Math.max(2, Number(maxWidth) || 2), lines = [];
+  for (const paragraph of String(text ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    if (!paragraph) { lines.push(""); continue; }
+    let line = "";
+    for (const character of paragraph) {
+      const candidate = line + character;
+      if (line && font.widthOfTextAtSize(candidate, size) > width) { lines.push(line); line = character; }
+      else line = candidate;
+    }
+    lines.push(line);
+  }
+  return lines.length ? lines : [""];
+}
+
 export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });
@@ -40,7 +67,10 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
     if (saved) {
       const [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
-      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px` });
+      const previewFamily = saved.fontFamily?.startsWith("Times") ? "Times New Roman, serif" : saved.fontFamily?.startsWith("Courier") ? "Courier New, monospace" : "Arial, sans-serif";
+      const previewWeight = saved.fontFamily?.includes("Bold") ? "700" : "400";
+      const previewStyle = /Oblique|Italic/.test(saved.fontFamily || "") ? "italic" : "normal";
+      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px`, fontFamily: previewFamily, fontWeight: previewWeight, fontStyle: previewStyle });
       span.classList.add("pdf-text-edit");
       const move = document.createElement("button"); move.type="button"; move.className="pdf-move-handle"; move.title="Drag replacement"; move.textContent="↕"; span.append(move);
       const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
@@ -78,15 +108,20 @@ export function viewportRectToPdf(viewport, rect) {
 
 export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
-  const font = await output.embedFont(StandardFonts.Helvetica);
+  const fonts = new Map();
   for (const edit of edits) {
     const page = output.getPage(edit.page - 1);
     const size = Math.max(4, Number(edit.fontSize) || 12);
+    const fontName = resolvePdfStandardFont(edit.fontFamily);
+    let font = fonts.get(fontName);
+    if (!font) { font = await output.embedFont(fontName); fonts.set(fontName, font); }
     const mask = sourceMaskForEdit(edit);
     // V1 visual replacement: cover the source glyph area and draw the edit.
     // This preserves every unedited page and keeps the replacement searchable.
     page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
-    page.drawText(edit.replacement || " ", { x: edit.x, y: edit.y, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
+    layoutPdfText(edit.replacement, font, size, edit.width).forEach((line, index) => {
+      page.drawText(line || " ", { x: edit.x, y: edit.y - index * size * 1.2, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation || 0), maxWidth: Math.max(edit.width, 2) });
+    });
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }
