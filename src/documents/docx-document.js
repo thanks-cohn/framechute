@@ -4,12 +4,14 @@ const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const REL = "http://schemas.openxmlformats.org/package/2006/relationships";
 const IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+const HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 const CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 const local = (node) => node?.localName || node?.nodeName?.split(":").pop();
 const children = (node, name) => [...(node?.children || [])].filter((item) => local(item) === name);
 const descendant = (node, name) => [...(node?.getElementsByTagNameNS?.(W, name) || [])];
 const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escAttr = (value) => esc(value).replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
 const allDescendants = (node, name) => [...(node?.getElementsByTagName?.("*") || [])].filter((item) => local(item) === name);
 const attribute = (node, namespace, plain) => node?.getAttributeNS?.(namespace, plain) || node?.getAttribute?.(`r:${plain}`) || node?.getAttribute?.(plain) || "";
@@ -40,20 +42,22 @@ function parseRun(run, relationships, parts) {
     const value = property?.getAttributeNS?.(W, "val") || property?.getAttribute?.("w:val") || property?.getAttribute?.("val");
     return Boolean(property) && !["0", "false", "none", "off"].includes(String(value || "").toLowerCase());
   };
-  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u") };
+  const fonts = descendant(props, "rFonts")[0], size = Number(descendant(props, "sz")[0]?.getAttributeNS(W, "val") || 0) / 2;
+  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u"), fontFamily: fonts?.getAttributeNS(W, "ascii") || fonts?.getAttribute("w:ascii") || "", fontSize: size || null };
 }
 
 function parseParagraph(paragraph, relationships, parts) {
   const pPr = children(paragraph, "pPr")[0];
   const style = descendant(pPr, "pStyle")[0]?.getAttributeNS(W, "val") || descendant(pPr, "pStyle")[0]?.getAttribute("w:val") || "";
-  const num = descendant(pPr, "numPr").length > 0;
+  const numPr = descendant(pPr, "numPr")[0], num = Boolean(numPr);
+  const numId = Number(descendant(numPr, "numId")[0]?.getAttributeNS(W, "val") || 0);
   const alignment = descendant(pPr, "jc")[0]?.getAttributeNS(W, "val") || "left";
   const runs = [];
   for (const child of paragraph.children) {
     if (local(child) === "r") runs.push(parseRun(child, relationships, parts));
-    if (local(child) === "hyperlink") for (const run of children(child, "r")) runs.push({ ...parseRun(run, relationships, parts), hyperlink: child.getAttributeNS(R, "id") || "" });
+    if (local(child) === "hyperlink") for (const run of children(child, "r")) { const id=child.getAttributeNS(R, "id") || ""; runs.push({ ...parseRun(run, relationships, parts), hyperlink: relationships.get(id)?.target || "", hyperlinkId:id }); }
   }
-  return { type: "paragraph", style, list: num, alignment, runs: runs.length ? runs : [{ text: "" }] };
+  return { type: "paragraph", style, list: num ? (numId === 2 ? "number" : "bullet") : "", alignment, runs: runs.length ? runs : [{ text: "" }] };
 }
 
 export function parseDocx(bytes) {
@@ -70,7 +74,9 @@ export function parseDocx(bytes) {
   if (relationshipsSource) {
     const relationshipsDoc = new DOMParser().parseFromString(strFromU8(relationshipsSource), "application/xml");
     for (const relationship of allDescendants(relationshipsDoc, "Relationship")) {
-      if (relationship.getAttribute("Type") === IMAGE_REL) relationships.set(relationship.getAttribute("Id"), normalizePart(relationship.getAttribute("Target")));
+      const type=relationship.getAttribute("Type"), id=relationship.getAttribute("Id"), target=relationship.getAttribute("Target");
+      if (type === IMAGE_REL) relationships.set(id, normalizePart(target));
+      if (type === HYPERLINK_REL) relationships.set(id, { target, external: relationship.getAttribute("TargetMode") === "External" });
     }
   }
   const blocks = [];
@@ -78,14 +84,16 @@ export function parseDocx(bytes) {
     if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts));
     if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts)))) });
   }
-  return { blocks, parts, originalXml: xml, relationships };
+  return { blocks, originalBlocks: structuredClone(blocks), parts, originalXml: xml, relationships };
 }
 
 function runXml(run, drawingIds) {
-  const props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}`;
+  const family=esc(run.fontFamily || ""), halfPoints=Math.max(2,Math.round(Number(run.fontSize)*2));
+  const props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
   const pieces = String(run.text ?? "").split("\n").map((part, index) => `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
   const images = (run.images || []).map((image) => imageXml(image, drawingIds.next())).join("");
-  return `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
+  const xml=`<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
+  return run.hyperlinkId ? `<w:hyperlink r:id="${esc(run.hyperlinkId)}">${xml}</w:hyperlink>` : xml;
 }
 function imageXml(image, drawingId) {
   const width = Math.max(1, Math.round((image.width || 320) * 9525)), height = Math.max(1, Math.round((image.height || 240) * 9525));
@@ -110,7 +118,7 @@ export function addDocxImage(model, bytes, { mime = "image/png", width = 320, he
   return { kind: "image", relationshipId, part, mime, width, height };
 }
 function paragraphXml(p, drawingIds) {
-  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${p.list ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' : ""}`;
+  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${p.list ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${p.list === "number" ? 2 : 1}"/></w:numPr>` : ""}`;
   return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map((run) => runXml(run, drawingIds)).join("")}</w:p>`;
 }
 function blockXml(block, drawingIds) {
@@ -121,12 +129,26 @@ function blockXml(block, drawingIds) {
 export function serializeDocx(model) {
   if (!model?.parts) throw new Error("The original DOCX package is unavailable.");
   const parts = { ...model.parts };
+  // Materialize canonical hyperlinks into ordinary external OOXML relationships.
+  const relPath="word/_rels/document.xml.rels"; let rels=parts[relPath]?strFromU8(parts[relPath]):`<?xml version="1.0"?><Relationships xmlns="${REL}"></Relationships>`;
+  const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table"}:{type:"paragraph",style:block.style||"",alignment:block.alignment||"left",list:block.list||""}));
+  let nextRel=1, needsCanonicalXml=Boolean(model.originalBlocks && structure(model.originalBlocks)!==structure(model.blocks)); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
+  for(const run of (()=>{const out=[];const walk=blocks=>blocks.forEach(block=>block.type==="table"?block.rows.forEach(row=>row.forEach(walk)):out.push(...(block.runs||[])));walk(model.blocks);return out;})()) if(run.hyperlink){
+    if(!run.hyperlinkId){needsCanonicalXml=true;while(ids.has(`rIdFrameChuteLink${nextRel}`))nextRel++;run.hyperlinkId=`rIdFrameChuteLink${nextRel++}`;ids.add(run.hyperlinkId);rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="${run.hyperlinkId}" Type="${HYPERLINK_REL}" Target="${escAttr(run.hyperlink)}" TargetMode="External"/></Relationships>`);}
+  }
+  if(model.blocks.some(block=>block.list)){
+    const numberingType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
+    parts["word/numbering.xml"] ||= strToU8(`<?xml version="1.0" encoding="UTF-8"?><w:numbering xmlns:w="${W}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>`);
+    if(!rels.includes("relationships/numbering"))rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="rIdFrameChuteNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`);
+    const typesPath="[Content_Types].xml";if(parts[typesPath]){let types=strFromU8(parts[typesPath]);if(!types.includes(numberingType))types=types.replace(/<\/Types>\s*$/,`<Override PartName="/word/numbering.xml" ContentType="${numberingType}"/></Types>`);parts[typesPath]=strToU8(types);}
+  }
+  parts[relPath]=strToU8(rels);
   const runs = [];
   const collect = (blocks) => { for (const block of blocks) { if (block.type === "table") for (const row of block.rows) for (const cell of row) collect(cell); else runs.push(...(block.runs || [])); } };
   collect(model.blocks);
   const originalTextCount = (model.originalXml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) || []).length;
   const textRuns = runs.filter((run) => typeof run.text === "string" && run.text.length > 0);
-  if (!model.packageDirty && originalTextCount === textRuns.length) {
+  if (!model.packageDirty && !needsCanonicalXml && originalTextCount === textRuns.length) {
     // Ordinary edits take the least-destructive path: patch text/run formatting
     // in the original XML so drawings, hyperlinks, fields and unknown OOXML
     // remain byte-for-byte represented in the package.
@@ -137,8 +159,9 @@ export function serializeDocx(model) {
       if (!/<w:t(?:\s|>)/.test(body) || !textRuns[index]) return whole;
       const run = textRuns[index++];
       const oldProperties = body.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/)?.[1] || "";
-      const retained = oldProperties.replace(/<w:(?:b|i|u)(?:\s[^>]*)?\/?>(?:<\/w:(?:b|i|u)>)?/g, "");
-      const formatting = `${retained}${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}`;
+      const retained = oldProperties.replace(/<w:(?:b|i|u|rFonts|sz|szCs)(?:\s[^>]*)?\/?>(?:<\/w:(?:b|i|u|rFonts|sz|szCs)>)?/g, "");
+      const family=esc(run.fontFamily||""),halfPoints=Math.max(2,Math.round(Number(run.fontSize)*2));
+      const formatting = `${retained}${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
       const withoutProperties = body.replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, "");
       return `<w:r${attrs}>${formatting ? `<w:rPr>${formatting}</w:rPr>` : ""}${withoutProperties}</w:r>`;
     });

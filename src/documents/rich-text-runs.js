@@ -1,4 +1,4 @@
-export const EMPTY_RUN_STYLE = Object.freeze({ bold: false, italic: false, underline: false });
+export const EMPTY_RUN_STYLE = Object.freeze({ bold: false, italic: false, underline: false, fontFamily: "", fontSize: null, hyperlink: "" });
 
 function decorationUnderlines(value) {
   return String(value || "").toLowerCase().split(/\s+/).includes("underline");
@@ -13,12 +13,15 @@ export function readRunStyle(element, inherited = EMPTY_RUN_STYLE) {
   return {
     bold: inherited.bold || tag === "B" || tag === "STRONG" || weight === "bold" || Number.parseInt(weight, 10) >= 600,
     italic: inherited.italic || tag === "I" || tag === "EM" || String(style.fontStyle || "").toLowerCase() === "italic",
-    underline: inherited.underline || tag === "U" || decorationUnderlines(decoration)
+    underline: inherited.underline || tag === "U" || decorationUnderlines(decoration),
+    fontFamily: style.fontFamily?.replace(/^['"]|['"]$/g, "") || (tag === "FONT" ? element.getAttribute?.("face") : "") || inherited.fontFamily || "",
+    fontSize: Number.parseFloat(style.fontSize) || inherited.fontSize || null,
+    hyperlink: tag === "A" ? element.getAttribute?.("href") || inherited.hyperlink || "" : inherited.hyperlink || ""
   };
 }
 
 function sameStyle(left, right) {
-  return left.bold === right.bold && left.italic === right.italic && left.underline === right.underline;
+  return left.bold === right.bold && left.italic === right.italic && left.underline === right.underline && left.fontFamily === right.fontFamily && left.fontSize === right.fontSize && left.hyperlink === right.hyperlink;
 }
 
 /** Flatten nested/inherited browser markup into canonical, combinable text runs. */

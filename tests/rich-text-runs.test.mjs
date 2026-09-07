@@ -38,3 +38,22 @@ test("canonical underline combinations survive into actual DOCX document.xml", a
   assert.match(properties[2], /<w:i\/>/); assert.match(properties[2], /<w:u /);
   for (const property of [properties[3]]) for (const tag of ["b", "i", "u"]) assert.match(property, new RegExp(`<w:${tag}(?: |/>)`));
 });
+
+test("font, size, alignment, lists, and links serialize as structural OOXML", async () => {
+  const originalXml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>seed</w:t></w:r></w:p></w:body></w:document>';
+  const model = { originalXml, parts: {
+    "[Content_Types].xml": strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>'),
+    "word/document.xml": strToU8(originalXml)
+  }, blocks: [
+    { type:"paragraph", style:"Heading1", alignment:"center", runs:[{ text:"Heading", fontFamily:"Calibri", fontSize:18 }] },
+    { type:"paragraph", list:"bullet", runs:[{ text:"linked", hyperlink:"https://example.com/?a=1&b=2", underline:true }] },
+    { type:"paragraph", list:"number", runs:[{ text:"numbered", fontFamily:"Times New Roman", fontSize:12 }] }
+  ] };
+  const saved=unzipSync(new Uint8Array(await (await serializeDocx(model)).arrayBuffer()));
+  const xml=strFromU8(saved["word/document.xml"]),rels=strFromU8(saved["word/_rels/document.xml.rels"]),types=strFromU8(saved["[Content_Types].xml"]);
+  assert.match(xml, /<w:pStyle w:val="Heading1"\/>/);assert.match(xml, /<w:jc w:val="center"\/>/);
+  assert.match(xml, /<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"\/>/);assert.match(xml, /<w:sz w:val="36"\/>/);
+  assert.match(xml, /<w:numId w:val="1"\/>/);assert.match(xml, /<w:numId w:val="2"\/>/);assert.match(xml, /<w:hyperlink r:id="rIdFrameChuteLink1">/);
+  assert.match(rels, /relationships\/hyperlink/);assert.match(rels, /a=1&amp;b=2/);assert.match(rels, /relationships\/numbering/);
+  assert.ok(saved["word/numbering.xml"]);assert.match(types, /word\/numbering.xml/);
+});
