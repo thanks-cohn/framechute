@@ -15,9 +15,8 @@ const transforms = new WeakMap();
 
 const bar = document.createElement("aside");
 bar.className = "quick-actions"; bar.hidden = true; bar.setAttribute("aria-label", "Quick Actions");
-bar.innerHTML = '<strong class="quick-actions-title">Quick Actions</strong><span class="quick-actions-count"></span><div class="quick-actions-buttons"></div><button class="quick-actions-clear" type="button">Clear</button><progress hidden></progress>';
+bar.innerHTML = '<div class="quick-actions-heading"><strong class="quick-actions-title">Quick Actions</strong><button class="quick-actions-close" type="button" aria-label="Close Quick Actions" title="Close Quick Actions">×</button></div><span class="quick-actions-count"></span><div class="quick-actions-buttons"></div><progress hidden></progress>';
 document.body.append(bar);
-bar.querySelector(".quick-actions-clear").addEventListener("click", () => selection.clear());
 
 function kind(block) {
   if (block.dataset.customKind === "image" || block.querySelector(".image-frame")) return "image";
