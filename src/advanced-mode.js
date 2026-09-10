@@ -148,10 +148,10 @@ style.textContent = `
   .framechute-toolbar-pager {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    min-width: 154px;
+    gap: 3px;
+    min-width: 0;
     max-width: 100%;
-    flex: 1 1 190px;
+    flex: 0 1 auto;
     white-space: nowrap;
     overflow: visible;
   }
@@ -159,20 +159,29 @@ style.textContent = `
   .framechute-toolbar-fixed {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     flex: 0 0 auto;
-    margin-left: auto;
+    margin-left: 4px;
     white-space: nowrap;
   }
 
   .framechute-toolbar-fixed > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
     flex: 0 0 auto;
+    min-height: 34px;
     white-space: nowrap;
   }
 
-  @media (max-width: 760px) {
-    .framechute-mode-toggle > span:nth-child(2) { display: none; }
-    .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
+  .framechute-toolbar-fixed > button[data-toolbar-icon]::before {
+    content: attr(data-toolbar-icon);
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  @media (max-width: 980px) {
     .framechute-toolbar-fixed > button[data-toolbar-icon] {
       width: 36px;
       min-width: 36px;
@@ -181,15 +190,24 @@ style.textContent = `
       font-size: 0;
     }
     .framechute-toolbar-fixed > button[data-toolbar-icon]::before {
-      content: attr(data-toolbar-icon);
       font-size: 18px;
-      line-height: 1;
     }
   }
 
-  @media (max-width: 470px) {
-    .framechute-toolbar-pager {
-      min-width: 128px;
+  @media (max-width: 760px) {
+    .framechute-mode-toggle > span:nth-child(2) { display: none; }
+    .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
+    .framechute-toolbar-fixed { margin-left: 2px; gap: 2px; }
+  }
+
+  @media (max-width: 520px) {
+    .brand { display: none; }
+    .framechute-mode-toggle .framechute-mode-state { display: none; }
+    .framechute-mode-toggle {
+      width: 36px;
+      min-width: 36px;
+      padding: 4px;
+      justify-content: center;
     }
     .framechute-toolbar-pager-window > button[data-toolbar-icon] {
       width: 36px;
@@ -209,9 +227,9 @@ style.textContent = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 74px;
-    max-width: min(320px, 42vw);
-    flex: 1 1 auto;
+    min-width: 86px;
+    max-width: 180px;
+    flex: 0 1 auto;
     overflow: hidden;
   }
 
@@ -240,8 +258,8 @@ style.textContent = `
   .framechute-toolbar-pager-arrow {
     display: inline-grid;
     place-items: center;
-    width: 30px;
-    min-width: 30px;
+    width: 28px;
+    min-width: 28px;
     height: 34px;
     min-height: 34px;
     padding: 0;
@@ -368,6 +386,12 @@ function fixedToolbarActions(...items) {
   return group;
 }
 
+function addFixedToolbarItem(group, item) {
+  if (!group || !item) return item;
+  if (!group.contains(item)) group.append(item);
+  return item;
+}
+
 function toolbarItemLabel(item) {
   return item?.getAttribute?.("aria-label")
     || item?.title
@@ -484,11 +508,10 @@ if (toolbar && advancedToolbar) {
   // layer knows how to route.
   advancedToolbar.prepend(openAnyFileButton());
   const advancedPager = createToolbarPager(advancedToolbar, "FrameChute advanced controls");
-  advancedToolbar.append(
-    fixedToolbarActions(
-      proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
-    )
+  const advancedFixed = fixedToolbarActions(
+    proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
   );
+  advancedToolbar.append(advancedFixed);
 
   const classic = document.createElement("div");
   classic.className = "classic-toolbar-primary";
@@ -520,11 +543,10 @@ if (toolbar && advancedToolbar) {
     proxyButton("Take Snapshot", "take-snapshot", "Save the used visual canvas as a flattened image")
   ].forEach(item => classicPager?.add(item));
 
-  classic.append(
-    fixedToolbarActions(
-      proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
-    )
+  const classicFixed = fixedToolbarActions(
+    proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
   );
+  classic.append(classicFixed);
 
   const sourceSaved = document.querySelector("#saved-frames");
   if (sourceSaved) syncClassicSavedSelect(saved, sourceSaved);
@@ -538,6 +560,17 @@ if (toolbar && advancedToolbar) {
       classicPager?.render();
     }
   };
+
+  window.FrameChuteToolbarFixed = {
+    add(item, mode = window.frameChuteAdvancedMode ? "advanced" : "classic") {
+      return addFixedToolbarItem(mode === "advanced" ? advancedFixed : classicFixed, item);
+    }
+  };
+
+  for (const pending of window.FrameChuteToolbarFixedPending || []) {
+    window.FrameChuteToolbarFixed.add(pending.item, pending.mode);
+  }
+  window.FrameChuteToolbarFixedPending = [];
 
   // Module scripts can become ready in a different order. Never let late/early
   // toolbar commands fall back to the raw header, because they can squeeze the
