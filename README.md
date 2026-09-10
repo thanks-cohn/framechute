@@ -1,8 +1,19 @@
-# FrameChute
+# SUBSTRATE
 
-**Your browser has tabs. FrameChute gives it a desk.**
+```text
+███████╗██╗   ██╗██████╗ ███████╗████████╗██████╗  █████╗ ████████╗███████╗
+██╔════╝██║   ██║██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗╚══██╔══╝██╔════╝
+███████╗██║   ██║██████╔╝███████╗   ██║   ██████╔╝███████║   ██║   █████╗
+╚════██║██║   ██║██╔══██╗╚════██║   ██║   ██╔══██╗██╔══██║   ██║   ██╔══╝
+███████║╚██████╔╝██████╔╝███████║   ██║   ██║  ██║██║  ██║   ██║   ███████╗
+╚══════╝ ╚═════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
+```
 
-FrameChute is a local-first spatial workspace for Chrome and Chromium. Instead of opening one application for a PDF, another for an image, another for a DOCX, and another for a CSV, FrameChute puts those things on one shared workspace and lets useful operations compose.
+**Your browser has tabs. SUBSTRATE gives it a desk.**
+
+SUBSTRATE is a local-first spatial computing project built around a simple idea: different kinds of digital material should share the same small set of dependable primitives wherever possible. FrameChute is the current Chrome/Chromium extension implementation of SUBSTRATE.
+
+Instead of opening one application for a PDF, another for an image, another for a DOCX, and another for a CSV, SUBSTRATE puts those things on one shared workspace and lets useful operations compose.
 
 ```text
 Open / Drop / Paste
@@ -14,6 +25,18 @@ move · edit · extract · compare · combine · convert
 keep working or Save As
 ```
 
+## Design law: reuse the primitive
+
+SUBSTRATE prefers **one small, coherent architecture over a pile of miniature applications**.
+
+When two features can share a primitive, they should. Movement, selection, geometry, object identity, menus, saving, conversion, undo, and composition should remain parallel across material types unless a real performance, fidelity, or correctness requirement forces an exception.
+
+> **Same primitive first. Necessary exception second.**
+
+A PDF may need behavior an image does not. A video may need timing machinery a DOCX does not. Those differences should live at the edge instead of forcing every file type to reinvent the system underneath it.
+
+If repeating architecture and shared primitives can let a roughly 10 MB system provide work that would otherwise require a pile of isolated tools approaching 1 GB, that is a win. Compactness is not the only goal, but **simplicity, reuse, and elegance are architectural requirements rather than afterthoughts.**
+
 The goal is not to reproduce every professional feature in Photoshop, Word, Acrobat, Premiere, Excel, or Blender.
 
 The goal is to make a very large class of ordinary file work feel immediate:
@@ -24,7 +47,7 @@ The goal is to make a very large class of ordinary file work feel immediate:
 
 ## Project status
 
-FrameChute is in **active development**. It is already usable from source as a Manifest V3 Chrome/Chromium extension, but the project is still in the stage where interaction rules, document fidelity, export behavior, and workspace primitives are being hardened aggressively.
+SUBSTRATE is in **active development**. FrameChute, its current Manifest V3 Chrome/Chromium extension implementation, is already usable from source, while the project is still in the stage where interaction rules, document fidelity, export behavior, and workspace primitives are being hardened aggressively.
 
 **Current extension version:** `1.0.14`
 
@@ -49,7 +72,7 @@ Recent stabilization includes:
 - Advanced-only timing controls being removed from the rendered menu when Advanced mode is off
 - PDF-specific settings for link-annotation deletion behavior
 
-This is the current character of the project: **broad utility already exists; now the universal interaction laws are being made dependable.**
+This is the current character of SUBSTRATE: **broad utility already exists; now the universal interaction laws are being made dependable.**
 
 ---
 
@@ -158,7 +181,7 @@ image object
 crop / annotate / convert / save
 ```
 
-That little workflow captures a large part of the FrameChute philosophy: **the result of one tool should immediately become normal material for the next tool.**
+That little workflow captures a large part of the SUBSTRATE philosophy: **the result of one tool should immediately become normal material for the next tool.**
 
 ### CSV
 
@@ -293,7 +316,7 @@ The PDF replacement system is intentionally useful before it is exhaustive.
 
 ## Quick Actions and composition
 
-FrameChute's action system is built around a simple idea:
+SUBSTRATE's action system is built around a simple idea:
 
 ```text
 select material
@@ -451,7 +474,7 @@ Save As, directory access, capture behavior, and codecs depend on the browser an
 
 ---
 
-# Where FrameChute is going
+# Where SUBSTRATE is going
 
 The project is moving from **many useful capabilities** toward **a small number of universal, dependable primitives**.
 
@@ -519,7 +542,7 @@ This opens the door to better composition, deterministic PDF arrangement, page f
 
 ## Small drawing primitives, large compositional reach
 
-FrameChute does not need hundreds of illustration tools before it can become useful for diagrams, tutorials, comics, storyboards, and annotated screenshots.
+SUBSTRATE does not need hundreds of illustration tools before it can become useful for diagrams, tutorials, comics, storyboards, and annotated screenshots.
 
 The useful primitive set is comparatively small:
 
@@ -555,7 +578,7 @@ without requiring FrameChute to become a separate spreadsheet application intern
 
 ## Longer term
 
-The long-term direction is a browser workspace where files, generated results, drawings, structured data, documents, media, and eventually lightweight 3D/web objects can share the same direct-manipulation rules.
+The long-term direction of SUBSTRATE is a browser workspace where files, generated results, drawings, structured data, documents, media, and eventually lightweight 3D/web objects can share the same direct-manipulation rules.
 
 > **Files become objects. Objects become scenes. Scenes can eventually become worlds.**
 
@@ -607,9 +630,9 @@ Browser-mediated capabilities such as opening a local file/folder or starting sc
 
 ## License
 
-FrameChute is **open-source software released under the MIT License**.
+SUBSTRATE, including the FrameChute implementation in this repository, is **open-source software released under the MIT License**.
 
-You are free to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of FrameChute, including building derivative and commercial projects from it, subject to the terms of the MIT License.
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of this codebase, including building derivative and commercial projects from it, subject to the terms of the MIT License.
 
 See [`LICENSE`](LICENSE) for the full license text.
 
@@ -617,4 +640,4 @@ See [`LICENSE`](LICENSE) for the full license text.
 
 ## In one sentence
 
-**FrameChute is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
+**SUBSTRATE is a local-first browser workbench philosophy and architecture where everyday digital material shares a small set of reusable primitives, becoming movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites. FrameChute is its current Chrome/Chromium implementation.**
