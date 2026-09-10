@@ -70,3 +70,31 @@ test("mixed existing, PNG, and JPEG images retain unique relationships and drawi
   assert.deepEqual(pictureIds, docPrIds);
   for (const id of ["rIdFrameChute1", png.relationshipId, jpeg.relationshipId]) assert.match(documentXml, new RegExp(`r:embed="${id}"`));
 });
+
+test("floating DOCX images serialize as Word anchors without corrupting relationship ids", async () => {
+  const originalXml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body></w:document>';
+  const model = {
+    parts: {
+      "[Content_Types].xml": strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>'),
+      "word/_rels/document.xml.rels": strToU8('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'),
+      "word/document.xml": strToU8(originalXml)
+    },
+    originalXml,
+    originalBlocks: [{ type: "paragraph", style: "", alignment: "left", list: "", level: 0, lineSpacing: null, spaceBefore: 0, spaceAfter: null, indentLeft: 0, indentRight: 0, firstLine: 0, pageBreak: false, runs: [] }],
+    relationships: new Map(),
+    blocks: []
+  };
+  const image = addDocxImage(model, new Uint8Array([137, 80, 78, 71]), { mime: "image/png", width: 200, height: 100 });
+  const floating = { ...image, relationshipId: `${image.relationshipId}|fcwrap:front,120,80` };
+  model.blocks = [{ type: "paragraph", spaceAfter: 0.0001, runs: [{ text: "", images: [floating] }] }];
+
+  const saved = unzipSync(new Uint8Array(await (await serializeDocx(model)).arrayBuffer()));
+  const xml = strFromU8(saved["word/document.xml"]);
+  assert.match(xml, /<wp:anchor\b/);
+  assert.match(xml, /behindDoc="0"/);
+  assert.match(xml, /<wp:wrapNone\/>/);
+  assert.match(xml, new RegExp(`r:embed="${image.relationshipId}"`));
+  assert.doesNotMatch(xml, /r:embed="[^"]*\|fcwrap:/);
+  assert.match(xml, /<wp:posOffset>1143000<\/wp:posOffset>/);
+  assert.match(xml, /<wp:posOffset>762000<\/wp:posOffset>/);
+});
