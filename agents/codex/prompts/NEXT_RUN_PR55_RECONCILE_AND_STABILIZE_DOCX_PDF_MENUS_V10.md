@@ -26,7 +26,7 @@ PR #54 has already merged to `main` after PR #55 was created. Before substantive
 
 This pass is a stabilization summit pass, not a feature grab-bag. Make the existing interaction model behave like a dependable ordinary editor/workbench by fixing the root primitives that currently create repeated regressions.
 
-The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands, visually detached UI, or treating material already inside FrameChute as if it had just arrived from outside.
+The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands, visually detached UI, treating material already inside FrameChute as if it had just arrived from outside, or flashing a global drag overlay.
 
 ## P0 work, in order
 
@@ -45,7 +45,6 @@ Preserve all useful #55 DOCX work:
 
 Preserve all merged #54 work:
 - internal FrameChute image drag ownership
-- no global Drop into FrameChute overlay during internal image movement
 - image drop into DOCX
 - image drop into PDF
 - actual image-byte resolution
@@ -54,25 +53,42 @@ Preserve all merged #54 work:
 
 Resolve conflicts semantically, not by choosing one entire side.
 
-### 2. Make image drag ownership universal across workspace, DOCX, and PDF
+### 2. Retire the global `Drop into FrameChute` overlay entirely
 
-This is crucial. Read `agents/codex/debug/IMAGE_DRAG_INTERCHANGE_V10.md` before implementing it.
+This is now a hard product law for this pass.
+
+Do not merely improve suppression logic. Remove/retire the global full-workspace `Drop into FrameChute` overlay as a visual/stateful participant in drag/drop.
+
+Required:
+
+```text
+DOCX frame/editor -> global overlay impossible
+PDF frame/editor  -> global overlay impossible
+any internal FrameChute image drag -> global overlay impossible
+external OS/browser image drag -> drop still works, but no global overlay
+```
+
+Preserve the actual drop handlers and ingestion capabilities. If local feedback is useful, show only destination-scoped feedback such as a DOCX/PDF outline while that destination owns the drag. Do not replace the old overlay with another full-workspace modal layer.
+
+Search all CSS/JS associated with `Drop into FrameChute`, `is-drop-target`, drag-depth counters, and global ingest presentation. Decouple drop capability from overlay presentation. No drag, internal or external, should be able to make the old full-workspace overlay flash.
+
+### 3. Make image drag ownership universal across workspace, DOCX, and PDF
+
+Read `agents/codex/debug/IMAGE_DRAG_INTERCHANGE_V10.md` before implementing this.
 
 Current symptom set:
-- picking up an image already inside FrameChute can still cause the global `Drop into FrameChute` overlay;
 - an embedded DOCX image can be dragged out in a way that becomes a new FrameChute frame, yet cannot reliably be repositioned/reordered inside the same DOCX;
-- PDF can receive images but editable PDF images are not yet symmetric drag sources that can move within PDF or be dragged back out to workspace/DOCX.
+- PDF can receive images but editable PDF images are not yet symmetric drag sources that can move within PDF or be dragged back out to workspace/DOCX;
+- browser-native `<img>` payloads can still make internal image origins look external.
 
 Architectural law:
 
 ```text
 Any image whose origin is already inside FrameChute
 -> begin one FrameChute-internal image drag session
--> global ingest overlay is forbidden
+-> generic external ingest is forbidden
 -> destination decides move/copy semantics
 ```
-
-Do not let default browser `<img>` drag payloads make an internal image look external.
 
 Use/reuse the shared drag-ownership primitive with an origin descriptor and real image Blob provider. Preserve the #54 native drag lifecycle where the browser's normal post-`dragstart` `pointercancel` must not destroy the session.
 
@@ -90,7 +106,7 @@ For DOCX, use the real embedded part bytes and relationship metadata. `contentEd
 
 For PDF, FrameChute-inserted image edits already have MIME/bytes/base64/geometry and must become first-class internal drag sources. Existing original-PDF image extraction should only be exposed when real underlying raster bytes + geometry can be resolved confidently; do not fake it with page screenshots.
 
-### 3. Permanently fix detached submenu geometry
+### 4. Permanently fix detached submenu geometry
 
 This is a repeatedly reported blocking UI regression.
 
@@ -111,7 +127,7 @@ Never mix viewport rectangles with `offsetTop`/parent-local coordinates. Never l
 
 Keyboard ArrowRight/ArrowLeft/Escape must keep focus and geometry coherent.
 
-### 4. Advanced OFF must omit advanced timing commands
+### 5. Advanced OFF must omit advanced timing commands
 
 When `window.frameChuteAdvancedMode !== true`, these commands must not exist in the rendered generic context menu:
 - Create/Edit timed move
@@ -122,39 +138,19 @@ When `window.frameChuteAdvancedMode !== true`, these commands must not exist in 
 
 Do not merely disable them. Prefer command-model/construction filtering so the simple user is never presented with them.
 
-### 5. Sync With is ONLY for playable audio/video
+### 6. Sync With is ONLY for playable audio/video
 
 `Sync with...` and `Make independent` must appear only for actual playable video or audio objects.
 
-Never show these commands for:
-- image
-- PDF
-- DOCX
-- WEBX
-- text
-- SVG
-- canvas
-- gallery/static image
-- generic files
-- blank workspace
+Never show these commands for image, PDF, DOCX, WEBX, text, SVG, canvas, gallery/static image, generic files, or blank workspace.
 
 Make the predicate capability based. Include audio and video. Keep separators hidden/omitted with the commands.
 
-### 6. Repair PR #55 DOCX hazards
+### 7. Repair PR #55 DOCX hazards
 
 #### Safe Find/Replace
 
-Do not use `editor.innerHTML.split(search).join(replacement)` or equivalent raw HTML mutation.
-
-Find/Replace must operate on text nodes or canonical runs so replacement text cannot accidentally rewrite:
-- HTML tags
-- hrefs
-- DOCX relationship metadata
-- image metadata
-- table structure
-- arbitrary attributes
-
-Preserve unrelated formatting/structure.
+Do not use `editor.innerHTML.split(search).join(replacement)` or equivalent raw HTML mutation. Find/Replace must operate on text nodes or canonical runs so replacement text cannot accidentally rewrite tags, hrefs, DOCX relationship metadata, image metadata, table structure, or arbitrary attributes.
 
 #### Formatting fidelity
 
@@ -168,9 +164,9 @@ DOCX numbering IDs are document-local. Do not hard-code universal IDs such as 1 
 
 After merging latest main, both OS image drop and existing FrameChute-image drop into DOCX must still insert exactly once and save/reopen correctly.
 
-Additionally, existing embedded DOCX images must become deliberate internal drag sources. Dragging one elsewhere in the same DOCX must move/reorder that image at the resolved caret rather than creating a new workspace frame. Dragging it out of the DOCX must follow the cross-container copy semantics in the drag debug map.
+Existing embedded DOCX images must become deliberate internal drag sources. Dragging one elsewhere in the same DOCX must move/reorder that image at the resolved caret rather than creating a new workspace frame. Dragging it out of the DOCX follows cross-container copy semantics.
 
-### 7. PDF explicit newlines, tabs, and structured whitespace
+### 8. PDF explicit newlines, tabs, and structured whitespace
 
 The canonical PDF edit object must preserve what the writer actually created.
 
@@ -193,9 +189,7 @@ y = oldTop - height
 
 Implement a deterministic tab-stop rule for preview/export while retaining `\t` in canonical text.
 
-Acceptance: type line 1, Enter, line 2 => both visible, both survive Save/reopen. Type Tab then text => canonical state retains a real tab. Six literal spaces remain six literal spaces.
-
-### 8. PDF link annotations must follow text editing
+### 9. PDF link annotations must follow text editing
 
 Visible text and PDF link annotations are separate structures. FrameChute must explicitly synchronize them when it can confidently associate them.
 
@@ -205,25 +199,13 @@ Default user law:
 Deleting Text Deletes Link [ON]
 ```
 
-When ON:
-- deleting linked text deletes the associated link annotation;
-- text deletion + annotation deletion is ONE undo step;
-- Undo restores both.
+When ON, deleting linked text deletes the associated link annotation; text deletion + annotation deletion is ONE undo step; Undo restores both. When OFF, deleting text may intentionally leave the annotation.
 
-When OFF:
-- deleting text may intentionally leave the annotation.
+When editing linked text without deleting it, preserve the link target and update/rebuild the clickable annotation rectangle so it follows the edited text geometry.
 
-When editing linked text without deleting it:
-- preserve the link target;
-- update/rebuild the associated clickable rectangle so it follows the edited text geometry instead of leaving a ghost hot area where the old text was.
+### 10. PDF-specific Settings command/popup
 
-Association must be conservative and page/geometry aware. Do not delete unrelated nearby annotations.
-
-### 9. PDF-specific Settings command/popup
-
-Right-clicking inside the PDF editing surface should expose `Settings...` in the PDF-native context menu.
-
-It opens a PDF-specific settings UI, not generic FrameChute settings.
+Right-clicking inside the PDF editing surface should expose `Settings...` in the PDF-native context menu. It opens a PDF-specific settings UI, not generic FrameChute settings.
 
 Initial required setting:
 
@@ -237,8 +219,6 @@ Keep Undo, Redo, Save and Save As available where appropriate in the PDF menu.
 
 ## Context routing law
 
-Do not regress format-native menus:
-
 ```text
 PDF surface  -> PDF menu
 DOCX surface -> DOCX menu
@@ -251,7 +231,9 @@ Resolve from the physical point/target under the right-click. Do not require pri
 ## Testing requirements
 
 Add focused tests for pure logic wherever possible:
-- internal image origin descriptor and global-overlay suppression for workspace/DOCX/PDF sources;
+- no global overlay presentation for internal or external drags;
+- external drop ingestion still works after overlay retirement;
+- internal image origin descriptor and generic-ingest suppression for workspace/DOCX/PDF sources;
 - same-container image move vs cross-container copy arbitration;
 - DOCX embedded image move/reorder without duplicate workspace ingest;
 - PDF editable image same-document move and drag-out Blob path;
@@ -265,9 +247,7 @@ Add focused tests for pure logic wherever possible:
 - PDF field growth while preserving top anchor;
 - PDF linked-text delete preference and undo snapshot semantics.
 
-Then run the complete existing suite, including PR #54 drag-ownership and PDF-image tests.
-
-Run syntax checks, `git diff --check`, and the Chrome Web Store packaging gate.
+Then run the complete existing suite, including PR #54 drag-ownership and PDF-image tests. Run syntax checks, `git diff --check`, and the Chrome Web Store packaging gate.
 
 Do not claim Word/LibreOffice/browser manual verification unless it was actually performed.
 
@@ -275,16 +255,6 @@ Do not claim Word/LibreOffice/browser manual verification unless it was actually
 
 Use the available runtime aggressively. At approximately the 30-minute mark, **conclude active implementation and provide a handoff**.
 
-The 30-minute mark is a reliability checkpoint, not an instruction to artificially limit useful work. The handoff must include:
-- exact branch and head SHA;
-- commits created;
-- files changed;
-- reusable primitives added;
-- which user-facing problems are fully solved;
-- which are partially solved;
-- tests and validation results;
-- manual checks actually performed;
-- unresolved risks;
-- exact next highest-leverage continuation step.
+The 30-minute mark is a reliability checkpoint, not an instruction to artificially limit useful work. The handoff must include exact branch/head SHA, commits, files changed, reusable primitives, solved/partial problems, tests, manual checks actually performed, unresolved risks, and the exact next highest-leverage continuation step.
 
 Do not leave the branch in an unexplained half-merged state.
