@@ -138,19 +138,20 @@ style.textContent = `
   .classic-toolbar-primary {
     display: none;
     align-items: center;
+    gap: 6px;
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     flex-wrap: nowrap;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .framechute-toolbar-pager {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-width: 0;
+    min-width: 154px;
     max-width: 100%;
-    flex: 0 1 auto;
+    flex: 1 1 190px;
     white-space: nowrap;
     overflow: visible;
   }
@@ -169,13 +170,48 @@ style.textContent = `
     white-space: nowrap;
   }
 
+  @media (max-width: 760px) {
+    .framechute-mode-toggle > span:nth-child(2) { display: none; }
+    .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
+    .framechute-toolbar-fixed > button[data-toolbar-icon] {
+      width: 36px;
+      min-width: 36px;
+      padding: 0;
+      overflow: hidden;
+      font-size: 0;
+    }
+    .framechute-toolbar-fixed > button[data-toolbar-icon]::before {
+      content: attr(data-toolbar-icon);
+      font-size: 18px;
+      line-height: 1;
+    }
+  }
+
+  @media (max-width: 470px) {
+    .framechute-toolbar-pager {
+      min-width: 128px;
+    }
+    .framechute-toolbar-pager-window > button[data-toolbar-icon] {
+      width: 36px;
+      min-width: 36px;
+      padding: 0;
+      overflow: hidden;
+      font-size: 0;
+    }
+    .framechute-toolbar-pager-window > button[data-toolbar-icon]::before {
+      content: attr(data-toolbar-icon);
+      font-size: 18px;
+      line-height: 1;
+    }
+  }
+
   .framechute-toolbar-pager-window {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 92px;
+    min-width: 74px;
     max-width: min(320px, 42vw);
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     overflow: hidden;
   }
 
@@ -292,6 +328,24 @@ function proxyButton(label, targetId, title = label) {
   button.type = "button";
   button.textContent = label;
   button.title = title;
+  button.dataset.toolbarTarget = targetId;
+  const icons = {
+    "export-fcx": "⇩",
+    "import-fcx": "⇧",
+    "take-snapshot": "▣",
+    "add-text": "＋",
+    "open-text": "T",
+    "open-pdf": "P",
+    "open-docx": "W",
+    "open-image": "▧",
+    "open-gallery": "▦",
+    "open-video": "▶",
+    "open-url": "↗",
+    "save-frame": "⌑",
+    "restore-frame": "↶",
+    "reconnect-all": "⟳"
+  };
+  if (icons[targetId]) button.dataset.toolbarIcon = icons[targetId];
   button.addEventListener("click", () => document.querySelector(`#${targetId}`)?.click());
   return button;
 }
@@ -300,6 +354,7 @@ function openAnyFileButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "Open File";
+  button.dataset.toolbarIcon = "📂";
   button.title = "Open any supported file";
   button.setAttribute("aria-label", button.title);
   button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("framechute:open-file")));
@@ -483,4 +538,13 @@ if (toolbar && advancedToolbar) {
       classicPager?.render();
     }
   };
+
+  // Module scripts can become ready in a different order. Never let late/early
+  // toolbar commands fall back to the raw header, because they can squeeze the
+  // pager (including Open File and its arrows) completely out of view.
+  for (const pending of window.FrameChuteToolbarPending || []) {
+    window.FrameChuteToolbarPager.add(pending.item, pending.mode);
+  }
+  window.FrameChuteToolbarPending = [];
+  window.dispatchEvent(new CustomEvent("framechute:toolbar-pager-ready"));
 }
