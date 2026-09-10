@@ -1,4 +1,4 @@
-const workspace = document.querySelector("#workspace");
+const workspace = typeof document !== "undefined" ? document.querySelector("#workspace") : null;
 
 export const WORKSPACE_EXPANSION_STEP = 640;
 export const WORKSPACE_EDGE_MARGIN = 96;
@@ -150,14 +150,16 @@ function beginMeasuredBlockDrag(event, block, handle) {
 // This capture-phase owner intentionally replaces the older block-drag handlers
 // for the two visible drag surfaces. It is what enforces the product rule:
 // toolbar visible = fixed extent; toolbar hidden = drag-to-expand extent.
-document.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || !workspace) return;
-  const compact = event.target.closest?.(".compact-drag-handle");
-  const header = event.target.closest?.(".block-header");
-  const handle = compact || header;
-  if (!handle) return;
-  if (header && !compact && event.target.closest?.("input, button, select, textarea, a")) return;
-  const block = handle.closest?.(".block");
-  if (!block || block.classList.contains("is-maximized")) return;
-  beginMeasuredBlockDrag(event, block, handle);
-}, true);
+if (typeof document !== "undefined") {
+  document.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !workspace) return;
+    const compact = event.target.closest?.(".compact-drag-handle");
+    const header = event.target.closest?.(".block-header");
+    const handle = compact || header;
+    if (!handle) return;
+    if (header && !compact && event.target.closest?.("input, button, select, textarea, a")) return;
+    const block = handle.closest?.(".block");
+    if (!block || block.classList.contains("is-maximized")) return;
+    beginMeasuredBlockDrag(event, block, handle);
+  }, true);
+}
