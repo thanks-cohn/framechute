@@ -12,6 +12,7 @@ const children = (node, name) => [...(node?.children || [])].filter((item) => lo
 const descendant = (node, name) => [...(node?.getElementsByTagNameNS?.(W, name) || [])];
 const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escAttr = (value) => esc(value).replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+const ooxmlColor = (value) => { const text=String(value||"").trim();if(/^#[0-9a-f]{6}$/i.test(text))return text.slice(1).toUpperCase();const rgb=/rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)/i.exec(text);return rgb?rgb.slice(1,4).map(part=>Number(part).toString(16).padStart(2,"0")).join("").toUpperCase():/^[0-9a-f]{6}$/i.test(text)?text.toUpperCase():""; };
 
 const allDescendants = (node, name) => [...(node?.getElementsByTagName?.("*") || [])].filter((item) => local(item) === name);
 const attribute = (node, namespace, plain) => node?.getAttributeNS?.(namespace, plain) || node?.getAttribute?.(`r:${plain}`) || node?.getAttribute?.(plain) || "";
@@ -43,21 +44,24 @@ function parseRun(run, relationships, parts) {
     return Boolean(property) && !["0", "false", "none", "off"].includes(String(value || "").toLowerCase());
   };
   const fonts = descendant(props, "rFonts")[0], size = Number(descendant(props, "sz")[0]?.getAttributeNS(W, "val") || 0) / 2;
-  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u"), fontFamily: fonts?.getAttributeNS(W, "ascii") || fonts?.getAttribute("w:ascii") || "", fontSize: size || null };
+  const color=descendant(props,"color")[0],highlight=descendant(props,"shd")[0]||descendant(props,"highlight")[0];
+  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u"), strike: enabled("strike"), color:color?.getAttributeNS(W,"val")||color?.getAttribute("w:val")||"", highlight:highlight?.getAttributeNS(W,"fill")||highlight?.getAttribute("w:fill")||highlight?.getAttributeNS(W,"val")||highlight?.getAttribute("w:val")||"", fontFamily: fonts?.getAttributeNS(W, "ascii") || fonts?.getAttribute("w:ascii") || "", fontSize: size || null };
 }
 
-function parseParagraph(paragraph, relationships, parts) {
+function parseParagraph(paragraph, relationships, parts, numbering=new Map()) {
   const pPr = children(paragraph, "pPr")[0];
   const style = descendant(pPr, "pStyle")[0]?.getAttributeNS(W, "val") || descendant(pPr, "pStyle")[0]?.getAttribute("w:val") || "";
   const numPr = descendant(pPr, "numPr")[0], num = Boolean(numPr);
-  const numId = Number(descendant(numPr, "numId")[0]?.getAttributeNS(W, "val") || 0);
+  const numId = Number(descendant(numPr, "numId")[0]?.getAttributeNS(W, "val") || 0),level=Number(descendant(numPr,"ilvl")[0]?.getAttributeNS(W,"val")||0);
   const alignment = descendant(pPr, "jc")[0]?.getAttributeNS(W, "val") || "left";
+  const spacing=descendant(pPr,"spacing")[0],indent=descendant(pPr,"ind")[0];
   const runs = [];
   for (const child of paragraph.children) {
     if (local(child) === "r") runs.push(parseRun(child, relationships, parts));
     if (local(child) === "hyperlink") for (const run of children(child, "r")) { const id=child.getAttributeNS(R, "id") || ""; runs.push({ ...parseRun(run, relationships, parts), hyperlink: relationships.get(id)?.target || "", hyperlinkId:id }); }
   }
-  return { type: "paragraph", style, list: num ? (numId === 2 ? "number" : "bullet") : "", alignment, runs: runs.length ? runs : [{ text: "" }] };
+  const value=(node,name)=>Number(node?.getAttributeNS(W,name)||node?.getAttribute(`w:${name}`)||0);
+  return { type: "paragraph", style, list: num ? (numbering.get(`${numId}:${level}`)||numbering.get(`${numId}:0`)||"number") : "", numId:num?numId:null, level, alignment, lineSpacing:value(spacing,"line")?value(spacing,"line")/240:null, spaceBefore:value(spacing,"before")/20, spaceAfter:value(spacing,"after")/20, indentLeft:value(indent,"left")/1440, indentRight:value(indent,"right")/1440, firstLine:(value(indent,"firstLine")-value(indent,"hanging"))/1440, pageBreak:Boolean(descendant(pPr,"pageBreakBefore")[0]), runs: runs.length ? runs : [{ text: "" }] };
 }
 
 export function parseDocx(bytes) {
@@ -79,18 +83,20 @@ export function parseDocx(bytes) {
       if (type === HYPERLINK_REL) relationships.set(id, { target, external: relationship.getAttribute("TargetMode") === "External" });
     }
   }
+  const numbering=new Map(),numberingSource=parts["word/numbering.xml"];
+  if(numberingSource){const numberingDoc=new DOMParser().parseFromString(strFromU8(numberingSource),"application/xml"),abstracts=new Map();for(const abstract of allDescendants(numberingDoc,"abstractNum")){const id=Number(abstract.getAttributeNS(W,"abstractNumId")||abstract.getAttribute("w:abstractNumId"));const levels=new Map();for(const lvl of children(abstract,"lvl")){const at=Number(lvl.getAttributeNS(W,"ilvl")||lvl.getAttribute("w:ilvl")||0),format=descendant(lvl,"numFmt")[0]?.getAttributeNS(W,"val")||descendant(lvl,"numFmt")[0]?.getAttribute("w:val");levels.set(at,format==="bullet"?"bullet":"number");}abstracts.set(id,levels);}for(const num of allDescendants(numberingDoc,"num")){const id=Number(num.getAttributeNS(W,"numId")||num.getAttribute("w:numId")),abstractId=Number(descendant(num,"abstractNumId")[0]?.getAttributeNS(W,"val")||descendant(num,"abstractNumId")[0]?.getAttribute("w:val"));for(const [level,type] of abstracts.get(abstractId)||[])numbering.set(`${id}:${level}`,type);}}
   const blocks = [];
   for (const child of body.children) {
-    if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts));
-    if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts)))) });
+    if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts,numbering));
+    if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering)))) });
   }
   return { blocks, originalBlocks: structuredClone(blocks), parts, originalXml: xml, relationships };
 }
 
 function runXml(run, drawingIds) {
   const family=esc(run.fontFamily || ""), halfPoints=Math.max(2,Math.round(Number(run.fontSize)*2));
-  const props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
-  const pieces = String(run.text ?? "").split("\n").map((part, index) => `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
+  const color=ooxmlColor(run.color),highlight=ooxmlColor(run.highlight),props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${run.strike?"<w:strike/>":""}${color?`<w:color w:val="${color}"/>`:""}${highlight?`<w:shd w:val="clear" w:color="auto" w:fill="${highlight}"/>`:""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
+  const pieces = String(run.text ?? "").split(/([\t\n])/).map(part => part==="\t"?"<w:tab/>":part==="\n"?"<w:br/>":`<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
   const images = (run.images || []).map((image) => imageXml(image, drawingIds.next())).join("");
   const xml=`<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
   return run.hyperlinkId ? `<w:hyperlink r:id="${esc(run.hyperlinkId)}">${xml}</w:hyperlink>` : xml;
@@ -118,7 +124,8 @@ export function addDocxImage(model, bytes, { mime = "image/png", width = 320, he
   return { kind: "image", relationshipId, part, mime, width, height };
 }
 function paragraphXml(p, drawingIds) {
-  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${p.list ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${p.list === "number" ? 2 : 1}"/></w:numPr>` : ""}`;
+  const twips=value=>Math.round(Number(value||0)*1440),spacing=(p.lineSpacing||p.spaceBefore||p.spaceAfter!=null)?`<w:spacing${p.spaceBefore?` w:before="${Math.round(p.spaceBefore*20)}"`:""}${p.spaceAfter!=null?` w:after="${Math.round(p.spaceAfter*20)}"`:""}${p.lineSpacing?` w:line="${Math.round(p.lineSpacing*240)}" w:lineRule="auto"`:""}/>`:"",indent=(p.indentLeft||p.indentRight||p.firstLine)?`<w:ind${p.indentLeft?` w:left="${twips(p.indentLeft)}"`:""}${p.indentRight?` w:right="${twips(p.indentRight)}"`:""}${p.firstLine>0?` w:firstLine="${twips(p.firstLine)}"`:p.firstLine<0?` w:hanging="${twips(-p.firstLine)}"`:""}/>`:"";
+  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${spacing}${indent}${p.pageBreak?"<w:pageBreakBefore/>":""}${p.list ? `<w:numPr><w:ilvl w:val="${Math.max(0,Number(p.level)||0)}"/><w:numId w:val="${p.list === "number" ? 2 : 1}"/></w:numPr>` : ""}`;
   return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map((run) => runXml(run, drawingIds)).join("")}</w:p>`;
 }
 function blockXml(block, drawingIds) {
@@ -129,10 +136,14 @@ function blockXml(block, drawingIds) {
 export function serializeDocx(model) {
   if (!model?.parts) throw new Error("The original DOCX package is unavailable.");
   const parts = { ...model.parts };
+  const createdStyles=model.blocks.some(block=>/^Heading[1-3]$/.test(block.style||""))&&!parts["word/styles.xml"];
+  if(createdStyles)parts["word/styles.xml"]=strToU8(`<?xml version="1.0"?><w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${[1,2,3].map(level=>`<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="${level-1}"/></w:pPr></w:style>`).join("")}</w:styles>`);
   // Materialize canonical hyperlinks into ordinary external OOXML relationships.
   const relPath="word/_rels/document.xml.rels"; let rels=parts[relPath]?strFromU8(parts[relPath]):`<?xml version="1.0"?><Relationships xmlns="${REL}"></Relationships>`;
-  const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table"}:{type:"paragraph",style:block.style||"",alignment:block.alignment||"left",list:block.list||""}));
-  let nextRel=1, needsCanonicalXml=Boolean(model.originalBlocks && structure(model.originalBlocks)!==structure(model.blocks)); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
+  if(createdStyles&&!rels.includes("relationships/styles"))rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="rIdFrameChuteStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  if(createdStyles&&parts["[Content_Types].xml"]){let types=strFromU8(parts["[Content_Types].xml"]);if(!types.includes("word/styles.xml"))types=types.replace(/<\/Types>\s*$/,`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`);parts["[Content_Types].xml"]=strToU8(types);}
+  const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table"}:{type:"paragraph",style:block.style||"",alignment:block.alignment||"left",list:block.list||"",level:block.level||0,lineSpacing:block.lineSpacing||null,spaceBefore:block.spaceBefore||0,spaceAfter:block.spaceAfter??null,indentLeft:block.indentLeft||0,indentRight:block.indentRight||0,firstLine:block.firstLine||0,pageBreak:Boolean(block.pageBreak)}));
+  let nextRel=1, needsCanonicalXml=!model.originalBlocks || structure(model.originalBlocks)!==structure(model.blocks); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
   for(const run of (()=>{const out=[];const walk=blocks=>blocks.forEach(block=>block.type==="table"?block.rows.forEach(row=>row.forEach(walk)):out.push(...(block.runs||[])));walk(model.blocks);return out;})()) if(run.hyperlink){
     if(!run.hyperlinkId){needsCanonicalXml=true;while(ids.has(`rIdFrameChuteLink${nextRel}`))nextRel++;run.hyperlinkId=`rIdFrameChuteLink${nextRel++}`;ids.add(run.hyperlinkId);rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="${run.hyperlinkId}" Type="${HYPERLINK_REL}" Target="${escAttr(run.hyperlink)}" TargetMode="External"/></Relationships>`);}
   }
@@ -167,7 +178,8 @@ export function serializeDocx(model) {
     });
     parts["word/document.xml"] = strToU8(xml);
   } else {
-    const section = model.originalXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] || "";
+    let section = model.originalXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] || "<w:sectPr/>";
+    if(model.pageSetup){const [size="letter",orientation="portrait",top=1,right=1,bottom=1,left=1]=model.pageSetup.split(","),landscape=orientation==="landscape",dimensions=size==="a4"?[11906,16838]:[12240,15840],w=landscape?dimensions[1]:dimensions[0],h=landscape?dimensions[0]:dimensions[1];section=`<w:sectPr><w:pgSz w:w="${w}" w:h="${h}"${landscape?' w:orient="landscape"':""}/><w:pgMar w:top="${Math.round(top*1440)}" w:right="${Math.round(right*1440)}" w:bottom="${Math.round(bottom*1440)}" w:left="${Math.round(left*1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;}
     const usedDrawingIds = new Set([...model.originalXml.matchAll(/<wp:docPr\b[^>]*\bid=["'](\d+)["']/g)].map((match) => Number(match[1])));
     let nextDrawingId = 1;
     const drawingIds = { next() { while (usedDrawingIds.has(nextDrawingId)) nextDrawingId += 1; usedDrawingIds.add(nextDrawingId); return nextDrawingId++; } };
