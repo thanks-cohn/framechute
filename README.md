@@ -1,12 +1,22 @@
-# FrameChute
+```text
+ SSSSS  U   U  BBBBB   SSSSS  TTTTTTT  RRRRR     AAA    TTTTTTT  EEEEEEE
+S       U   U  B    B S          T     R    R   A   A      T     E
+ SSSSS  U   U  BBBBB   SSSSS     T     RRRRR    AAAAA      T     EEEEE
+      S U   U  B    B      S     T     R   R   A     A     T     E
+ SSSSS   UUU   BBBBB   SSSSS     T     R    R  A     A     T     EEEEEEE
+
+                      // Where Greatness Grows
+```
+
+*Previously known as FrameChute.*
 
 **Open it. Change it. Save it.**
 
-> **Your browser has tabs. FrameChute gives it a desk.**
+> **Your browser has tabs. Substrate gives it a desk.**
 
-FrameChute is a local-first, browser-native workspace for everyday file work.
+Substrate is a local-first, browser-native workspace for everyday file work.
 
-Instead of deciding which application should open a file, put the file on the FrameChute workspace and decide what you want to do to it.
+Instead of deciding which application should open a file, put the file on the Substrate workspace and decide what you want to do to it.
 
 ```text
 Traditional desktop workflow
@@ -24,7 +34,7 @@ Export
 Find another app for the next job
 
 
-FrameChute
+Substrate
 
 Open / Drop / Paste
  ↓
@@ -35,7 +45,7 @@ Move · edit · extract · compare · combine · convert
 Keep the result in the workspace or Save As
 ```
 
-FrameChute is deliberately not trying to become Photoshop, Word, Acrobat, Premiere, a spreadsheet suite, and a whiteboard all at once.
+Substrate is deliberately not trying to become Photoshop, Word, Acrobat, Premiere, a spreadsheet suite, and a whiteboard all at once.
 
 The goal is smaller and, in practice, surprisingly broad:
 
@@ -46,7 +56,7 @@ The goal is smaller and, in practice, surprisingly broad:
 ## Contents
 
 - [Install](#install)
-- [What FrameChute can do](#what-framechute-can-do)
+- [What Substrate can do](#what-substrate-can-do)
 - [Supported kinds of material](#supported-kinds-of-material)
 - [Workspace and direct manipulation](#workspace-and-direct-manipulation)
 - [Images](#images)
@@ -72,7 +82,7 @@ The goal is smaller and, in practice, surprisingly broad:
 
 # Install
 
-FrameChute is currently packaged as a **Manifest V3 Chrome/Chromium extension**. The current manifest version is **1.0.14**.
+Substrate is currently packaged as a **Manifest V3 Chrome/Chromium extension**. The current manifest version is **1.0.14**.
 
 There is no npm build step required just to run the extension from source.
 
@@ -92,8 +102,8 @@ Then in Chrome or another Chromium-family browser:
 2. Turn on **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select the repository folder that contains `manifest.json`.
-5. Pin FrameChute if you want quick access.
-6. Click the FrameChute extension icon to open the workspace.
+5. Pin Substrate if you want quick access.
+6. Click the Substrate extension icon to open the workspace.
 
 ## Option B: download the repository as a ZIP
 
@@ -114,7 +124,7 @@ If you cloned the repository:
 git pull
 ```
 
-Then return to the browser's extensions page and press **Reload** on FrameChute.
+Then return to the browser's extensions page and press **Reload** on Substrate.
 
 If you installed from a downloaded ZIP, replace the extracted files with the newer version and reload the extension.
 
@@ -126,7 +136,7 @@ The repository includes a release gate and packaging script:
 bash scripts/package-web-store.sh
 ```
 
-This requires a POSIX-compatible shell and Python 3 **for packaging only**. Python is not required to run FrameChute.
+This requires a POSIX-compatible shell and Python 3 **for packaging only**. Python is not required to run Substrate.
 
 A successful run creates a ZIP under:
 
@@ -138,9 +148,9 @@ The release script verifies the manifest, required assets, package contents, per
 
 ---
 
-# What FrameChute can do
+# What Substrate can do
 
-FrameChute treats files and generated results as objects on one shared spatial workspace.
+Substrate treats files and generated results as objects on one shared spatial workspace.
 
 Today the project can work with combinations of:
 
@@ -198,7 +208,7 @@ place beside a PDF or notes
 
 Exact codec and browser support still depend on Chromium and the operating system, but the current object model covers these broad classes:
 
-| Material | Typical examples | Current FrameChute role |
+| Material | Typical examples | Current Substrate role |
 | --- | --- | --- |
 | Images | PNG, JPEG, WebP and other browser-decodable images | View, move, resize, edit, transform, batch, save |
 | Video | MP4, WebM and browser-playable video | Play, seek, arrange, extract frames, advanced timing/sync |
@@ -210,13 +220,13 @@ Exact codec and browser support still depend on Chromium and the operating syste
 | Archives | ZIP, CBZ | Browse contents, open supported entries, CBZ image navigation |
 | URLs / web | supported direct URLs and web objects | Keep references/content alongside local work |
 | Capture | screen / microphone | Screenshot, screen recording, microphone recording |
-| Workspace | `.fcx` | Reopen a FrameChute session with supported state/assets |
+| Workspace | `.fcx` | Reopen a Substrate session with supported state/assets |
 
 ---
 
 # Workspace and direct manipulation
 
-The workspace is the core of FrameChute.
+The workspace is the core of Substrate.
 
 Files are not meant to disappear into a modal or replace the entire application. They become objects that can sit beside one another.
 
@@ -249,7 +259,7 @@ Passive browser resize, toolbar wrapping, scrolling, or other UI changes should 
 
 # Images
 
-Images are currently one of FrameChute's deepest utility surfaces.
+Images are currently one of Substrate's deepest utility surfaces.
 
 ## Core image operations
 
@@ -278,7 +288,7 @@ Some of the more advanced transform operations are currently being hardened so t
 
 ## Multi-image operations
 
-FrameChute also includes multi-image workflows such as:
+Substrate also includes multi-image workflows such as:
 
 - stitch images vertically or horizontally
 - create a contact sheet
@@ -316,7 +326,7 @@ seek video
  ↓
 Extract Frame
  ↓
-normal FrameChute image
+normal Substrate image
  ↓
 all normal image tools become available
 ```
@@ -327,7 +337,7 @@ Advanced `Sync with…` / independence behavior belongs to actual playable video
 
 # PDF
 
-FrameChute includes a practical PDF editor/utility layer built from PDF.js for rendering and pdf-lib for document mutation/export.
+Substrate includes a practical PDF editor/utility layer built from PDF.js for rendering and pdf-lib for document mutation/export.
 
 Current PDF work includes:
 
@@ -346,7 +356,7 @@ Current PDF work includes:
 
 ## PDF text replacement
 
-FrameChute also has a direct replacement-text model:
+Substrate also has a direct replacement-text model:
 
 - click/select editable text regions
 - replace text
@@ -364,7 +374,7 @@ The current replacement serializer uses a simple cover-and-redraw model. It is i
 
 # DOCX and text
 
-FrameChute can open and re-save practical Word documents without converting the whole workflow into a remote service.
+Substrate can open and re-save practical Word documents without converting the whole workflow into a remote service.
 
 Current DOCX support includes:
 
@@ -384,7 +394,7 @@ Current DOCX support includes:
 
 Where possible, ordinary text/format edits take a least-destructive path that patches the original OOXML package instead of rebuilding unrelated document content.
 
-For larger structural changes, FrameChute can rebuild the supported subset honestly rather than pretending unsupported Word behavior will be preserved perfectly.
+For larger structural changes, Substrate can rebuild the supported subset honestly rather than pretending unsupported Word behavior will be preserved perfectly.
 
 ## Cross-document utilities
 
@@ -430,12 +440,12 @@ This is not yet a spreadsheet/formula engine. A richer grid/formula/reference sy
 
 # ZIP and CBZ archives
 
-FrameChute can inspect supported archives locally.
+Substrate can inspect supported archives locally.
 
 Current archive behavior includes:
 
 - ZIP tree/list browsing
-- open supported archive entries as new FrameChute result objects
+- open supported archive entries as new Substrate result objects
 - CBZ image navigation
 - previous / next comic-page controls
 - safe archive-budget checks to reduce decompression abuse
@@ -447,7 +457,7 @@ Current archive snapshots intentionally have limits; archives over 100 MB are no
 
 # Capture tools
 
-FrameChute includes browser-native capture actions:
+Substrate includes browser-native capture actions:
 
 - Screenshot
 - Record screen
@@ -496,7 +506,7 @@ The Quick Actions presentation itself is being simplified so it stays contextual
 
 # Snapshots and workspace export
 
-FrameChute has two different save concepts because they solve different problems.
+Substrate has two different save concepts because they solve different problems.
 
 ## Save / Save As
 
@@ -511,7 +521,7 @@ DOCX  → DOCX
 CSV   → CSV
 ```
 
-FrameChute should not trap ordinary files inside a proprietary workspace format just because they were edited in FrameChute.
+Substrate should not trap ordinary files inside a proprietary workspace format just because they were edited in Substrate.
 
 ## Take Snapshot
 
@@ -532,7 +542,7 @@ The snapshot bounds are based on visible workspace objects rather than simply ca
 
 ## Export Workspace / Open Workspace
 
-When the whole desk matters, FrameChute can save a `.fcx` workspace.
+When the whole desk matters, Substrate can save a `.fcx` workspace.
 
 Conceptually:
 
@@ -556,7 +566,7 @@ The project's persistence promise is:
 
 # Local-first privacy and security
 
-FrameChute is designed around the idea that ordinary file chores should not require uploading personal material to a third-party server.
+Substrate is designed around the idea that ordinary file chores should not require uploading personal material to a third-party server.
 
 The current Chrome Web Store packaging gate enforces an unusually small extension security surface:
 
@@ -572,11 +582,11 @@ Python/EXE runtime dependency: NONE
 
 The release script also rejects packaged remote script imports, `eval`, native-messaging dependencies, loopback/localhost dependencies, and several desktop-runtime artifacts.
 
-FrameChute still uses browser permissions at the moment a user explicitly requests a browser-mediated capability, such as choosing a file/folder or starting screen/microphone capture.
+Substrate still uses browser permissions at the moment a user explicitly requests a browser-mediated capability, such as choosing a file/folder or starting screen/microphone capture.
 
 The distinction is important:
 
-> **FrameChute can browse what the user explicitly grants it access to.**
+> **Substrate can browse what the user explicitly grants it access to.**
 
 It should not quietly become a general filesystem or web surveillance surface.
 
@@ -584,7 +594,7 @@ It should not quietly become a general filesystem or web surveillance surface.
 
 # Simple and Advanced modes
 
-FrameChute is intended to stay approachable as capabilities grow.
+Substrate is intended to stay approachable as capabilities grow.
 
 ## Simple mode
 
@@ -690,7 +700,7 @@ Open Workspace later
 
 # Development and testing
 
-FrameChute is plain browser-side JavaScript/CSS/HTML plus packaged local libraries. The source tree is intentionally inspectable without requiring a large framework build system.
+Substrate is plain browser-side JavaScript/CSS/HTML plus packaged local libraries. The source tree is intentionally inspectable without requiring a large framework build system.
 
 ## Run tests
 
@@ -724,13 +734,13 @@ A normal development validation pass usually includes all four.
 
 ## Runtime dependencies
 
-FrameChute packages the browser-side code and vendored libraries it needs with the extension. The Chrome Web Store release gate intentionally forbids a desktop companion or remote executable-code dependency.
+Substrate packages the browser-side code and vendored libraries it needs with the extension. The Chrome Web Store release gate intentionally forbids a desktop companion or remote executable-code dependency.
 
 ---
 
 # Project structure
 
-The exact tree changes as FrameChute grows, but the major areas are:
+The exact tree changes as Substrate grows, but the major areas are:
 
 ```text
 manifest.json
@@ -768,7 +778,7 @@ A recurring architectural preference is to extract testable helpers/modules inst
 
 # Current limitations
 
-FrameChute is ambitious, but the project is intentionally honest about where the current browser implementation is still being hardened.
+Substrate is ambitious, but the project is intentionally honest about where the current browser implementation is still being hardened.
 
 ## Image transforms
 
@@ -786,7 +796,7 @@ Very large PDFs are not yet handled with the range-loading / virtual-page / boun
 
 ## DOCX fidelity
 
-FrameChute is not a complete Microsoft Word layout engine. It supports a useful subset and tries to preserve untouched OOXML least-destructively where practical.
+Substrate is not a complete Microsoft Word layout engine. It supports a useful subset and tries to preserve untouched OOXML least-destructively where practical.
 
 ## Snapshot fidelity
 
@@ -826,7 +836,7 @@ Zoom should affect the **camera**, not rewrite object geometry.
 
 The workspace should also become truly expandable beyond the initial viewport in every direction:
 
-> **Push an object against an edge and FrameChute makes more desk.**
+> **Push an object against an edge and Substrate makes more desk.**
 
 Work should be frameable/centerable instead of naturally collapsing toward the upper-left corner.
 
@@ -866,7 +876,7 @@ Planned composition work includes:
 
 ## Drawing and explanation primitives
 
-FrameChute does not need hundreds of professional illustration tools to become useful for visual explanation.
+Substrate does not need hundreds of professional illustration tools to become useful for visual explanation.
 
 A small dependable primitive set can unlock a lot:
 
@@ -933,7 +943,7 @@ CSV utilities are the beginning, not the end. A future grid primitive could add 
 
 # Design principles
 
-FrameChute is held together by a few rules.
+Substrate is held together by a few rules.
 
 ## 1. If an action feels obvious, support it directly
 
@@ -971,25 +981,25 @@ Passive UI changes are not permission to move the user's work.
 
 > **Files become objects. Objects become scenes. Scenes can eventually become worlds.**
 
-FrameChute becomes more capable by strengthening universal primitives rather than by accumulating disconnected mini-applications.
+Substrate becomes more capable by strengthening universal primitives rather than by accumulating disconnected mini-applications.
 
 ---
 
-# What FrameChute is not
+# What Substrate is not
 
-FrameChute is not claiming to replace the deepest professional capabilities of Photoshop, Premiere, Word, Acrobat, Excel, Blender, or specialist conversion systems.
+Substrate is not claiming to replace the deepest professional capabilities of Photoshop, Premiere, Word, Acrobat, Excel, Blender, or specialist conversion systems.
 
 It is aimed at a different problem:
 
 > **You should not need a professional suite for every thirty-second file chore.**
 
-A surprising amount of everyday computing is made of small transformations, comparisons, extractions, arrangements, and conversions. FrameChute tries to make those jobs feel like one coherent activity.
+A surprising amount of everyday computing is made of small transformations, comparisons, extractions, arrangements, and conversions. Substrate tries to make those jobs feel like one coherent activity.
 
 ---
 
 # In one sentence
 
-**FrameChute is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
+**Substrate is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
 
 ---
 
