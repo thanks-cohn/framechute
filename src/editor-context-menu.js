@@ -1,3 +1,12 @@
+// CODEX DEBUG V10: repeated detached-submenu regression originates in this
+// module's submenu geometry. See agents/codex/debug/PR55_STABILIZATION_MAP_V10.md.
+// Do NOT mix trigger.getBoundingClientRect() (viewport coordinates) with
+// button.offsetTop / parent-local positioning. Replace this with the same shared
+// `positionSubmenu(trigger, submenu)` primitive used by the generic menu. The
+// child must sit immediately beside its trigger (0-8px gap), flip directly left
+// at the right edge, and only clamp upward enough to fit vertically.
+// Also keep PDF/DOCX routing format-native; PDF gets its own Settings command.
+
 import { commandsForEditorContext, resolveEditorContext } from "./actions/context-menu-model.mjs";
 
 const workspace = document.querySelector("#workspace");
@@ -16,6 +25,9 @@ function place(element, x, y) {
   element.style.left=`${Math.max(margin,Math.min(x,innerWidth-rect.width-margin))}px`;
   element.style.top=`${Math.max(margin,Math.min(y,innerHeight-rect.height-margin))}px`;
 }
+// CODEX DEBUG V10: THIS IS THE HOTSPOT. `parent`/`rect` below are viewport
+// geometry, but `button.offsetTop` is parent-local. That mismatch is why popouts
+// can teleport toward the far side of the screen. Replace, do not band-aid.
 function openSubmenu(button, submenu) {
   menu.querySelectorAll(".menu-submenu.is-open").forEach(node => { if(node!==submenu)node.classList.remove("is-open"); });
   submenu.classList.add("is-open"); const parent=button.getBoundingClientRect(),rect=submenu.getBoundingClientRect();
