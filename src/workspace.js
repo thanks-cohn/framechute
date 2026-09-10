@@ -22,6 +22,8 @@ import { saveBlobAs } from "./actions/native-save.js";
 import { zipSync } from "./vendor/fflate.mjs";
 import { PDFDocument } from "./vendor/pdf-lib.mjs";
 import { createSimpleDocx } from "./actions/document-operations.js";
+import { beginInternalDrag, claimDocumentDrop, endInternalDrag, imageBlobsForDrop, isInternalFrameChuteDrag } from "./drag-ownership.mjs";
+import { customImageSourceBlob } from "./custom-image-source.mjs";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -48,6 +50,17 @@ const blockTypes = new Map();
 const sourceRecords = new WeakMap();
 const runtimeSources = new WeakMap();
 const objectUrls = new WeakMap();
+
+workspace.addEventListener("dragstart", event => {
+  const image=event.target.closest?.("img"),block=image?.closest(".block"); if(!block)return;
+  beginInternalDrag({block,kind:"image",sourceBlobProvider:async source => {
+    const owned=await window.FrameChuteWorkspace?.sourceBlob(source); if(owned)return owned;
+    const element=source.querySelector("img"); if(!element?.currentSrc&&!element?.src)return null;
+    return fetch(element.currentSrc||element.src).then(response=>response.ok?response.blob():null);
+  }});
+  try{event.dataTransfer.setData("application/x-framechute-object",block.dataset.blockId||"image");event.dataTransfer.effectAllowed="copyMove";}catch{}
+}, true);
+workspace.addEventListener("dragend", endInternalDrag, true);
 
 let zCounter = 1;
 let newBlockOffset = 0;
@@ -437,8 +450,8 @@ function selectPdfEdit(block, span) {
   if(!span?.classList.contains("pdf-text-edit")){controls.hidden=true;delete block.dataset.selectedPdfIndex;return;}
   span.classList.add("is-selected");block.dataset.selectedPdfIndex=span.dataset.index;controls.hidden=false;
   const runtime=runtimeSources.get(block),edit=runtime?.edits.find(item=>item.page===Number(block.dataset.currentPage)&&item.index===Number(span.dataset.index));
-  if(edit)controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
-  if(edit)controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
+  if(edit?.kind !== "image")controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
+  if(edit?.kind !== "image")controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
 
@@ -635,6 +648,28 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-compress").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),blob=await runtime.serialize(),original=new Uint8Array(await blob.arrayBuffer()),candidate=await conservativelyCompressPdf(original),choice=chooseSmallerPdf(original,candidate);if(!choice.changed){setStatus(`No smaller safe PDF was produced (${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes); the current PDF was kept.`);return;}await replacePdfRuntime(block,choice.bytes,Number(block.dataset.currentPage||1));setStatus(`PDF compressed conservatively: ${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes. Embedded images were not recompressed.`);});
 
     const textLayer = block.querySelector(".pdf-text-layer");
+    const claimPdfImage = event => {
+      if (!claimDocumentDrop("pdf", event)) return false;
+      event.preventDefault(); event.stopPropagation(); workspace.classList.remove("is-drop-target"); textLayer.classList.add("is-docx-drop-target");
+      if (event.dataTransfer) event.dataTransfer.dropEffect="copy";
+      return true;
+    };
+    textLayer.addEventListener("dragenter", claimPdfImage, true);
+    textLayer.addEventListener("dragover", claimPdfImage, true);
+    textLayer.addEventListener("dragleave", event => { if(!textLayer.contains(event.relatedTarget))textLayer.classList.remove("is-docx-drop-target"); }, true);
+    textLayer.addEventListener("drop", async event => {
+      if (!claimPdfImage(event)) return;
+      textLayer.classList.remove("is-docx-drop-target");
+      const blobs=await imageBlobsForDrop(event),runtime=runtimeSources.get(block); if(!blobs.length||!runtime?.pageData){endInternalDrag();return;}
+      let inserted=0; for(const blob of blobs){
+        if(!/^image\/(png|jpeg)$/i.test(blob.type)){setStatus("PDF insertion supports PNG and JPEG images.");continue;}
+        const bitmap=await createImageBitmap(blob),surface=textLayer.getBoundingClientRect(),scale=Math.min(1,runtime.pageData.viewport.width*.45/bitmap.width,runtime.pageData.viewport.height*.45/bitmap.height),displayWidth=bitmap.width*scale,displayHeight=bitmap.height*scale;
+        const left=Math.max(0,Math.min(runtime.pageData.viewport.width-displayWidth,event.clientX-surface.left-displayWidth/2)),top=Math.max(0,Math.min(runtime.pageData.viewport.height-displayHeight,event.clientY-surface.top-displayHeight/2));
+        const geometry=viewportRectToPdf(runtime.pageData.viewport,{left,top,width:displayWidth,height:displayHeight}),bytes=new Uint8Array(await blob.arrayBuffer());bitmap.close();
+        pushPdfHistory(runtime);runtime.edits.push({kind:"image",id:`image:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now()-runtime.edits.length,page:Number(block.dataset.currentPage),mime:blob.type.toLowerCase(),base64:bytesToBase64(bytes),...geometry});inserted++;
+      }
+      endInternalDrag();if(!inserted)return;setDocumentDirty(block,true);await setPdfPage(block,block.dataset.currentPage);setStatus(`${inserted} image${inserted===1?"":"s"} inserted into the PDF.`);
+    }, true);
     textLayer.addEventListener("click", (event) => selectPdfEdit(block, event.target.closest(".pdf-text-item")));
     textLayer.addEventListener("dblclick", (event) => {
       const span = event.target.closest(".pdf-text-item");
@@ -772,17 +807,17 @@ registerBlockType("docx", {
       if (files.length) return files;
       return imageItems(event).map((item) => item.getAsFile?.()).filter(imageFile);
     };
-    const ownsImageDrag = (event) => imageItems(event).length > 0 || imageFiles(event).length > 0;
-    const claimImageDrag = (event) => { if(!ownsImageDrag(event))return false;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target");return true; };
+    const ownsImageDrag = (event) => isInternalFrameChuteDrag(event) || imageItems(event).length > 0 || imageFiles(event).length > 0;
+    const claimImageDrag = (event) => { if(!ownsImageDrag(event)||!claimDocumentDrop("docx",event))return false;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target");return true; };
     editor.addEventListener("dragenter", claimImageDrag, true);
     editor.addEventListener("dragover", (event) => { if(!claimImageDrag(event))return;if(event.dataTransfer)event.dataTransfer.dropEffect="copy"; }, true);
     editor.addEventListener("dragleave", (event) => { if(!editor.contains(event.relatedTarget))editor.classList.remove("is-docx-drop-target"); }, true);
     editor.addEventListener("drop", async (event) => {
-      const files=imageFiles(event);if(!files.length)return;event.preventDefault();event.stopPropagation();editor.classList.remove("is-docx-drop-target");workspace.classList.remove("is-drop-target");
+      if(!claimImageDrag(event))return;const files=await imageBlobsForDrop(event);if(!files.length){endInternalDrag();return;}editor.classList.remove("is-docx-drop-target");workspace.classList.remove("is-drop-target");
       const runtime=runtimeSources.get(block);if(!runtime?.model){setStatus("This DOCX is not ready for image insertion.");return;}
       let target=(document.caretPositionFromPoint?.(event.clientX,event.clientY)?.offsetNode || document.caretRangeFromPoint?.(event.clientX,event.clientY)?.startContainer)?.parentElement?.closest("p,h1,h2,h3,h4,h5,h6,li,td") || editor.lastElementChild;
       if(!target || !editor.contains(target)){target=document.createElement("p");editor.append(target);}
-      for(const file of files){const bitmap=await createImageBitmap(file);const ratio=Math.min(1,Math.max(1,editor.clientWidth-32)/bitmap.width),descriptor=addDocxImage(runtime.model,new Uint8Array(await file.arrayBuffer()),{mime:file.type||"image/png",width:Math.round(bitmap.width*ratio),height:Math.round(bitmap.height*ratio)});bitmap.close();const img=document.createElement("img"),url=URL.createObjectURL(file);runtime.objectUrls.push(url);img.src=url;img.alt=file.name;img.contentEditable="false";img.dataset.docxRelationship=descriptor.relationshipId;img.dataset.docxPart=descriptor.part;img.dataset.docxMime=descriptor.mime;img.dataset.docxWidth=String(descriptor.width);img.dataset.docxHeight=String(descriptor.height);img.style.width=`${descriptor.width}px`;img.style.height=`${descriptor.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";target.append(img);}
+      for(const file of files){const bitmap=await createImageBitmap(file);const ratio=Math.min(1,Math.max(1,editor.clientWidth-32)/bitmap.width),descriptor=addDocxImage(runtime.model,new Uint8Array(await file.arrayBuffer()),{mime:file.type||"image/png",width:Math.round(bitmap.width*ratio),height:Math.round(bitmap.height*ratio)});bitmap.close();const img=document.createElement("img"),url=URL.createObjectURL(file);runtime.objectUrls.push(url);img.src=url;img.alt=file.name||"Inserted image";img.contentEditable="false";img.dataset.docxRelationship=descriptor.relationshipId;img.dataset.docxPart=descriptor.part;img.dataset.docxMime=descriptor.mime;img.dataset.docxWidth=String(descriptor.width);img.dataset.docxHeight=String(descriptor.height);img.style.width=`${descriptor.width}px`;img.style.height=`${descriptor.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";target.append(img);}endInternalDrag();
       setDocumentDirty(block,true);setStatus(`${files.length} image${files.length===1?"":"s"} inserted into the DOCX.`);
     }, true);
     editor.addEventListener("input", () => setDocumentDirty(block, true));
@@ -1012,6 +1047,7 @@ window.FrameChuteWorkspace = Object.freeze({
   captureBlock,
   async sourceBlob(block) {
     const type = block.dataset.blockType;
+    if (["image", "canvas"].includes(block.dataset.customKind)) return customImageSourceBlob(block, { resolveHandle });
     const definition = blockTypes.get(type); if (definition?.exportBlob) return definition.exportBlob(block);
     if (type === "text") return new Blob([block.querySelector(".text-editor")?.value || ""], { type: "text/plain" });
     const runtime = runtimeSources.get(block);

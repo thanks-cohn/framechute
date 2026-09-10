@@ -574,6 +574,7 @@ function createUrlBlock(value, point = null, forceImage = false) {
 }
 
 // One public ingestion seam is shared by paste/Open File and the established
+import { shouldGenericWorkspaceIngest, shouldShowGlobalIngest } from "./drag-ownership.mjs";
 // drag/drop implementation; it deliberately delegates to the same creators.
 window.FrameChuteIngest = Object.freeze({
   ...(window.FrameChuteIngest || {}),
@@ -613,12 +614,14 @@ openUrlButton?.addEventListener("click", () => {
 });
 
 workspace.addEventListener("dragenter", (event) => {
+  if (!shouldShowGlobalIngest(event)) return;
   event.preventDefault();
   dragDepth += 1;
   workspace.classList.add("is-drop-target");
 });
 
 workspace.addEventListener("dragover", (event) => {
+  if (!shouldShowGlobalIngest(event)) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
   workspace.classList.add("is-drop-target");
@@ -630,6 +633,7 @@ workspace.addEventListener("dragleave", () => {
 });
 
 workspace.addEventListener("drop", async (event) => {
+  if (!shouldGenericWorkspaceIngest(event)) return;
   event.preventDefault();
   dragDepth = 0;
   workspace.classList.remove("is-drop-target");

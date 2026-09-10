@@ -49,6 +49,14 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   await page.render({ canvasContext: canvas.getContext("2d"), viewport, transform: devicePixelRatio === 1 ? null : [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] }).promise;
   const content = await page.getTextContent();
   textLayer.replaceChildren();
+  for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
+    const [left, top, right, bottom] = pdfRectToViewport(viewport, edit);
+    const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index);
+    const image = document.createElement("img"); image.src = `data:${edit.mime};base64,${edit.base64}`; image.alt = "Inserted PDF image";
+    const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.textContent="↕";
+    const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
+    Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
+  }
   for (const mask of sourceMasksForPage(edits, pageNumber)) {
     const [left, top, right, bottom] = pdfRectToViewport(viewport, mask);
     const element = document.createElement("div");
@@ -135,6 +143,13 @@ export async function serializeEditedPdf(model, edits) {
   const fonts = new Map();
   for (const rawEdit of edits) {
     const normalized = normalizePdfEdit(rawEdit);
+    if (normalized.kind === "image") {
+      const page = output.getPage(normalized.page - 1);
+      const bytes = Uint8Array.from(atob(normalized.base64), character => character.charCodeAt(0));
+      const embedded = normalized.mime === "image/png" ? await output.embedPng(bytes) : await output.embedJpg(bytes);
+      page.drawImage(embedded, { x: normalized.x, y: normalized.y, width: normalized.width, height: normalized.height });
+      continue;
+    }
     const fontName = resolvePdfStandardFont(normalized.fontFamily);
     let font = fonts.get(fontName);
     if (!font) { font = await output.embedFont(fontName); fonts.set(fontName, font); }

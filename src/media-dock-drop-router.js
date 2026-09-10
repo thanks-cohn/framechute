@@ -1,3 +1,4 @@
+import { shouldGenericWorkspaceIngest, shouldShowGlobalIngest } from "./drag-ownership.mjs";
 const workspace = document.querySelector("#workspace");
 const mediaDock = document.querySelector("#video-dock");
 
@@ -29,7 +30,7 @@ function forwardToWorkspace(type, event) {
 
 if (workspace && mediaDock) {
   mediaDock.addEventListener("dragenter", (event) => {
-    if (!event.dataTransfer) return;
+    if (!event.dataTransfer || !shouldShowGlobalIngest(event)) return;
     event.preventDefault();
     event.stopPropagation();
     workspace.classList.add("is-drop-target");
@@ -37,7 +38,7 @@ if (workspace && mediaDock) {
   });
 
   mediaDock.addEventListener("dragover", (event) => {
-    if (!event.dataTransfer) return;
+    if (!event.dataTransfer || !shouldShowGlobalIngest(event)) return;
     event.preventDefault();
     event.stopPropagation();
     try { event.dataTransfer.dropEffect = "copy"; } catch {}
@@ -52,7 +53,7 @@ if (workspace && mediaDock) {
   });
 
   mediaDock.addEventListener("drop", (event) => {
-    if (!event.dataTransfer) return;
+    if (!event.dataTransfer || !shouldGenericWorkspaceIngest(event)) return;
     event.preventDefault();
     event.stopPropagation();
     workspace.classList.remove("is-drop-target");
