@@ -82,6 +82,11 @@ style.textContent = `
   .docx-panel button {
     min-height: 36px;
   }
+
+  /* Keep the actual PDF page drop/edit layer unequivocally above its canvas.
+     This prevents the rendered canvas from stealing drag/drop hit testing. */
+  .pdf-canvas { position: relative; z-index: 1; }
+  .pdf-text-layer { z-index: 2; pointer-events: auto; }
 `;
 document.head.append(style);
 
