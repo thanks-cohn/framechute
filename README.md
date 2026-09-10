@@ -16,7 +16,7 @@
 
 SUBSTRATE is a local-first spatial computing project built around a simple idea: different kinds of digital material should share the same small set of dependable primitives wherever possible. FrameChute is the current Chrome/Chromium extension implementation of SUBSTRATE.
 
-Instead of opening one application for a PDF, another for an image, another for a DOCX, and another for a CSV, SUBSTRATE puts those things on one shared workspace and lets useful operations compose.
+Instead of opening one application for a PDF, another for an image, and another for a DOCX, SUBSTRATE puts those things on one shared workspace and lets useful operations compose.
 
 ```text
 Open / Drop / Paste
@@ -38,7 +38,7 @@ SUBSTRATE grew out of those fragmented memories of the 2000s internet, with all 
 
 I did not begin with a complete specification. I began with a recurring question: **why should this be harder than it needs to be?**
 
-If an image, a PDF, a DOCX, a video, a spreadsheet, or eventually a 3D object can share the same basic ideas of opening, selecting, moving, resizing, editing, combining, converting, and saving, then I would rather teach the system those ideas once than build a different little universe for every file type.
+If an image, a PDF, a DOCX, a video, or eventually a 3D object can share the same basic ideas of opening, selecting, moving, resizing, editing, combining, converting, and saving, then I would rather teach the system those ideas once than build a different little universe for every file type.
 
 That is the direction SUBSTRATE eventually found: not one giant application pretending to be every other application, but a small set of reusable primitives that let many kinds of work happen in the same place.
 
@@ -132,7 +132,6 @@ A good first test set is:
 1 short video
 1 PDF
 1 DOCX
-1 CSV
 ```
 
 Put them on the workspace together and try moving between file types without leaving the desk.
@@ -203,21 +202,6 @@ crop / annotate / convert / save
 
 That little workflow captures a large part of the SUBSTRATE philosophy: **the result of one tool should immediately become normal material for the next tool.**
 
-### CSV
-
-Open a CSV and try:
-
-- editing cells
-- sorting
-- filtering
-- cleaning whitespace
-- removing duplicates
-- splitting or merging columns
-- generating a quick chart
-- Save As CSV
-
-The chart becomes another visual object on the workspace.
-
 ### Preserve the desk
 
 Finally try both concepts:
@@ -239,13 +223,14 @@ Finally try both concepts:
 | PDF | rendering, page operations, text replacement, image edits, merge/extract/crop, save |
 | DOCX | practical text editing, formatting, lists/tables, embedded images, image insertion/movement, save |
 | Text | notes, editing, find/replace, comparison, conversion |
-| CSV | editable grid, sort/filter/clean/dedupe, quick charts, merge, save |
 | ZIP | browse supported entries and open them as workspace objects |
 | CBZ | local comic/image navigation |
 | Capture | screenshot, screen recording, microphone recording |
 | Workspace | spatial arrangement, object-specific menus, snapshot export, `.fcx` save/reopen |
 
 Browser codec and file-system behavior still depend on Chromium and the operating system.
+
+CSV files can currently be opened, but they are treated as plain text in the text editor. FrameChute does **not** currently provide a row/column grid, spreadsheet controls, sorting, filtering, charts, or CSV-specific editing.
 
 ---
 
@@ -357,7 +342,6 @@ Examples include:
 - image-to-PDF
 - text extraction and comparison
 - document conversion
-- CSV merge
 - video frame extraction
 - ZIP selected results
 
@@ -581,9 +565,9 @@ The useful primitive set is comparatively small:
 
 If those objects obey the same workspace rules as files, much richer workflows emerge naturally.
 
-## Structured data after CSV
+## Structured data
 
-CSV is the beginning of the data surface, not the endpoint.
+Structured grid and spreadsheet-style editing are future work.
 
 A future grid primitive can grow toward:
 
