@@ -64,6 +64,7 @@ await import("./remote-video.js");
 await import("./offscreen-rescue.js");
 
 await import("./layer-menu.js");
+await import("./image-only-mode.js");
 await import("./media-context-loop.js");
 
 await import("./appearance.js");
