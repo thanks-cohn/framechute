@@ -46,12 +46,45 @@ export function shouldGenericWorkspaceIngest(event) {
   return !isInternalFrameChuteDrag(event) && session?.owner !== "document";
 }
 
+async function canvasBlob(canvas, type = "image/png") {
+  return new Promise(resolve => canvas.toBlob(resolve, type));
+}
+
+export async function normalizeImageBlobForPdf(blob) {
+  if (!(blob instanceof Blob)) return blob;
+  const mime = String(blob.type || "").toLowerCase();
+  if (mime === "image/png" || mime === "image/jpeg") return blob;
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") return blob;
+
+  let bitmap = null;
+  try {
+    bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, bitmap.width);
+    canvas.height = Math.max(1, bitmap.height);
+    const context = canvas.getContext("2d");
+    if (!context) return blob;
+    context.drawImage(bitmap, 0, 0);
+    return await canvasBlob(canvas, "image/png") || blob;
+  } catch {
+    return blob;
+  } finally {
+    bitmap?.close?.();
+  }
+}
+
 export async function imageBlobsForDrop(event) {
+  let blobs = [];
   if (session?.kind === "image" && session.block?.isConnected) {
     const blob = await session.sourceBlobProvider?.(session.block);
-    return blob ? [blob] : [];
+    blobs = blob ? [blob] : [];
+  } else {
+    blobs = externalFiles(event).filter(file => /^image\/(png|jpeg|gif|webp)$/i.test(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
   }
-  return externalFiles(event).filter(file => /^image\/(png|jpeg|gif|webp)$/i.test(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name));
+
+  const pdfTarget = Boolean(event?.target?.closest?.(".pdf-surface, .pdf-text-layer"));
+  if (!pdfTarget) return blobs;
+  return Promise.all(blobs.map(normalizeImageBlobForPdf));
 }
 
 export function endInternalDrag() { session = null; }
