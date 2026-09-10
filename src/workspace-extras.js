@@ -1,6 +1,7 @@
 await import("./advanced-mode.js");
 await import("./responsive-toolbar.js");
 await import("./docx-editor-correctness.js");
+await import("./docx-serialization-guard.js");
 await import("./editor-context-menu.js");
 await import("./legacy-workspace-save.js");
 
