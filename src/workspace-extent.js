@@ -116,11 +116,11 @@ function beginMeasuredBlockDrag(event, block, handle) {
       // Toolbar hidden = measured expandable canvas. Crossing any edge creates
       // another fixed-size slab of desk. Left/top expansion shifts the origin
       // and scroll position together so existing objects do not visually jump.
-      while (left < WORKSPACE_EDGE_MARGIN) {
+      while (left < 0) {
         expandNegativeEdge("x");
         left += WORKSPACE_EXPANSION_STEP;
       }
-      while (top < WORKSPACE_EDGE_MARGIN) {
+      while (top < 0) {
         expandNegativeEdge("y");
         top += WORKSPACE_EXPANSION_STEP;
       }
