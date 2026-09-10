@@ -25,6 +25,23 @@ move · edit · extract · compare · combine · convert
 keep working or Save As
 ```
 
+## Why I started this
+
+I started this project without a clearly defined direction, but with an idea and a picture in my head of where I wanted it to lead.
+
+It was something I had always been a little surprised no one had made. I would not call myself a visionary. If anything, I kept feeling that the future I imagined should have already been here. Maybe, in fragments, it had been. Old browsers and the early web sometimes felt stranger, freer, messier, and more willing to let the user touch the machinery. A lot of that disappeared, or was shelved, simplified away, or scattered across separate applications.
+
+SUBSTRATE grew out of those fragmented memories of the 2000s internet, with all of its freedom and all of its horrors, mixed with a love of comics, futuristic science-fiction goofballness, and a very practical need for software to remain simple and intuitive.
+
+I did not begin with a complete specification. I began with a recurring question: **why should this be harder than it needs to be?**
+
+If an image, a PDF, a DOCX, a video, a spreadsheet, or eventually a 3D object can share the same basic ideas of opening, selecting, moving, resizing, editing, combining, converting, and saving, then I would rather teach the system those ideas once than build a different little universe for every file type.
+
+That is the direction SUBSTRATE eventually found: not one giant application pretending to be every other application, but a small set of reusable primitives that let many kinds of work happen in the same place.
+
+I still think success would look almost obvious in hindsight. If the same repeating architecture can make something closer to 10 MB feel useful where a collection of isolated tools might total hundreds of megabytes or more, then the simplicity itself is part of the achievement.
+
+---
 ## Design law: reuse the primitive
 
 SUBSTRATE prefers **one small, coherent architecture over a pile of miniature applications**.
