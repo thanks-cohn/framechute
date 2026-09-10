@@ -179,17 +179,17 @@ function registerCaptureButton(id, label, icon, action) {
       : error.message);
   });
 
-  if (window.FrameChuteToolbarPager?.add) {
-    window.FrameChuteToolbarPager.add(button);
+  if (window.FrameChuteToolbarFixed?.add) {
+    window.FrameChuteToolbarFixed.add(button);
   } else {
-    window.FrameChuteToolbarPending ||= [];
-    window.FrameChuteToolbarPending.push({
+    window.FrameChuteToolbarFixedPending ||= [];
+    window.FrameChuteToolbarFixedPending.push({
       item: button,
       mode: window.frameChuteAdvancedMode ? "advanced" : "classic"
     });
   }
 }
 
-registerCaptureButton("capture-screenshot", "Screenshot", "▣", () => captureScreenImage());
-registerCaptureButton("capture-screen-record", "Record screen", "●", () => recordCapture());
-registerCaptureButton("capture-microphone", "Record mic", "♪", () => recordCapture({ microphone: true }));
+registerCaptureButton("capture-screenshot", "Screenshot", "📷", () => captureScreenImage());
+registerCaptureButton("capture-screen-record", "Record screen", "🎥", () => recordCapture());
+registerCaptureButton("capture-microphone", "Record mic", "🎙", () => recordCapture({ microphone: true }));
