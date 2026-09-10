@@ -8,7 +8,11 @@ Read first:
 
 `agents/codex/debug/PR55_STABILIZATION_MAP_V10.md`
 
-That debug map names the concrete failure sites, user-facing laws, and acceptance criteria. Treat it as part of this prompt.
+and its focused drag companion:
+
+`agents/codex/debug/IMAGE_DRAG_INTERCHANGE_V10.md`
+
+Those debug maps name the concrete failure sites, user-facing laws, acceptance criteria, and drag ownership model. Treat both as part of this prompt.
 
 ## Starting point
 
@@ -22,7 +26,7 @@ PR #54 has already merged to `main` after PR #55 was created. Before substantive
 
 This pass is a stabilization summit pass, not a feature grab-bag. Make the existing interaction model behave like a dependable ordinary editor/workbench by fixing the root primitives that currently create repeated regressions.
 
-The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands or visually detached UI.
+The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands, visually detached UI, or treating material already inside FrameChute as if it had just arrived from outside.
 
 ## P0 work, in order
 
@@ -50,7 +54,43 @@ Preserve all merged #54 work:
 
 Resolve conflicts semantically, not by choosing one entire side.
 
-### 2. Permanently fix detached submenu geometry
+### 2. Make image drag ownership universal across workspace, DOCX, and PDF
+
+This is crucial. Read `agents/codex/debug/IMAGE_DRAG_INTERCHANGE_V10.md` before implementing it.
+
+Current symptom set:
+- picking up an image already inside FrameChute can still cause the global `Drop into FrameChute` overlay;
+- an embedded DOCX image can be dragged out in a way that becomes a new FrameChute frame, yet cannot reliably be repositioned/reordered inside the same DOCX;
+- PDF can receive images but editable PDF images are not yet symmetric drag sources that can move within PDF or be dragged back out to workspace/DOCX.
+
+Architectural law:
+
+```text
+Any image whose origin is already inside FrameChute
+-> begin one FrameChute-internal image drag session
+-> global ingest overlay is forbidden
+-> destination decides move/copy semantics
+```
+
+Do not let default browser `<img>` drag payloads make an internal image look external.
+
+Use/reuse the shared drag-ownership primitive with an origin descriptor and real image Blob provider. Preserve the #54 native drag lifecycle where the browser's normal post-`dragstart` `pointercancel` must not destroy the session.
+
+Same-container operations are moves:
+- workspace -> workspace moves the same workspace image object;
+- DOCX image -> same DOCX moves/reorders the same semantic embedded image at the drop caret, preserving relationship/part when possible;
+- PDF editable image -> same PDF updates the same image edit geometry.
+
+Cross-container operations are non-destructive copies by default:
+- workspace -> DOCX/PDF leaves source;
+- DOCX/PDF -> workspace creates exactly one workspace image from canonical bytes and leaves source;
+- DOCX <-> PDF inserts exactly once and leaves source.
+
+For DOCX, use the real embedded part bytes and relationship metadata. `contentEditable=false` must not imply `immovable`.
+
+For PDF, FrameChute-inserted image edits already have MIME/bytes/base64/geometry and must become first-class internal drag sources. Existing original-PDF image extraction should only be exposed when real underlying raster bytes + geometry can be resolved confidently; do not fake it with page screenshots.
+
+### 3. Permanently fix detached submenu geometry
 
 This is a repeatedly reported blocking UI regression.
 
@@ -71,7 +111,7 @@ Never mix viewport rectangles with `offsetTop`/parent-local coordinates. Never l
 
 Keyboard ArrowRight/ArrowLeft/Escape must keep focus and geometry coherent.
 
-### 3. Advanced OFF must omit advanced timing commands
+### 4. Advanced OFF must omit advanced timing commands
 
 When `window.frameChuteAdvancedMode !== true`, these commands must not exist in the rendered generic context menu:
 - Create/Edit timed move
@@ -82,7 +122,7 @@ When `window.frameChuteAdvancedMode !== true`, these commands must not exist in 
 
 Do not merely disable them. Prefer command-model/construction filtering so the simple user is never presented with them.
 
-### 4. Sync With is ONLY for playable audio/video
+### 5. Sync With is ONLY for playable audio/video
 
 `Sync with...` and `Make independent` must appear only for actual playable video or audio objects.
 
@@ -100,7 +140,7 @@ Never show these commands for:
 
 Make the predicate capability based. Include audio and video. Keep separators hidden/omitted with the commands.
 
-### 5. Repair PR #55 DOCX hazards
+### 6. Repair PR #55 DOCX hazards
 
 #### Safe Find/Replace
 
@@ -124,11 +164,13 @@ If DOCX parsing records `strike`, `color`, and `highlight`, render those propert
 
 DOCX numbering IDs are document-local. Do not hard-code universal IDs such as 1 for bullet / 2 for number. Reuse compatible existing numbering definitions or allocate non-colliding numbering and abstract-number IDs as needed.
 
-#### Preserve DOCX image insertion
+#### Preserve and extend DOCX image insertion
 
 After merging latest main, both OS image drop and existing FrameChute-image drop into DOCX must still insert exactly once and save/reopen correctly.
 
-### 6. PDF explicit newlines, tabs, and structured whitespace
+Additionally, existing embedded DOCX images must become deliberate internal drag sources. Dragging one elsewhere in the same DOCX must move/reorder that image at the resolved caret rather than creating a new workspace frame. Dragging it out of the DOCX must follow the cross-container copy semantics in the drag debug map.
+
+### 7. PDF explicit newlines, tabs, and structured whitespace
 
 The canonical PDF edit object must preserve what the writer actually created.
 
@@ -153,7 +195,7 @@ Implement a deterministic tab-stop rule for preview/export while retaining `\t` 
 
 Acceptance: type line 1, Enter, line 2 => both visible, both survive Save/reopen. Type Tab then text => canonical state retains a real tab. Six literal spaces remain six literal spaces.
 
-### 7. PDF link annotations must follow text editing
+### 8. PDF link annotations must follow text editing
 
 Visible text and PDF link annotations are separate structures. FrameChute must explicitly synchronize them when it can confidently associate them.
 
@@ -177,7 +219,7 @@ When editing linked text without deleting it:
 
 Association must be conservative and page/geometry aware. Do not delete unrelated nearby annotations.
 
-### 8. PDF-specific Settings command/popup
+### 9. PDF-specific Settings command/popup
 
 Right-clicking inside the PDF editing surface should expose `Settings...` in the PDF-native context menu.
 
@@ -209,6 +251,10 @@ Resolve from the physical point/target under the right-click. Do not require pri
 ## Testing requirements
 
 Add focused tests for pure logic wherever possible:
+- internal image origin descriptor and global-overlay suppression for workspace/DOCX/PDF sources;
+- same-container image move vs cross-container copy arbitration;
+- DOCX embedded image move/reorder without duplicate workspace ingest;
+- PDF editable image same-document move and drag-out Blob path;
 - submenu placement next-to-trigger / flip-left / vertical clamp;
 - Advanced OFF omits timing commands;
 - audio/video media sync capability; static/document objects rejected;
