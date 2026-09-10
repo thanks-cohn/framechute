@@ -8,3 +8,28 @@ export function fittedImageSize(naturalWidth, naturalHeight, availableWidth, ava
   if (mode === "shrink") scale = Math.min(1, scale);
   return { width: Math.max(1, Math.round(naturalWidth * scale)), height: Math.max(1, Math.round(naturalHeight * scale)), scale };
 }
+
+export function rotatedImageBounds(width, height, degrees = 0) {
+  if (![width, height, degrees].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+  const radians = degrees * Math.PI / 180;
+  const cosine = Math.abs(Math.cos(radians));
+  const sine = Math.abs(Math.sin(radians));
+  return {
+    width: width * cosine + height * sine,
+    height: width * sine + height * cosine
+  };
+}
+
+/**
+ * Return a uniform visual scale that keeps every rotated corner inside the
+ * original image viewport. A tiny safety inset keeps anti-aliased edge pixels
+ * from being clipped by an overflow-hidden frame.
+ */
+export function rotationContainScale(width, height, degrees = 0, safety = 0.985) {
+  const bounds = rotatedImageBounds(width, height, degrees);
+  if (!bounds) return 1;
+  const raw = Math.min(1, width / bounds.width, height / bounds.height);
+  if (raw >= 0.999999) return 1;
+  const inset = Number.isFinite(safety) ? Math.min(1, Math.max(0.9, safety)) : 0.985;
+  return raw * inset;
+}
