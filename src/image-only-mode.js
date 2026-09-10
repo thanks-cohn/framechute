@@ -62,6 +62,11 @@ menu?.addEventListener("click", (event) => {
   contextBlock = null;
 }, true);
 
-window.addEventListener("framechute:close-context-menus", () => {
-  if (menu?.hidden) contextBlock = null;
+window.addEventListener("framechute:close-context-menus", (event) => {
+  // layer-menu.js emits this *while opening itself* with { except: menu }.
+  // Clearing here would erase the just-recorded right-click target before the
+  // Image Only command is rendered, which is exactly the failure this module
+  // is preventing.
+  if (event.detail?.except === menu) return;
+  contextBlock = null;
 });
