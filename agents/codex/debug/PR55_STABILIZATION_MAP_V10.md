@@ -2,6 +2,12 @@
 
 This file is a navigation aid for Codex. It is intentionally explicit about where the user-visible regressions originate and which invariants must survive reconciliation with the latest `main`.
 
+Also read the focused companion map:
+
+`agents/codex/debug/IMAGE_DRAG_INTERCHANGE_V10.md`
+
+That file is authoritative for internal image-drag semantics across workspace, DOCX, and PDF.
+
 ## Branch / sequencing law
 
 PR #55 (`codex/implement-docx-editing-and-context-menu`) was created before PR #54 merged. Before making substantive fixes, reconcile this branch with the latest `main` and preserve the merged PR #54 drag-ownership/document-image insertion work. Do not resolve conflicts by restoring pre-#54 `workspace.js` behavior.
@@ -12,6 +18,42 @@ The merged #54 behavior that must survive:
 - internal/OS images can be dropped into PDF;
 - the original workspace image remains;
 - native HTML drag survives the normal post-`dragstart` pointer-cancel transition and ends at the correct drag lifecycle boundary.
+
+## Debug anchor: internal image drag must be universal, not workspace-only
+
+Files after reconciling latest `main`:
+- `src/drag-ownership.mjs`
+- `src/web-drop.js`
+- `src/drop-local-sources.js`
+- `src/workspace.js`
+- `src/documents/pdf-document.js`
+
+User-visible regressions:
+- picking up an image that already exists inside FrameChute can still trigger the global `Drop into FrameChute` overlay;
+- a DOCX embedded image can be dragged out and accidentally materialize as a new workspace frame, but cannot reliably be moved/reordered inside the same DOCX;
+- PDF can receive images, but its editable images are not yet symmetric first-class drag sources that can move inside PDF or be dragged back out to workspace/DOCX.
+
+Root architectural problem: not every image-bearing surface begins the same internal drag ownership session. Browser-native `<img>` dragging can therefore look external to the global ingest router. A destination-specific drop handler is not enough; the source also needs a canonical image descriptor and real Blob provider.
+
+Required law:
+
+```text
+Any image originating inside FrameChute -> internal drag -> global ingest overlay NEVER
+```
+
+Same-container semantics:
+- workspace -> workspace = move same workspace object;
+- DOCX -> same DOCX = move/reorder same embedded image at drop caret, preserving relationship/part when possible;
+- PDF editable image -> same PDF = update same image object's geometry.
+
+Cross-container semantics are non-destructive copies by default:
+- workspace -> DOCX/PDF leaves workspace source;
+- DOCX/PDF -> workspace creates exactly one image object from canonical bytes and leaves document source;
+- DOCX <-> PDF inserts exactly once and leaves source.
+
+Do not create a workspace image when the user is merely repositioning an image inside the same document. Do not route any internal image through generic external ingest.
+
+Read `IMAGE_DRAG_INTERCHANGE_V10.md` for the complete acceptance matrix and PDF/DOCX source-byte details.
 
 ## Debug anchor: detached context submenus
 
@@ -78,8 +120,9 @@ Preserve #55's useful DOCX work while fixing these hazards:
 2. Parsed `strike`, `color`, and `highlight` must render back into the editor and survive editor -> canonical model -> OOXML serialization.
 3. Numbering IDs are document-local. Do not assume universal `numId` 1=bullet and 2=number. Reuse compatible existing numbering definitions or allocate non-colliding definitions/IDs.
 4. Preserve #54's DOCX image-drop ownership and actual-image-byte path when reconciling `workspace.js`.
+5. Make existing embedded DOCX images deliberate internal drag sources. Moving an image within the same DOCX must reinsert/reorder the same semantic image at the drop caret instead of creating a new workspace frame. Dragging it across a container boundary uses the canonical embedded bytes and follows the non-destructive cross-container copy law in `IMAGE_DRAG_INTERCHANGE_V10.md`.
 
-Acceptance: a mixed-format DOCX containing lists, links, images, strike/color/highlight and paragraph properties can be opened, edited, saved, and reopened without unrelated structural loss. Add regression tests for the structural hazards even if Word/LibreOffice is unavailable in CI.
+Acceptance: a mixed-format DOCX containing lists, links, images, strike/color/highlight and paragraph properties can be opened, edited, saved, and reopened without unrelated structural loss. Embedded images can also be moved within the document and copied out/in across FrameChute surfaces without invoking generic ingest. Add regression tests for the structural hazards even if Word/LibreOffice is unavailable in CI.
 
 ## Debug anchor: PDF explicit newlines / indentation
 
@@ -101,6 +144,25 @@ Required canonical behavior:
 PDF coordinates are bottom-left based. If a text field grows downward, preserve `top = y + height`, increase height, then recompute `y = top - newHeight`.
 
 Acceptance: type first line, Enter, second line => both lines are visibly present and saved/reopened. Type a tab then text => canonical text contains `\t` and export visually respects a deterministic tab-stop rule. Six literal spaces remain six literal spaces.
+
+## Debug anchor: PDF image interchange
+
+Files:
+- `src/workspace.js` PDF image drop/selection/move handlers
+- `src/documents/pdf-document.js` `kind:"image"` edit rendering/serialization
+- `src/drag-ownership.mjs` after reconciliation
+
+Current main already lets PDF receive PNG/JPEG images and stores inserted images as canonical image edit objects containing MIME, bytes/base64 and PDF geometry. Treat those inserted/editable PDF images as first-class internal drag sources, not destination-only decorations.
+
+Required:
+- same-PDF image drag updates the same image edit geometry;
+- PDF image -> workspace creates exactly one workspace image from the stored image bytes and leaves the PDF image;
+- PDF image -> DOCX inserts exactly once and leaves the PDF source;
+- PDF image -> another PDF inserts exactly once;
+- no global ingest overlay for any of those internal drags;
+- save/reopen preserves same-PDF repositioning.
+
+Images that existed in the original PDF before FrameChute editing may only be promoted/extracted when underlying raster bytes and geometry can be resolved confidently. Do not pretend a screenshot of a page region is the original embedded image asset.
 
 ## Debug anchor: PDF link annotations must follow text editing
 
@@ -147,6 +209,9 @@ The context should be resolved from the physical pointer target, not from whatev
 ## Tests Codex should add or strengthen
 
 Add focused tests around pure helpers/models where browser automation is unavailable:
+- internal-image drag origin descriptor and global-overlay suppression for workspace/DOCX/PDF sources;
+- same-DOCX move vs cross-container copy arbitration;
+- same-PDF image move vs cross-container copy arbitration;
 - submenu position calculation: right-side, flip-left, bottom clamp;
 - Advanced OFF command omission;
 - video/audio sync capability and rejection of static/document objects;
