@@ -152,6 +152,21 @@ style.textContent = `
     max-width: 100%;
     flex: 0 1 auto;
     white-space: nowrap;
+    overflow: visible;
+  }
+
+  .framechute-toolbar-fixed {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .framechute-toolbar-fixed > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .framechute-toolbar-pager-window {
@@ -200,7 +215,9 @@ style.textContent = `
   }
 
   .framechute-toolbar-pager-arrow:disabled {
-    visibility: hidden;
+    opacity: .35;
+    visibility: visible;
+    pointer-events: none;
   }
 
   .classic-toolbar-primary select { max-width: min(220px, 36vw); }
@@ -277,6 +294,23 @@ function proxyButton(label, targetId, title = label) {
   button.title = title;
   button.addEventListener("click", () => document.querySelector(`#${targetId}`)?.click());
   return button;
+}
+
+function openAnyFileButton() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Open File";
+  button.title = "Open any supported file";
+  button.setAttribute("aria-label", button.title);
+  button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("framechute:open-file")));
+  return button;
+}
+
+function fixedToolbarActions(...items) {
+  const group = document.createElement("div");
+  group.className = "framechute-toolbar-fixed";
+  group.append(...items);
+  return group;
 }
 
 function toolbarItemLabel(item) {
@@ -389,13 +423,26 @@ function syncClassicSavedSelect(classicSelect, sourceSelect) {
 }
 
 if (toolbar && advancedToolbar) {
+  // The carousel always begins on one universal Open File command.
+  // Format-specific commands remain reachable by the arrows, but the common
+  // path is deliberately one click and accepts every file type the ingestion
+  // layer knows how to route.
+  advancedToolbar.prepend(openAnyFileButton());
   const advancedPager = createToolbarPager(advancedToolbar, "FrameChute advanced controls");
+  advancedToolbar.append(
+    fixedToolbarActions(
+      proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
+    )
+  );
 
   const classic = document.createElement("div");
   classic.className = "classic-toolbar-primary";
   classic.setAttribute("aria-label", "FrameChute classic controls");
   advancedToolbar.insertAdjacentElement("afterend", classic);
 
+  // Keep one rotating command between permanent left/right arrows. Export
+  // Workspace is intentionally outside the carousel so it is always visible.
+  classic.append(openAnyFileButton());
   const classicPager = createToolbarPager(classic, "FrameChute classic controls");
   const saved = document.createElement("select");
   saved.id = "classic-saved-frames";
@@ -415,9 +462,14 @@ if (toolbar && advancedToolbar) {
     proxyButton("Restore", "restore-frame"),
     proxyButton("Reconnect all", "reconnect-all"),
     proxyButton("Open Workspace", "import-fcx", "Open an editable portable FrameChute workspace"),
-    proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace"),
     proxyButton("Take Snapshot", "take-snapshot", "Save the used visual canvas as a flattened image")
   ].forEach(item => classicPager?.add(item));
+
+  classic.append(
+    fixedToolbarActions(
+      proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace")
+    )
+  );
 
   const sourceSaved = document.querySelector("#saved-frames");
   if (sourceSaved) syncClassicSavedSelect(saved, sourceSaved);
