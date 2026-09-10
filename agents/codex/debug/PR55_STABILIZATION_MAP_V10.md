@@ -35,11 +35,15 @@ User-visible regressions:
 
 Root architectural problem: not every image-bearing surface begins the same internal drag ownership session. Browser-native `<img>` dragging can therefore look external to the global ingest router. A destination-specific drop handler is not enough; the source also needs a canonical image descriptor and real Blob provider.
 
-Required law:
+Required laws:
 
 ```text
 Any image originating inside FrameChute -> internal drag -> global ingest overlay NEVER
+Any drag over a DOCX/PDF editing surface -> Drop into FrameChute overlay NEVER
+DOCX/PDF same-document image movement -> direct manipulation, NO replacement overlay
 ```
+
+Do not solve this by inventing another DOCX/PDF drop overlay. The user wants to grab an image and move it up/down or around the document directly.
 
 Same-container semantics:
 - workspace -> workspace = move same workspace object;
@@ -122,7 +126,7 @@ Preserve #55's useful DOCX work while fixing these hazards:
 4. Preserve #54's DOCX image-drop ownership and actual-image-byte path when reconciling `workspace.js`.
 5. Make existing embedded DOCX images deliberate internal drag sources. Moving an image within the same DOCX must reinsert/reorder the same semantic image at the drop caret instead of creating a new workspace frame. Dragging it across a container boundary uses the canonical embedded bytes and follows the non-destructive cross-container copy law in `IMAGE_DRAG_INTERCHANGE_V10.md`.
 
-Acceptance: a mixed-format DOCX containing lists, links, images, strike/color/highlight and paragraph properties can be opened, edited, saved, and reopened without unrelated structural loss. Embedded images can also be moved within the document and copied out/in across FrameChute surfaces without invoking generic ingest. Add regression tests for the structural hazards even if Word/LibreOffice is unavailable in CI.
+Acceptance: a mixed-format DOCX containing lists, links, images, strike/color/highlight and paragraph properties can be opened, edited, saved, and reopened without unrelated structural loss. Embedded images can also be moved directly up/down within the document and copied out/in across FrameChute surfaces without invoking generic ingest or any document overlay. Add regression tests for the structural hazards even if Word/LibreOffice is unavailable in CI.
 
 ## Debug anchor: PDF explicit newlines / indentation
 
@@ -160,6 +164,7 @@ Required:
 - PDF image -> DOCX inserts exactly once and leaves the PDF source;
 - PDF image -> another PDF inserts exactly once;
 - no global ingest overlay for any of those internal drags;
+- no PDF-specific replacement overlay while repositioning;
 - save/reopen preserves same-PDF repositioning.
 
 Images that existed in the original PDF before FrameChute editing may only be promoted/extracted when underlying raster bytes and geometry can be resolved confidently. Do not pretend a screenshot of a page region is the original embedded image asset.
@@ -210,6 +215,7 @@ The context should be resolved from the physical pointer target, not from whatev
 
 Add focused tests around pure helpers/models where browser automation is unavailable:
 - internal-image drag origin descriptor and global-overlay suppression for workspace/DOCX/PDF sources;
+- DOCX/PDF destination suppression of global overlay;
 - same-DOCX move vs cross-container copy arbitration;
 - same-PDF image move vs cross-container copy arbitration;
 - submenu position calculation: right-side, flip-left, bottom clamp;
