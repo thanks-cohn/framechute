@@ -658,3 +658,7 @@ See [`LICENSE`](LICENSE) for the full license text.
 ## In one sentence
 
 **SUBSTRATE is a local-first browser workbench philosophy and architecture where everyday digital material shares a small set of reusable primitives, becoming movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites. FrameChute is its current Chrome/Chromium implementation.**
+
+---
+
+**Greatness Grows Here**
