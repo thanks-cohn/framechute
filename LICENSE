@@ -1,122 +1,21 @@
-FRAMECHUTE PROPRIETARY PERSONAL-USE LICENSE
-ALL RIGHTS RESERVED
+MIT License
 
-Copyright (c) 2026 FrameChute contributors and applicable rights holders.
-All rights reserved.
+Copyright (c) 2026 FrameChute contributors
 
-FrameChute is proprietary, source-available software. It is NOT licensed under
-the MIT License or any other open-source license.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The fact that the source code is publicly visible or downloadable does not make
-FrameChute open source and does not grant permission to reuse it in another
-project, product, service, extension, application, library, or commercial work.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-1. PERSONAL AND RECREATIONAL USE
-
-Subject to these terms, you may download or clone an official copy of
-FrameChute, install it, and use it for personal, recreational, hobby,
-educational, or evaluation purposes, provided that the use is non-commercial.
-
-You may make copies that are reasonably necessary to install, run, back up, or
-personally evaluate an authorized copy of FrameChute.
-
-This permission is a limited personal-use license. Ownership of FrameChute and
-its source code remains with the applicable rights holders.
-
-2. SOURCE CODE
-
-Source code made available through an authorized repository may be downloaded
-and inspected for the personal, non-commercial purposes described above.
-Public availability does not grant permission to copy FrameChute code into
-another project, publish modified versions, distribute derivative works, or
-claim FrameChute or its code as your own.
-
-Unless you have prior written permission from the applicable rights holder, you
-may not reuse, adapt, translate, incorporate, port, repackage, or derive another
-software product or service from FrameChute or substantial portions of its
-source code.
-
-3. COMMERCIAL USE PROHIBITED
-
-Without prior written permission from the applicable FrameChute rights holder,
-you may not use FrameChute or its source code, in whole or in substantial part,
-for any commercial, business, revenue-generating, monetized, or for-profit
-purpose.
-
-This includes, without limitation:
-
-(a) selling, licensing, renting, leasing, sublicensing, or charging for
-    FrameChute or a modified version of it;
-
-(b) incorporating FrameChute source code into a paid product, service,
-    extension, application, library, platform, or hosted offering;
-
-(c) rebranding, white-labeling, cloning, or repackaging FrameChute for
-    commercial distribution;
-
-(d) using FrameChute source code to create a competing commercial product or
-    service;
-
-(e) monetizing distribution of FrameChute or a derivative work through sales,
-    subscriptions, advertising, sponsorship, paid access, or other commercial
-    consideration; or
-
-(f) removing or obscuring ownership, copyright, attribution, trademark, or
-    license notices in order to present FrameChute or its code as belonging to
-    another person or organization.
-
-4. REDISTRIBUTION AND DERIVATIVE WORKS
-
-Except for copies reasonably necessary for the personal use allowed in Section
-1, you may not redistribute, republish, mirror, sublicense, sell, commercially
-exploit, or otherwise provide FrameChute or substantial portions of its source
-code to third parties without prior written permission.
-
-You may not distribute modified versions, derivative works, clones, or ports of
-FrameChute without prior written permission.
-
-Nothing in this license is intended to interfere with rights that an authorized
-repository host or distribution platform must have in order to host, display,
-scan, transmit, back up, or deliver the repository or official releases as part
-of operating that platform.
-
-5. NO TRADEMARK OR BRAND LICENSE
-
-No permission is granted to use the FrameChute name, logos, icons, artwork,
-branding, trade dress, or other marks except as reasonably necessary to
-identify an official copy of FrameChute being used under this license.
-
-6. THIRD-PARTY MATERIAL
-
-This license applies only to material for which the applicable FrameChute
-rights holder has authority to set these terms. Third-party components,
-libraries, fonts, media, or other materials remain subject to their own
-licenses and rights.
-
-7. PRIOR LICENSE GRANTS
-
-This license applies to versions and repository states distributed with this
-license. It does not retroactively revoke rights that were validly granted for
-an earlier version under different terms.
-
-8. TERMINATION
-
-The permissions granted by this license terminate automatically if you violate
-these terms. Upon termination, you must stop the unauthorized use and, to the
-extent permitted by law, delete unauthorized copies in your possession or
-control.
-
-9. NO WARRANTY
-
-FRAMECHUTE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
-KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR
-A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT
-PERMITTED BY LAW, THE AUTHORS AND RIGHTS HOLDERS SHALL NOT BE LIABLE FOR ANY
-CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR RELATED TO FRAMECHUTE OR ITS
-USE.
-
-10. COMMERCIAL OR OTHER PERMISSION
-
-Any commercial use, redistribution, derivative work, incorporation into another
-product, or other use not expressly allowed above requires prior written
-permission from the applicable FrameChute rights holder.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
