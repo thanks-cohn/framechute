@@ -20,39 +20,40 @@ PDF editable image -> DOCX
 
 The drag system must identify the source semantically and let the destination decide what the drop means. Do not let the browser's default `<img>` drag behavior masquerade as an external file ingest.
 
-## P0 simplification: remove the global `Drop into FrameChute` overlay UI
+## P0 presentation law: DOCX/PDF and internal-image movement are overlay-free
 
-The user has repeatedly reported that the global `Drop into FrameChute` overlay itself creates confusion, false positives, and drag arbitration bugs. Treat this as a product simplification, not another conditional CSS patch.
-
-**For this stabilization pass, retire/remove the global full-workspace `Drop into FrameChute` overlay presentation entirely.**
-
-Keep drag/drop functionality. Remove the global overlay as a visual/stateful participant in drag ownership.
+The user does NOT want another overlay, drop panel, modal wash, giant highlight, or replacement drag UI while moving images inside documents.
 
 Required behavior:
 
 ```text
-Hover/drag over DOCX frame or editor -> global overlay impossible
-Hover/drag over PDF frame or editor  -> global overlay impossible
-Pick up any image already in FrameChute -> global overlay impossible
-Move/reorder an internal image -> global overlay impossible
-Drag internal image across workspace/documents -> global overlay impossible
-External OS/browser image -> drop handling still works, without the global overlay
+Hover/drag over DOCX frame or editor -> NO Drop into FrameChute overlay
+Hover/drag over PDF frame or editor  -> NO Drop into FrameChute overlay
+Pick up any image already in FrameChute -> NO Drop into FrameChute overlay
+Move/reorder an image inside DOCX -> direct movement only
+Move/reposition an image inside PDF -> direct movement only
 ```
 
-If a destination needs feedback, use local destination-scoped feedback only, such as a DOCX/PDF drop-target outline, and only while that destination owns the drag. Do not replace the global overlay with another full-workspace modal layer.
+Do not "fix" the old global overlay by replacing it with a new DOCX/PDF overlay or a large local drop-target layer. The document should simply accept and move the image. A subtle cursor/dropEffect is sufficient if feedback is needed; do not add another visual overlay system.
 
-This is intentionally stronger than `shouldShowGlobalIngest()` suppression. Codex should separate **drop capability** from **global overlay presentation** so a misclassified drag can no longer flash a giant ingest UI.
+The global workspace overlay may remain only for genuinely external material over blank/general workspace if the existing product still wants it. It must never activate over DOCX/PDF surfaces and never activate for a drag whose source already belongs to FrameChute.
 
-Search for all code/CSS that creates, toggles, or styles the overlay (`is-drop-target`, `Drop into FrameChute`, global drag depth, ingest overlay pseudo-elements, etc.). Remove or neutralize only the overlay presentation/state coupling while preserving actual external drop ingestion.
+This means overlay eligibility must be constrained by BOTH source and destination:
 
-### Acceptance for overlay retirement
+```text
+source is internal FrameChute object -> overlay forbidden everywhere
+destination is DOCX/PDF surface      -> overlay forbidden regardless of source
+genuinely external drag + blank workspace -> existing workspace ingest UI may remain
+```
 
-- Drag an internal workspace image around for at least 10 seconds: no overlay, no flash.
-- Drag a DOCX embedded image inside/outside the DOCX: no overlay, no flash.
-- Drag a PDF editable image inside/outside the PDF: no overlay, no flash.
-- Drag an external OS image over blank workspace, DOCX, and PDF: no global overlay; destination handling still works.
-- Merely hovering the pointer over a DOCX/PDF frame with no drag can never create overlay state.
-- Canceled drags leave no stale `is-drop-target`/drag-depth state.
+### Acceptance
+
+- Drag an internal workspace image around for at least 10 seconds: no global overlay, no flash.
+- Drag a DOCX embedded image up/down inside the DOCX: image moves at the caret/drop location; no overlay; no workspace frame is spawned.
+- Drag a PDF editable image around inside the PDF: same image geometry moves; no overlay; no duplicate.
+- Drag an external OS image over DOCX/PDF: document may accept the image, but no global or document overlay appears.
+- Drag an external OS image over blank workspace: existing external-ingest presentation may remain if otherwise desired.
+- Canceled drags leave no stale `is-drop-target`/drag-depth state on documents.
 
 ## Current failure: internal image origin is not uniformly registered
 
@@ -63,9 +64,9 @@ Relevant files after reconciling latest `main`:
 - `src/workspace.js`
 - `src/documents/pdf-document.js`
 
-The current ownership helpers were written to suppress the global overlay when a drag is registered as internal. The DOCX renderer creates ordinary `<img data-docx-relationship>` nodes, and the PDF renderer creates `.pdf-image-edit` DOM, but these document-local image nodes are not all guaranteed to call the same `beginInternalDrag(...)` primitive before native HTML drag begins.
+The current ownership helpers suppress the global overlay only when a drag is registered as internal. The DOCX renderer creates ordinary `<img data-docx-relationship>` nodes, and the PDF renderer creates `.pdf-image-edit` DOM, but these document-local image nodes are not all guaranteed to call the same `beginInternalDrag(...)` primitive before native HTML drag begins.
 
-Even after removing the overlay presentation, this ownership bug still matters because an embedded `<img>` can otherwise be mistaken for new external material and routed to generic workspace ingest. So remove the overlay **and** fix semantic drag ownership. Do not treat overlay removal as permission to leave duplication/routing bugs underneath.
+If an embedded `<img>` starts the browser's ordinary native image drag without a FrameChute internal session/marker, the global workspace router can mistake it for new external material. That is why the overlay can appear and why dropping a DOCX image can accidentally create a new workspace frame instead of moving the existing document image.
 
 ## Build one internal image drag descriptor
 
@@ -94,23 +95,23 @@ Use destination ownership, not source DOM quirks.
 
 ### Same-container drag = MOVE
 
-- DOCX image -> another location in the same DOCX: move/reinsert the same semantic image at the caret/drop position. Preserve the existing relationship/part when possible. Do not call the generic workspace ingest path. Do not create a second FrameChute frame.
-- PDF editable image -> another location in the same PDF: update that image edit object's PDF geometry. Do not duplicate it and do not create a workspace frame.
+This is the user's immediate goal.
+
+- DOCX image -> another location in the same DOCX: move/reinsert the same semantic image at the caret/drop position. Preserve the existing relationship/part when possible. Do not call generic workspace ingest. Do not create a second FrameChute frame.
+- PDF editable image -> another location in the same PDF: update that same image edit object's PDF geometry. Do not duplicate it and do not create a workspace frame.
 - Workspace image -> workspace: move the existing FrameChute object using workspace manipulation; do not ingest it as a new file.
 
 A same-container move should be one undoable action where the document has history.
 
 ### Cross-container drag = COPY by default
 
-To preserve the non-destructive law established in PR #54, crossing a document/workspace boundary copies the image by default:
+Cross-container interchange is useful, but secondary to making same-document movement boring and reliable.
 
 - workspace -> DOCX/PDF: original workspace image remains;
-- DOCX/PDF -> workspace: create exactly one workspace image from the canonical image bytes; the document image remains;
+- DOCX/PDF -> workspace: create exactly one workspace image from canonical bytes; document source remains;
 - DOCX -> PDF or PDF -> DOCX: insert exactly one image in the destination; source remains.
 
-Do not silently delete the source across format boundaries. A future explicit modifier/command may offer destructive transfer, but do not invent it in this pass.
-
-This gives the user interchangeable drag/drop without surprising data loss while keeping same-document rearrangement as a true move.
+Do not silently delete the source across format boundaries.
 
 ## DOCX image source details
 
@@ -121,41 +122,41 @@ The DOCX model already knows embedded image relationships/parts. For an `<img da
 - resolve its bytes from the DOCX model's part (`model.parts[part]`) and MIME metadata;
 - preserve relationship/part when moving within the same DOCX;
 - only allocate a new DOCX image relationship when copying in from another source/document;
-- dropping elsewhere in the same DOCX must reposition/reinsert the same image DOM/model object at the resolved caret, not route to workspace ingestion.
+- dropping elsewhere in the same DOCX must reposition/reinsert the same image DOM/model object at the resolved caret;
+- do not spawn a workspace frame when the user is merely moving the picture up/down in the DOCX.
 
 The current `contentEditable=false` choice is fine for preventing text editing inside an image, but it must not mean the image is immovable.
 
 ## PDF image source details
 
-The PDF editor already supports image **destination** behavior for PNG/JPEG and represents inserted images as canonical `kind:"image"` edit objects with MIME, bytes/base64 and PDF geometry. That is enough to make FrameChute-inserted PDF images first-class drag sources immediately.
+The PDF editor already supports image destination behavior for PNG/JPEG and represents inserted images as canonical `kind:"image"` edit objects with MIME, bytes/base64 and PDF geometry. That is enough to make FrameChute-inserted PDF images first-class drag sources immediately.
 
 Required for inserted/editable PDF images:
-- drag within same PDF updates geometry at the drop point;
+- drag within same PDF updates the same image object's geometry at the drop point;
+- no overlay while doing so;
 - drag out to workspace emits the original image Blob and creates one workspace image;
 - drag into DOCX emits the image Blob and inserts once;
 - drag between PDFs inserts once in the destination;
 - source remains for cross-container copy.
 
-For images that already existed in the original PDF before FrameChute editing: promote them to draggable/extractable image objects only when their underlying raster bytes and geometry can be resolved confidently. Do not fake image extraction by screenshotting an arbitrary page region and pretending it is the original embedded asset. If full original-PDF image extraction cannot be completed safely in this run, make that limitation explicit in the handoff while fully solving inserted/editable PDF images.
+For images that already existed in the original PDF before FrameChute editing: promote them to draggable/extractable image objects only when their underlying raster bytes and geometry can be resolved confidently. Do not fake image extraction by screenshotting an arbitrary page region and pretending it is the original embedded asset.
 
 ## Drop arbitration order
 
 At every drag event, resolve in this order:
 
 ```text
-1. Is this a FrameChute-internal drag?
-   YES -> generic external ingest is forbidden.
+1. Is the pointer over DOCX/PDF?
+   YES -> global ingest overlay is forbidden.
 
-2. Is there a local document/workspace destination under the pointer that can claim the image?
-   YES -> that destination owns the drop and may show local feedback only.
+2. Is this a FrameChute-internal image drag?
+   YES -> global ingest overlay is forbidden everywhere.
 
-3. If the drag is internal and no document claims it, is the destination the workspace?
-   YES -> either move existing workspace source or materialize one workspace image copy from a document source.
+3. Can the local destination claim the image?
+   YES -> destination performs move/copy directly, with no replacement overlay UI.
 
-4. Only genuinely external drags reach generic ingest.
+4. Only genuinely external drags over non-document workspace may reach generic ingest presentation.
 ```
-
-There is no global ingest-overlay stage in this arbitration model.
 
 Do not infer `external` merely because `DataTransfer.items` contains image-like payloads. Browser-native dragging of an `<img>` can create transferable data for an image that is already internal.
 
@@ -165,54 +166,62 @@ Exercise all of these, ideally with browser tests plus pure ownership tests:
 
 ```text
 A. workspace image drag around workspace for 10s
-   -> no global overlay exists/flashes
+   -> no overlay flash
    -> same object moves
    -> no duplicate
 
 B. workspace image -> DOCX
-   -> no global overlay
+   -> no overlay over DOCX
    -> inserts exactly once
    -> source workspace image remains
 
 C. workspace image -> PDF
-   -> no global overlay
+   -> no overlay over PDF
    -> inserts exactly once
    -> source workspace image remains
 
 D. DOCX embedded image -> another place in SAME DOCX
    -> image moves/reorders at drop point
+   -> no overlay
    -> no workspace frame created
    -> no duplicate relationship when avoidable
    -> save/reopen keeps new position
 
 E. DOCX embedded image -> workspace
-   -> no global overlay
+   -> no overlay during internal drag
    -> exactly one workspace image created from real embedded bytes
    -> source DOCX image remains
 
 F. DOCX embedded image -> PDF
+   -> no overlay over PDF
    -> exactly one PDF image inserted
    -> source remains
 
 G. PDF inserted/editable image -> another place in SAME PDF
    -> same image edit changes geometry
+   -> no overlay
    -> no workspace frame
    -> save/reopen keeps new position
 
 H. PDF inserted/editable image -> workspace
+   -> no overlay during internal drag
    -> exactly one workspace image created from its image bytes
    -> source PDF image remains
 
 I. PDF inserted/editable image -> DOCX
+   -> no overlay over DOCX
    -> inserts exactly once
    -> source remains
 
-J. external OS image -> workspace/DOCX/PDF
-   -> external ingest/drop behavior still works
-   -> no global full-workspace overlay
+J. external OS image -> DOCX/PDF
+   -> document accepts it where supported
+   -> no global/document overlay
+
+K. external OS image -> blank workspace
+   -> existing external workspace ingest behavior may remain
 ```
 
-Also verify canceled native drags clean up ownership, and that no drag can leave the workspace stuck in stale drop-target state.
+Also verify canceled native drags clean up ownership, and that internal/document drags never leave stale `is-drop-target` state.
 
 ## Architectural target
 
@@ -226,6 +235,6 @@ IMAGE OBJECT
     -> destination claims operation
 ```
 
-The overlay is not part of this primitive.
+For DOCX/PDF same-document movement, the UX should be nearly invisible: pick up image, move it, drop it. No overlay layer is part of that interaction.
 
 That same primitive should later work for WEBX, Canvas, presentations, and other structured surfaces.
