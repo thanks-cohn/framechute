@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf } from "../src/documents/pdf-document.js";
+import { wrapPdfText, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -13,6 +13,16 @@ test("PDF text layout preserves newlines, repeated spaces, and wraps to width", 
   const font = { widthOfTextAtSize: value => value.length * 5 };
   assert.deepEqual(wrapPdfText("one  two\n\nthree", font, 12, 100), ["one  two", "", "three"]);
   assert.deepEqual(wrapPdfText("abcdef", font, 12, 15), ["abc", "def"]);
+});
+
+test("free PDF text updates in place without losing identity, geometry, spaces, tabs, or newlines", () => {
+  const edit = { kind:"text", id:"text:stable", page:1, index:-1, text:"New text", x:12, y:34, width:180, height:72, fontFamily:"Helvetica", fontSize:12 };
+  const beforeGeometry = { x:edit.x, y:edit.y, width:edit.width, height:edit.height };
+  assert.equal(updatePdfFreeText(edit, "hello  world\n\tindented"), true);
+  assert.equal(edit.text, "hello  world\n\tindented");
+  assert.equal(edit.id, "text:stable");
+  assert.deepEqual({ x:edit.x, y:edit.y, width:edit.width, height:edit.height }, beforeGeometry);
+  assert.equal(updatePdfFreeText(edit, "hello  world\n\tindented"), false);
 });
 
 test("PDF serialization accepts multiline edits and every offered font", async () => {
