@@ -1,9 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { beginInternalDrag, claimDocumentDrop, endInternalDrag, isInternalFrameChuteDrag, shouldGenericWorkspaceIngest, shouldShowGlobalIngest } from "../src/drag-ownership.mjs";
+import {
+  activeInternalDrag,
+  beginInternalDrag,
+  claimDocumentDrop,
+  endInternalDrag,
+  handleInternalDragTermination,
+  imageBlobsForDrop,
+  isInternalFrameChuteDrag,
+  shouldGenericWorkspaceIngest,
+  shouldShowGlobalIngest
+} from "../src/drag-ownership.mjs";
 import { customImageSourceBlob } from "../src/custom-image-source.mjs";
 
 const external = () => ({ dataTransfer: { items: [{ kind: "file", type: "image/png" }], files: [{ type: "image/png", name: "a.png" }], types: ["Files"] } });
+
 test("internal image is never global ingest and can be claimed locally", () => {
   const block = { isConnected: true };
   beginInternalDrag({ block, kind: "image" });
@@ -13,6 +24,7 @@ test("internal image is never global ingest and can be claimed locally", () => {
   assert.equal(shouldGenericWorkspaceIngest(external()), false);
   endInternalDrag();
 });
+
 test("external files use global ingest until a local editor handles them", () => {
   const event = external();
   assert.equal(shouldShowGlobalIngest(event), true);
@@ -29,4 +41,28 @@ test("a real text-backed custom image resolves image bytes, never its marker tex
   const block={querySelector:()=>store};
   const blob=await customImageSourceBlob(block,{resolveHandle:async()=>({kind:"file",getFile:async()=>image})});
   assert.equal(blob.type,"image/png");assert.deepEqual(new Uint8Array(await blob.arrayBuffer()),new Uint8Array([137,80,78,71]));
+});
+
+test("native image drag survives pointercancel until dragend and keeps source bytes", async () => {
+  const block = { isConnected: true };
+  const image = new Blob([new Uint8Array([255,216,255,217])], { type: "image/jpeg" });
+  beginInternalDrag({ block, kind: "image", mode: "native-drag", sourceBlobProvider: async () => image });
+
+  assert.equal(handleInternalDragTermination("pointercancel"), false);
+  assert.equal(activeInternalDrag()?.block, block);
+  assert.equal(shouldShowGlobalIngest(external()), false);
+
+  const blobs = await imageBlobsForDrop(external());
+  assert.equal(blobs.length, 1);
+  assert.equal(blobs[0], image);
+
+  assert.equal(handleInternalDragTermination("dragend"), true);
+  assert.equal(activeInternalDrag(), null);
+});
+
+test("pointer-manipulation sessions still clean up on pointercancel", () => {
+  const block = { isConnected: true };
+  beginInternalDrag({ block, kind: "image", mode: "pointer-manipulation" });
+  assert.equal(handleInternalDragTermination("pointercancel"), true);
+  assert.equal(activeInternalDrag(), null);
 });
