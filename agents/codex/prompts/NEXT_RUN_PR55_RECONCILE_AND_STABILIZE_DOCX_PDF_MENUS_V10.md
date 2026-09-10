@@ -26,7 +26,7 @@ PR #54 has already merged to `main` after PR #55 was created. Before substantive
 
 This pass is a stabilization summit pass, not a feature grab-bag. Make the existing interaction model behave like a dependable ordinary editor/workbench by fixing the root primitives that currently create repeated regressions.
 
-The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands, visually detached UI, treating material already inside FrameChute as if it had just arrived from outside, or flashing a global drag overlay.
+The user should be able to right-click, type, edit, drag, save, and reopen without the interface exposing impossible commands, visually detached UI, treating material already inside FrameChute as if it had just arrived from outside, or flashing drag overlays during document/image manipulation.
 
 ## P0 work, in order
 
@@ -53,24 +53,25 @@ Preserve all merged #54 work:
 
 Resolve conflicts semantically, not by choosing one entire side.
 
-### 2. Retire the global `Drop into FrameChute` overlay entirely
+### 2. Make DOCX/PDF and internal-image movement overlay-free
 
-This is now a hard product law for this pass.
+This is a hard product law.
 
-Do not merely improve suppression logic. Remove/retire the global full-workspace `Drop into FrameChute` overlay as a visual/stateful participant in drag/drop.
+Do NOT add another document overlay, large drop target, modal wash, or replacement drag panel.
 
 Required:
 
 ```text
-DOCX frame/editor -> global overlay impossible
-PDF frame/editor  -> global overlay impossible
-any internal FrameChute image drag -> global overlay impossible
-external OS/browser image drag -> drop still works, but no global overlay
+DOCX frame/editor -> Drop into FrameChute overlay impossible
+PDF frame/editor  -> Drop into FrameChute overlay impossible
+any image whose source is already inside FrameChute -> overlay impossible everywhere
+moving image up/down inside DOCX -> direct move only
+moving image inside PDF -> direct move only
 ```
 
-Preserve the actual drop handlers and ingestion capabilities. If local feedback is useful, show only destination-scoped feedback such as a DOCX/PDF outline while that destination owns the drag. Do not replace the old overlay with another full-workspace modal layer.
+The global workspace ingest overlay may remain only for genuinely external material over blank/general workspace if that existing UI is otherwise desired. It must never activate over DOCX/PDF surfaces and never activate for an internal FrameChute image drag.
 
-Search all CSS/JS associated with `Drop into FrameChute`, `is-drop-target`, drag-depth counters, and global ingest presentation. Decouple drop capability from overlay presentation. No drag, internal or external, should be able to make the old full-workspace overlay flash.
+Do not replace the old overlay with a new DOCX/PDF-specific visual overlay. If feedback is needed, a cursor/dropEffect is enough.
 
 ### 3. Make image drag ownership universal across workspace, DOCX, and PDF
 
@@ -164,7 +165,7 @@ DOCX numbering IDs are document-local. Do not hard-code universal IDs such as 1 
 
 After merging latest main, both OS image drop and existing FrameChute-image drop into DOCX must still insert exactly once and save/reopen correctly.
 
-Existing embedded DOCX images must become deliberate internal drag sources. Dragging one elsewhere in the same DOCX must move/reorder that image at the resolved caret rather than creating a new workspace frame. Dragging it out of the DOCX follows cross-container copy semantics.
+Existing embedded DOCX images must become deliberate internal drag sources. Dragging one elsewhere in the same DOCX must move/reorder that image at the resolved caret rather than creating a new workspace frame. The direct interaction should be ordinary: pick up image, move it up/down, drop it. No document overlay.
 
 ### 8. PDF explicit newlines, tabs, and structured whitespace
 
@@ -231,12 +232,13 @@ Resolve from the physical point/target under the right-click. Do not require pri
 ## Testing requirements
 
 Add focused tests for pure logic wherever possible:
-- no global overlay presentation for internal or external drags;
-- external drop ingestion still works after overlay retirement;
+- DOCX/PDF destinations can never activate the global ingest overlay;
+- internal FrameChute image drags can never activate the global ingest overlay;
+- genuinely external drag over blank workspace may still use existing external-ingest presentation if retained;
 - internal image origin descriptor and generic-ingest suppression for workspace/DOCX/PDF sources;
 - same-container image move vs cross-container copy arbitration;
-- DOCX embedded image move/reorder without duplicate workspace ingest;
-- PDF editable image same-document move and drag-out Blob path;
+- DOCX embedded image move/reorder without duplicate workspace ingest or overlay;
+- PDF editable image same-document move and drag-out Blob path without overlay;
 - submenu placement next-to-trigger / flip-left / vertical clamp;
 - Advanced OFF omits timing commands;
 - audio/video media sync capability; static/document objects rejected;
