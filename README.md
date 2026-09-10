@@ -607,11 +607,11 @@ Browser-mediated capabilities such as opening a local file/folder or starting sc
 
 ## License
 
-FrameChute is **source-available proprietary software**, not MIT-licensed open-source software.
+FrameChute is **open-source software released under the MIT License**.
 
-The repository may be downloaded, inspected, installed, and used for the personal, recreational, hobby, educational, and evaluation purposes allowed by the included `LICENSE`, but commercial reuse, redistribution, derivative products, cloning, repackaging, and other uses outside that license require prior written permission.
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of FrameChute, including building derivative and commercial projects from it, subject to the terms of the MIT License.
 
-Read the full [`LICENSE`](LICENSE) before reusing the source.
+See [`LICENSE`](LICENSE) for the full license text.
 
 ---
 
