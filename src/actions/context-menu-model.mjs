@@ -1,3 +1,12 @@
+// CODEX DEBUG V10: capability/context laws live here. See
+// agents/codex/debug/PR55_STABILIZATION_MAP_V10.md before changing menu behavior.
+// IMPORTANT: Advanced OFF must OMIT timing/layer-timing commands from the rendered
+// menu model, not merely disable them. `Sync with...` / `Make independent` are
+// valid ONLY for actual playable audio/video objects. Static/document objects
+// (image/PDF/DOCX/WEBX/text/SVG/canvas/etc.) must never expose media sync.
+// PDF/DOCX/WEBX editor surfaces must resolve to their format-native menus from
+// the physical right-click target rather than depending on prior selection.
+
 export function resolveEditorContext(target) {
   const surface = target?.closest?.(".pdf-surface, .docx-editor");
   if (!surface) return null;
@@ -30,6 +39,10 @@ export function commandsForEditorContext(context) {
   return [{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }];
 }
 
+// CODEX DEBUG V10: this implementation is too video-specific and must become a
+// real playable-media capability check for BOTH video and audio. Do not weaken
+// it into "advanced && block"; doing so is the regression that puts Sync on
+// PDFs/images/documents.
 export function supportsMediaSync(block) {
   return Boolean(block && (block.dataset?.blockType === "video" || block.dataset?.customKind === "remote-video") && block.querySelector?.("video"));
 }
