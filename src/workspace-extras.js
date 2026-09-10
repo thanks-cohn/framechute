@@ -80,6 +80,10 @@ await import("./framechute-visible-branding.js");
 await import("./mascot.js");
 await import("./media-dock-grab-pin.js");
 
+// Keep arbitrary image rotations/straightening fully visible inside the image
+// viewport instead of clipping transformed corners against the object frame.
+await import("./straighten-fit.js");
+
 // Document-selection fidelity and canvas extent policy are deliberately loaded
 // after the legacy interaction modules so their capture-phase owners can enforce
 // the final product rules without duplicating the document model itself.
