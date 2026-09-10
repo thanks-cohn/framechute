@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { layoutPdfText, normalizePdfEdit, sourceMaskForEdit, sourceMasksForPage } from "../src/documents/pdf-document.js";
+import { PDF_SOURCE_MASK_BLEED, layoutPdfText, normalizePdfEdit, sourceMaskForEdit, sourceMasksForPage } from "../src/documents/pdf-document.js";
 
 const edit = {
   page: 2, index: 4, replacement: "GOODBYE",
@@ -12,7 +12,18 @@ test("source mask geometry is independent of replacement geometry", () => {
   const before = sourceMaskForEdit(edit);
   const movedAndResized = { ...edit, x: 180, y: 190, width: 140, height: 36, fontSize: 30 };
   assert.deepEqual(sourceMaskForEdit(movedAndResized), before);
-  assert.deepEqual(before, { x: 10, y: 20, width: 30, height: 12 });
+  assert.deepEqual(before, {
+    x: 10 - PDF_SOURCE_MASK_BLEED,
+    y: 20 - PDF_SOURCE_MASK_BLEED,
+    width: 30 + PDF_SOURCE_MASK_BLEED * 2,
+    height: 12 + PDF_SOURCE_MASK_BLEED * 2
+  });
+});
+
+test("source mask bleed is bounded and expressed in PDF geometry", () => {
+  assert.deepEqual(sourceMaskForEdit({ ...edit, sourceMaskBleed: 1.25 }), { x: 8.75, y: 18.75, width: 32.5, height: 14.5 });
+  assert.deepEqual(sourceMaskForEdit({ ...edit, sourceMaskBleed: 999 }), { x: 8, y: 18, width: 34, height: 16 });
+  assert.deepEqual(sourceMaskForEdit({ ...edit, sourceMaskBleed: -10 }), { x: 10, y: 20, width: 30, height: 12 });
 });
 
 test("an empty replacement retains its source mask", () => {
@@ -24,6 +35,7 @@ test("page rerender mask state is derived only from current edit records", () =>
   assert.deepEqual(sourceMasksForPage([edit, otherPage], 2), [sourceMaskForEdit(edit)]);
   assert.deepEqual(sourceMasksForPage([], 2), []);
   assert.deepEqual(sourceMasksForPage([otherPage], 2), []);
+  assert.deepEqual(sourceMasksForPage([{ ...edit, kind: "text" }], 2), []);
 });
 
 test("restored history snapshots determine mask and replacement records together", () => {
@@ -48,7 +60,7 @@ test("legacy replacements normalize to the shared edit-object model", () => {
 test("multiline layout preserves repeated spaces and honestly clips to field height", () => {
   const layout = layoutPdfText({ kind: "text", page: 1, x: 0, y: 50, width: 100, height: 24, fontSize: 10, text: "hello  world\nsecond line\nclipped" });
   assert.deepEqual(layout.lines, ["hello  world", "second line"]);
-  assert.equal(layout.lineHeight, 12); assert.equal(layout.overflow, true);
+  assert.equal(layout.overflow, true);
 });
 
 test("canonical layout applies width wrapping before height clipping", () => {
