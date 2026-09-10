@@ -79,4 +79,10 @@ await import("./framechute-visible-branding.js");
 await import("./mascot.js");
 await import("./media-dock-grab-pin.js");
 
+// Document-selection fidelity and canvas extent policy are deliberately loaded
+// after the legacy interaction modules so their capture-phase owners can enforce
+// the final product rules without duplicating the document model itself.
+await import("./docx-selection-fidelity.js");
+await import("./workspace-extent.js");
+
 if (advancedMode) await import("./gallery-ui-polish.js");
