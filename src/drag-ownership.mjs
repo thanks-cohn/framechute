@@ -2,8 +2,8 @@ export const FRAMECHUTE_DRAG_TYPE = "application/x-framechute-object";
 
 let session = null;
 
-export function beginInternalDrag({ block, kind = "object", sourceBlobProvider = null } = {}) {
-  session = { block, kind, sourceBlobProvider, owner: "workspace", claimedBy: null };
+export function beginInternalDrag({ block, kind = "object", sourceBlobProvider = null, mode = "native-drag" } = {}) {
+  session = { block, kind, sourceBlobProvider, mode, owner: "workspace", claimedBy: null };
   return session;
 }
 
@@ -50,7 +50,24 @@ export async function imageBlobsForDrop(event) {
 
 export function endInternalDrag() { session = null; }
 
+/**
+ * End a drag session only when the event actually terminates that session type.
+ * Native HTML drag-and-drop fires pointercancel after dragstart; that transition
+ * must not destroy the sourceBlobProvider before DOCX/PDF receives the drop.
+ */
+export function handleInternalDragTermination(type) {
+  if (!session) return false;
+  if (session.mode === "native-drag" && (type === "pointerup" || type === "pointercancel")) return false;
+  if (session.mode === "pointer-manipulation" && type === "dragend") return false;
+  endInternalDrag();
+  return true;
+}
+
 if (typeof window !== "undefined") {
-  for (const name of ["pointerup", "pointercancel", "dragend", "blur"]) window.addEventListener(name, endInternalDrag, true);
-  window.addEventListener("keydown", event => { if (event.key === "Escape") endInternalDrag(); }, true);
+  for (const name of ["pointerup", "pointercancel", "dragend", "blur"]) {
+    window.addEventListener(name, () => handleInternalDragTermination(name), true);
+  }
+  window.addEventListener("keydown", event => {
+    if (event.key === "Escape") handleInternalDragTermination("escape");
+  }, true);
 }
