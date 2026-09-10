@@ -2,6 +2,8 @@ const workspace = typeof document !== "undefined" ? document.querySelector("#wor
 
 export const WORKSPACE_EXPANSION_STEP = 640;
 export const WORKSPACE_EDGE_MARGIN = 96;
+export const WORKSPACE_PAN_EDGE = 44;
+export const WORKSPACE_PAN_SPEED = 24;
 
 export function clampBlockToExtent({ left, top, width, height, workspaceWidth, workspaceHeight }) {
   return {
@@ -16,6 +18,33 @@ export function requiredPositiveExpansion({ left, top, width, height, workspaceW
   while (left + width > workspaceWidth + addWidth - margin) addWidth += step;
   while (top + height > workspaceHeight + addHeight - margin) addHeight += step;
   return { addWidth, addHeight };
+}
+
+/**
+ * Viewport edge-panning is navigation, not canvas growth. It is therefore
+ * available in both workspace modes. Expansion remains a separate policy that
+ * is applied only when the top toolbar is hidden.
+ */
+export function edgePanDelta({
+  clientX,
+  clientY,
+  viewportWidth,
+  viewportHeight,
+  scrollX = 0,
+  scrollY = 0,
+  edge = WORKSPACE_PAN_EDGE,
+  speed = WORKSPACE_PAN_SPEED
+}) {
+  const axis = (position, extent) => {
+    if (position < edge) return -Math.max(1, Math.ceil(speed * (edge - position) / edge));
+    if (position > extent - edge) return Math.max(1, Math.ceil(speed * (position - (extent - edge)) / edge));
+    return 0;
+  };
+  let dx = axis(clientX, viewportWidth);
+  let dy = axis(clientY, viewportHeight);
+  if (scrollX <= 0 && dx < 0) dx = 0;
+  if (scrollY <= 0 && dy < 0) dy = 0;
+  return { dx, dy };
 }
 
 function numericStyle(element, property, fallback) {
@@ -58,19 +87,6 @@ function expandNegativeEdge(axis) {
   }
 }
 
-function maybeAutoScroll(event) {
-  if (!document.body.classList.contains("toolbar-hidden")) return;
-  const edge = 36;
-  const speed = 28;
-  let dx = 0;
-  let dy = 0;
-  if (event.clientX < edge && window.scrollX > 0) dx = -speed;
-  else if (event.clientX > innerWidth - edge) dx = speed;
-  if (event.clientY < edge && window.scrollY > 0) dy = -speed;
-  else if (event.clientY > innerHeight - edge) dy = speed;
-  if (dx || dy) window.scrollBy(dx, dy);
-}
-
 function bringForward(block) {
   let max = 1;
   for (const item of workspace.querySelectorAll(":scope > .block")) {
@@ -94,28 +110,29 @@ function beginMeasuredBlockDrag(event, block, handle) {
   const rect = block.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
+  let clientX = event.clientX;
+  let clientY = event.clientY;
+  let active = true;
+  let panFrame = 0;
 
   handle.classList.add("is-dragging");
   handle.setPointerCapture?.(event.pointerId);
 
-  const move = (moveEvent) => {
-    maybeAutoScroll(moveEvent);
-
-    let left = startLeft + (moveEvent.clientX - startClientX) + (window.scrollX - startScrollX);
-    let top = startTop + (moveEvent.clientY - startClientY) + (window.scrollY - startScrollY);
+  const placeBlock = () => {
+    let left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX);
+    let top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY);
 
     if (!document.body.classList.contains("toolbar-hidden")) {
-      // Toolbar visible = bounded desk. Its current dimensions are frozen; users
-      // can scroll around that whole fixed canvas, but moving an object cannot
-      // create more canvas.
+      // Toolbar visible = bounded desk. Edge-panning may navigate all of the
+      // existing desk, but carrying an object can never create more desk.
       const size = workspaceSize();
       const point = clampBlockToExtent({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
       left = point.left;
       top = point.top;
     } else {
-      // Toolbar hidden = measured expandable canvas. Crossing any edge creates
-      // another fixed-size slab of desk. Left/top expansion shifts the origin
-      // and scroll position together so existing objects do not visually jump.
+      // Toolbar hidden = measured expandable canvas. It has the same edge-pan
+      // navigation, plus measured growth when the carried object crosses the
+      // existing workspace boundary.
       while (left < 0) {
         expandNegativeEdge("x");
         left += WORKSPACE_EXPANSION_STEP;
@@ -134,7 +151,37 @@ function beginMeasuredBlockDrag(event, block, handle) {
     block.style.top = `${top}px`;
   };
 
+  const pan = () => {
+    if (!active) return;
+    const { dx, dy } = edgePanDelta({
+      clientX,
+      clientY,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY
+    });
+    if (dx || dy) {
+      const beforeX = window.scrollX;
+      const beforeY = window.scrollY;
+      window.scrollBy(dx, dy);
+      // Pointer capture keeps the object in our drag session. Reposition from
+      // the scroll delta so it remains in the user's hand while the viewport
+      // travels across the canvas, even if the pointer itself is held still.
+      if (window.scrollX !== beforeX || window.scrollY !== beforeY) placeBlock();
+    }
+    panFrame = requestAnimationFrame(pan);
+  };
+
+  const move = (moveEvent) => {
+    clientX = moveEvent.clientX;
+    clientY = moveEvent.clientY;
+    placeBlock();
+  };
+
   const finish = () => {
+    active = false;
+    if (panFrame) cancelAnimationFrame(panFrame);
     handle.classList.remove("is-dragging");
     handle.removeEventListener("pointermove", move);
     handle.removeEventListener("pointerup", finish);
@@ -145,11 +192,13 @@ function beginMeasuredBlockDrag(event, block, handle) {
   handle.addEventListener("pointermove", move);
   handle.addEventListener("pointerup", finish);
   handle.addEventListener("pointercancel", finish);
+  panFrame = requestAnimationFrame(pan);
 }
 
 // This capture-phase owner intentionally replaces the older block-drag handlers
-// for the two visible drag surfaces. It is what enforces the product rule:
-// toolbar visible = fixed extent; toolbar hidden = drag-to-expand extent.
+// for the two visible drag surfaces. It enforces the product rule:
+// toolbar visible = fixed but drag-navigable extent;
+// toolbar hidden = drag-navigable extent plus measured expansion.
 if (typeof document !== "undefined") {
   document.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !workspace) return;
