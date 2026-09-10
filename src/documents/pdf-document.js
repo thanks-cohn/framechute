@@ -20,14 +20,32 @@ export function wrapPdfText(text, font, size, maxWidth) {
   for (const paragraph of String(text ?? "").replace(/\r\n?/g, "\n").split("\n")) {
     if (!paragraph) { lines.push(""); continue; }
     let line = "";
-    for (const character of paragraph) {
+    let column = 0;
+    for (const rawCharacter of paragraph) {
+      const character = rawCharacter === "\t" ? " ".repeat(4 - (column % 4)) : rawCharacter;
       const candidate = line + character;
       if (line && font.widthOfTextAtSize(candidate, size) > width) { lines.push(line); line = character; }
       else line = candidate;
+      column = line.length;
     }
     lines.push(line);
   }
   return lines.length ? lines : [""];
+}
+
+/** Grow an unconstrained field downward while preserving its PDF top edge. */
+export function growPdfTextField(edit, requiredLines) {
+  const value = normalizePdfEdit(edit), requiredHeight = Math.max(value.height, requiredLines * value.fontSize * 1.2);
+  if (requiredHeight === value.height || value.clipExplicitly) return value;
+  const oldTop = value.y + value.height;
+  return { ...value, height: requiredHeight, y: oldTop - requiredHeight };
+}
+
+/** Mutate the existing PDF image edit so identity/history references stay stable. */
+export function repositionPdfImage(edit, geometry) {
+  if (!edit || edit.kind !== "image") return null;
+  Object.assign(edit, geometry);
+  return edit;
 }
 
 export async function openPdfDocument(bytes) {
@@ -52,7 +70,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
     const [left, top, right, bottom] = pdfRectToViewport(viewport, edit);
     const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index);
-    const image = document.createElement("img"); image.src = `data:${edit.mime};base64,${edit.base64}`; image.alt = "Inserted PDF image";
+    const image = document.createElement("img"); image.src = `data:${edit.mime};base64,${edit.base64}`; image.alt = "Inserted PDF image"; image.draggable = true;
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);

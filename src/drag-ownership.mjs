@@ -2,8 +2,8 @@ export const FRAMECHUTE_DRAG_TYPE = "application/x-framechute-object";
 
 let session = null;
 
-export function beginInternalDrag({ block, kind = "object", sourceBlobProvider = null, mode = "native-drag" } = {}) {
-  session = { block, kind, sourceBlobProvider, mode, owner: "workspace", claimedBy: null };
+export function beginInternalDrag({ block, kind = "object", sourceBlobProvider = null, mode = "native-drag", ...origin } = {}) {
+  session = { block, kind, sourceBlobProvider, mode, ...origin, owner: "workspace", claimedBy: null };
   return session;
 }
 
@@ -31,7 +31,13 @@ export function claimDocumentDrop(owner, event) {
   return true;
 }
 
+export function isDocumentDragDestination(event) {
+  const path = event?.composedPath?.() || [event?.target];
+  return path.some(node => node?.matches?.(".docx-editor, .pdf-surface, .pdf-text-layer") || node?.closest?.(".docx-editor, .pdf-surface, .pdf-text-layer"));
+}
+
 export function shouldShowGlobalIngest(event) {
+  if (isDocumentDragDestination(event)) return false;
   if (isInternalFrameChuteDrag(event) || session?.owner === "document") return false;
   return [...event?.dataTransfer?.items || []].some(item => item.kind === "file") || externalFiles(event).length > 0;
 }

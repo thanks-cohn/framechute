@@ -35,6 +35,13 @@ test("external files use global ingest until a local editor handles them", () =>
   assert.equal(shouldGenericWorkspaceIngest(event), true);
 });
 
+test("DOCX and PDF destinations never show the global ingest overlay",()=>{
+  for(const selector of [".docx-editor",".pdf-surface",".pdf-text-layer"]){
+    const target={matches:value=>value.split(", ").includes(selector),closest:()=>null};
+    assert.equal(shouldShowGlobalIngest({...external(),target,composedPath:()=>[target]}),false);
+  }
+});
+
 test("a real text-backed custom image resolves image bytes, never its marker text", async () => {
   const image = new Blob([new Uint8Array([137,80,78,71])], { type:"image/png" });
   const store={value:'__FLASHFRAME_CUSTOM_BLOCK_V1__'+JSON.stringify({kind:"image",handleKey:"image:1"})};
