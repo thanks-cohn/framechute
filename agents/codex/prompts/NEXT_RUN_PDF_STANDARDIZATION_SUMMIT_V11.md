@@ -55,6 +55,39 @@ No operation may silently rasterize the whole PDF unless the user explicitly cho
 
 No operation may silently remove unrelated pages, links, annotations, form fields, page boxes, page rotation, images, vector content, or metadata merely because FrameChute does not edit them.
 
+## DOCX-parity target for ordinary editing
+
+For the subset of document editing that makes sense in both formats, the PDF surface should come as close as safely possible to the DOCX surface's ordinary interaction model.
+
+This does **not** mean pretending PDF is flow-layout Word. It means the user should not have to relearn basic actions just because the document is a PDF.
+
+Where technically safe, PDF should provide the same everyday expectations as DOCX:
+
+- click/select editable text,
+- create a new text field,
+- type normally with spaces, repeated spaces, tabs, newlines, and blank lines,
+- change font family and font size,
+- use supported bold/italic variants,
+- change text color when safe,
+- move a FrameChute-owned text field,
+- resize a FrameChute-owned text field,
+- insert an image with a picker,
+- drag an image from the desktop/OS into the PDF,
+- drag an existing FrameChute/workspace image into the PDF,
+- drag an image from DOCX into PDF where the shared interchange contract supports it,
+- select an inserted PDF image,
+- move that image directly inside the page,
+- resize that image directly inside the page,
+- preserve aspect ratio by default,
+- deliberately reshape only when the user explicitly chooses to,
+- delete a selected FrameChute-owned text/image edit,
+- undo/redo ordinary edits,
+- save and reopen without the edit jumping, disappearing, duplicating, or reverting.
+
+Basic PDF editing should therefore feel like: **select → change → move/resize if needed → save**.
+
+PDF-specific fixed-layout realities must remain visible in the implementation. Do not fake paragraph reflow, floating Word-style wrap, arbitrary original-font editing, or other DOCX semantics that cannot be represented safely in a PDF. Prefer a smaller reliable feature set over superficial parity that damages the file.
+
 ---
 
 # P0 — PDF state and round-trip correctness
@@ -175,29 +208,56 @@ Do not corrupt Unicode text merely to force it into a Standard 14 font. Detect u
 
 # P0 — PDF images
 
-Image insertion must be dependable.
+Image insertion and direct manipulation are core PDF features for this milestone, not optional polish.
 
-Support the existing safe interchange behavior:
+A user must be able to **drag an image directly into a PDF page**, see it appear where dropped, then select it, move it, and resize it inside that PDF without creating duplicates or falling back to a workspace-only object.
 
-- external image → PDF
-- workspace image → PDF
-- DOCX image → PDF where the V10 cross-container path already allows it
-- PDF inserted image → same PDF MOVE
-- PDF image → workspace COPY where currently supported
+Support and verify the safe interchange matrix:
 
-For an image placed into a PDF:
+- OS / desktop image → PDF = COPY into the target page
+- file picker image → PDF = INSERT once into the target page
+- workspace image → PDF = COPY; workspace source remains
+- DOCX embedded image → PDF = COPY where the shared V10 canonical-byte interchange supports it; DOCX source remains
+- PDF inserted image → same PDF = MOVE the same semantic image object
+- PDF inserted image → another PDF = COPY unless a stronger explicit cross-document move contract already exists
+- PDF image → workspace = COPY where currently supported
+
+For every image placed into a PDF:
 
 - insert exactly once,
-- use canonical bytes,
-- convert unsupported browser image formats to PNG/JPEG when required by pdf-lib,
-- preserve aspect ratio by default unless the user deliberately reshapes it,
-- allow move and resize,
-- keep the same semantic image object for same-PDF moves,
-- save/reopen at the same geometry.
+- use canonical image bytes rather than scraping rendered pixels when the source bytes are available,
+- convert browser-supported formats such as WebP/GIF to PDF-compatible PNG/JPEG when pdf-lib cannot embed the original encoding,
+- place the image at the actual pointer/drop location in page coordinates,
+- respect page scale, CropBox/MediaBox offsets, and page rotation,
+- preserve aspect ratio by default,
+- expose a visible, direct resize affordance on selection,
+- resize from predictable handles,
+- allow movement by direct manipulation,
+- keep the same semantic image object and stable ID during same-PDF movement/resizing,
+- never spawn an extra workspace frame during a same-PDF move,
+- never duplicate because both document-drop and workspace-drop handlers handled the same gesture,
+- maintain stacking/order deterministically if multiple FrameChute-owned images overlap,
+- delete only the selected FrameChute-owned image when the user invokes delete,
+- make one drag/resize gesture one undo step rather than one step per pointermove,
+- save/reopen at the same page, position, dimensions, and orientation.
 
-Respect page rotation and coordinate conversion. A drop onto a rotated page must land where the user dropped it.
+The image should remain usable after each sequence:
 
-No PDF drag target may show the global `Drop into FrameChute` overlay.
+- drop → move
+- drop → resize
+- drop → move → resize
+- drop → deselect/reselect
+- drop → page away/page back
+- drop → undo/redo
+- drop → save/reopen
+- move → save/reopen
+- resize → save/reopen
+
+Dragging across the PDF surface should advertise the correct semantics: same-PDF = MOVE; cross-container or external source = COPY.
+
+No PDF destination may show the global `Drop into FrameChute` overlay. A PDF page is a real document destination, not merely empty workspace beneath an overlay.
+
+If practical, give PDF images the same basic affordance quality as DOCX images: obvious selection, obvious resizing, direct movement, and ordinary deletion. Do not implement fake Word-style text wrap around PDF images in this milestone.
 
 ---
 
@@ -336,22 +396,31 @@ The standardization goal is partly **non-destruction of unsupported content**.
 
 ---
 
-# P1 — UI cleanup
+# P1 — UI cleanup and simple-feature completeness
 
-Keep the PDF toolbar compact and intentional.
+Keep the PDF controls compact, predictable, and comparable to the DOCX editor wherever the formats overlap.
 
-The user should be able to discover:
+A newcomer should be able to discover without documentation:
 
-- Save / Save As
-- page navigation
-- text editing controls when a text edit is selected
-- page operations
-- PDF-specific Settings
-- image-related actions where appropriate
+- Save / Save As,
+- page navigation,
+- Add Text / new free-text creation,
+- text font family and size when a FrameChute-owned text edit is selected,
+- supported bold/italic/color controls where safe,
+- image insertion,
+- image selection/move/resize/delete,
+- Undo / Redo,
+- page operations,
+- PDF-specific Settings,
+- link behavior where relevant.
+
+Do not hide a core action only in an obscure right-click path if there is an obvious PDF-toolbar location for it. Conversely, do not duplicate every action everywhere; use the same compact/contextual philosophy as DOCX.
+
+Right-click on editable PDF text should expose PDF-relevant text actions. Right-click on a FrameChute-owned PDF image should expose image-relevant actions. Right-click on page/background should expose PDF/page actions. Route by the physical target, not stale selection state.
 
 Do not let controls wrap into a visually broken pile when the block width narrows. Use compact popdowns/overflow patterns already established in FrameChute.
 
-Do not expose controls that are not functional.
+Do not expose buttons that do nothing, commands that apply to the wrong target type, or controls that imply unsupported PDF semantics.
 
 ---
 
@@ -377,7 +446,14 @@ At minimum add/strengthen tests for:
 14. linked-text deletion preference and one-step undo semantics,
 15. annotations not intentionally targeted remain present,
 16. save/reopen after combined text + image + page edits,
-17. no global workspace drop overlay on PDF destinations.
+17. no global workspace drop overlay on PDF destinations,
+18. OS/desktop image → PDF inserts exactly once at the target page,
+19. workspace image → PDF copies without deleting or moving the workspace source,
+20. same-PDF image drag mutates the same object and advertises MOVE,
+21. PDF image resize preserves identity and defaults to aspect-ratio preservation,
+22. drop/move/resize/save/reopen preserves image geometry,
+23. page rotation does not misplace a dropped image,
+24. PDF core controls remain discoverable and do not wrap into a broken toolbar.
 
 Use synthetic PDFs generated in tests when possible so regressions are reproducible.
 
@@ -392,8 +468,12 @@ If browser runtime is available, manually exercise:
 
 - create free text, type spaces/tabs/newlines, move, resize, page away/back, save/reopen
 - replace existing text
-- insert image by picker and drag/drop
-- move/resize inserted image
+- insert image by picker
+- drag an OS/desktop image directly onto the PDF page
+- drag a workspace image onto the PDF and verify the source remains
+- move/resize/delete an inserted image directly inside the PDF
+- verify aspect ratio stays locked by default during ordinary image resize
+- save/reopen after image insert + move + resize
 - rotated page image placement
 - page add/delete/reorder/rotate
 - link edit/delete setting
