@@ -75,6 +75,23 @@ Code inspection identified questions to reproduce and resolve, not pre-proven bu
    - An ordinary edit must not silently strip unrelated document content.
    - If a particular unsupported edit cannot preserve content safely, explain the limitation before a potentially lossy export and offer a safe alternative.
 
+## Explicit user priorities: typography, structure, and spacing
+
+These are mandatory visible editing capabilities, not optional enhancements:
+- A font-family dropdown with familiar choices such as Arial, Times New Roman, Calibri, Georgia, Verdana, and Courier New. Use installed/local fonts and sensible fallbacks; do not bundle proprietary fonts or claim an unavailable font is rendering exactly. Preserve the chosen font name in DOCX.
+- A font-size control with common presets AND typed numeric point sizes, including fractional sizes such as 10.5 pt. Validate input and show the actual selected size or mixed state.
+- Immediately accessible Bold, Italic, and Underline buttons with correct active state.
+- A style dropdown for Normal, Heading 1, Heading 2, and Heading 3. Headings must be real saved paragraph styles with appropriate outline levels, not just enlarged bold text.
+- Paragraph alignment, line spacing (including 1.0, 1.15, 1.5, and 2.0), and separately editable space before/after paragraphs in points.
+- Left/right indentation and first-line/hanging indentation with clear units.
+- Proper paragraphs, soft line breaks, bulleted and numbered lists, and explicit page breaks.
+- Page size/orientation and margins through a discoverable page setup control.
+- Users must be able to create a readable document hierarchy and deliberately control whitespace without inserting repeated spaces or empty paragraphs as layout hacks.
+
+Expose the frequent typography/style controls in the DOCX toolbar, with paragraph/page settings in compact panels or dialogs. Preserve selection when using them. Show their effects in the editor immediately and serialize the same settings into DOCX. Appropriate right-click groups must provide access to font and paragraph settings too.
+
+Add this concrete acceptance scenario: create a document with a title, H1/H2/H3 sections, two body fonts and sizes, bold and italic phrases, a numbered list, 1.5 line spacing, 6 pt before/12 pt after a paragraph, a first-line indent, changed page margins, and a page break. Save and reopen it, then verify both visible behavior and OOXML styles/properties. Undo/Redo the paragraph-spacing and heading changes as well as text edits.
+
 ## Dedicated DOCX right-click menu is mandatory
 
 Right-clicking inside DOCX content must open a menu designed for word processing, routed by the actual document/target type.
