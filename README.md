@@ -1,11 +1,11 @@
 ```text
- SSSSS  U   U  BBBBB   SSSSS  TTTTTTT  RRRRR     AAA    TTTTTTT  EEEEEEE
-S       U   U  B    B S          T     R    R   A   A      T     E
- SSSSS  U   U  BBBBB   SSSSS     T     RRRRR    AAAAA      T     EEEEE
-      S U   U  B    B      S     T     R   R   A     A     T     E
- SSSSS   UUU   BBBBB   SSSSS     T     R    R  A     A     T     EEEEEEE
+  ____  _   _ ____  ____ _____ ____      _  _____ _____
+ / ___|| | | | __ )/ ___|_   _|  _ \    / \|_   _| ____|
+ \___ \| | | |  _ \\___ \ | | | |_) |  / _ \ | | |  _|
+  ___) | |_| | |_) |___) || | |  _ <  / ___ \| | | |___
+ |____/ \___/|____/|____/ |_| |_| \_\/_/   \_\_| |_____|
 
-                      // Where Greatness Grows
+                 // Where Greatness Grows
 ```
 
 *Previously known as FrameChute.*
