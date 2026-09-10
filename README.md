@@ -11,6 +11,9 @@
 
 **Your browser has tabs. SUBSTRATE gives it a desk.**
 
+(Originally Called Framechute)
+
+
 SUBSTRATE is a local-first spatial computing project built around a simple idea: different kinds of digital material should share the same small set of dependable primitives wherever possible. FrameChute is the current Chrome/Chromium extension implementation of SUBSTRATE.
 
 Instead of opening one application for a PDF, another for an image, another for a DOCX, and another for a CSV, SUBSTRATE puts those things on one shared workspace and lets useful operations compose.
@@ -29,9 +32,9 @@ keep working or Save As
 
 I started this project without a clearly defined direction, but with an idea and a picture in my head of where I wanted it to lead.
 
-It was something I had always been a little surprised no one had made. I would not call myself a visionary. If anything, I kept feeling that the future I imagined should have already been here. Maybe, in fragments, it had been. Old browsers and the early web sometimes felt stranger, freer, messier, and more willing to let the user touch the machinery. A lot of that disappeared, or was shelved, simplified away, or scattered across separate applications.
+It was something I had always been a little surprised no one had made. I would not call myself a visionary. If anything, I kept feeling that the future I imagined should have already been here. Maybe, in fragments, it had been. Old browsers and the early web sometimes felt stranger, freer, messier, and more willing to let me touch the machinery. A lot of that disappeared, or was shelved, simplified away,(I miss my sweet sweet applets) or scattered across separate applications.
 
-SUBSTRATE grew out of those fragmented memories of the 2000s internet, with all of its freedom and all of its horrors, mixed with a love of comics, futuristic science-fiction goofballness, and a very practical need for software to remain simple and intuitive.
+SUBSTRATE grew out of those fragmented memories of the 2000s internet, with all of its freedom and all of its horrors, mixed with a love of comics, futuristic science-fiction goofballness, and a very presisng urge for software to remain simple and intuitive.
 
 I did not begin with a complete specification. I began with a recurring question: **why should this be harder than it needs to be?**
 
@@ -39,7 +42,7 @@ If an image, a PDF, a DOCX, a video, a spreadsheet, or eventually a 3D object ca
 
 That is the direction SUBSTRATE eventually found: not one giant application pretending to be every other application, but a small set of reusable primitives that let many kinds of work happen in the same place.
 
-I still think success would look almost obvious in hindsight. If the same repeating architecture can make something closer to 10 MB feel useful where a collection of isolated tools might total hundreds of megabytes or more, then the simplicity itself is part of the achievement.
+I still think success would look almost obvious in hindsight, and I wonder how I got here first!
 
 ---
 ## Design law: reuse the primitive
@@ -52,7 +55,7 @@ When two features can share a primitive, they should. Movement, selection, geome
 
 A PDF may need behavior an image does not. A video may need timing machinery a DOCX does not. Those differences should live at the edge instead of forcing every file type to reinvent the system underneath it.
 
-If repeating architecture and shared primitives can let a roughly 10 MB system provide work that would otherwise require a pile of isolated tools approaching 1 GB, that is a win. Compactness is not the only goal, but **simplicity, reuse, and elegance are architectural requirements rather than afterthoughts.**
+If repeating architecture and shared primitives can let a roughly 10 MB system provide work that would otherwise require a pile of isolated tools approaching 1 GB, that is a win. Compactness is not the only goal, but **simplicity, reuse, and elegance are architectural NEEDS rather than afterthoughts.**
 
 The goal is not to reproduce every professional feature in Photoshop, Word, Acrobat, Premiere, Excel, or Blender.
 
