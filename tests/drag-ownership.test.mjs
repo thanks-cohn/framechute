@@ -8,6 +8,7 @@ import {
   handleInternalDragTermination,
   imageBlobsForDrop,
   isInternalFrameChuteDrag,
+  normalizeImageBlobForPdf,
   shouldGenericWorkspaceIngest,
   shouldShowGlobalIngest
 } from "../src/drag-ownership.mjs";
@@ -65,6 +66,13 @@ test("native image drag survives pointercancel until dragend and keeps source by
 
   assert.equal(handleInternalDragTermination("dragend"), true);
   assert.equal(activeInternalDrag(), null);
+});
+
+test("PDF-compatible PNG and JPEG blobs pass through without needless re-encoding", async()=>{
+  for(const type of ["image/png","image/jpeg"]){
+    const blob=new Blob([new Uint8Array([1,2,3])],{type});
+    assert.equal(await normalizeImageBlobForPdf(blob),blob);
+  }
 });
 
 test("pointer-manipulation sessions still clean up on pointercancel", () => {
