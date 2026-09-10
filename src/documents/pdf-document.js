@@ -48,6 +48,15 @@ export function repositionPdfImage(edit, geometry) {
   return edit;
 }
 
+/** Keep a free-text edit's semantic model synchronized without replacing its identity or geometry. */
+export function updatePdfFreeText(edit, text) {
+  if (!edit || edit.kind !== "text") return false;
+  const value = String(text ?? "").replace(/\r\n?/g, "\n");
+  if (edit.text === value) return false;
+  edit.text = value;
+  return true;
+}
+
 export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });
@@ -109,6 +118,13 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
     const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);
     const text=document.createElement("span");text.className="pdf-edit-text";text.textContent=saved.text;span.append(text);
+    const markDirty=()=>{const block=text.closest?.(".block");if(block)block.dataset.documentDirty="true";};
+    text.addEventListener("input",()=>{if(updatePdfFreeText(edit,text.innerText))markDirty();});
+    text.addEventListener("focusout",()=>{
+      if(text.dataset.cancel){updatePdfFreeText(edit,text.dataset.before??edit.text);delete text.dataset.cancel;}
+      else if(updatePdfFreeText(edit,text.innerText))markDirty();
+      text.removeAttribute("contenteditable");
+    });
     Object.assign(span.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`,fontSize:`${saved.fontSize*scale}px`});
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
