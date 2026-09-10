@@ -50,3 +50,11 @@ test("PDF tabs remain canonical but expand at deterministic four-column stops", 
   const grown=growPdfTextField({kind:"text",page:1,x:2,y:80,width:100,height:12,fontSize:10,text:"a\nb"},2);
   assert.equal(grown.y+grown.height,92);assert.equal(grown.height,24);assert.equal(grown.y,68);
 });
+
+test("same-PDF movement mutates the existing image object without duplication",async()=>{
+  const {repositionPdfImage}=await import("../src/documents/pdf-document.js");
+  const image={kind:"image",id:"image:stable",x:1,y:2,width:3,height:4};const edits=[image];
+  assert.equal(repositionPdfImage(image,{x:20,y:30,width:3,height:4}),image);
+  assert.equal(edits.length,1);assert.equal(edits[0].id,"image:stable");assert.equal(edits[0].x,20);
+  assert.deepEqual(structuredClone(edits),[{kind:"image",id:"image:stable",x:20,y:30,width:3,height:4}]);
+});

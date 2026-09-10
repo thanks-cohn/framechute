@@ -70,3 +70,16 @@ test("mixed existing, PNG, and JPEG images retain unique relationships and drawi
   assert.deepEqual(pictureIds, docPrIds);
   for (const id of ["rIdFrameChute1", png.relationshipId, jpeg.relationshipId]) assert.match(documentXml, new RegExp(`r:embed="${id}"`));
 });
+
+test("moved DOCX image order and relationship survive save/reopen",async()=>{
+  const originalXml='<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body></w:document>';
+  const model={parts:{"[Content_Types].xml":strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>'),"word/_rels/document.xml.rels":strToU8('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'),"word/document.xml":strToU8(originalXml)},originalXml,relationships:new Map(),blocks:[]};
+  const image=addDocxImage(model,new Uint8Array([137,80,78,71]),{mime:"image/png",width:20,height:10});
+  model.blocks=[{type:"paragraph",runs:[{text:"before"},{text:"after"},{text:"",images:[image]}]}];
+  // The direct manipulation moved the same descriptor between the two text runs.
+  model.blocks[0].runs.splice(1,0,model.blocks[0].runs.pop());
+  const reopened=unzipSync(new Uint8Array(await (await serializeDocx(model)).arrayBuffer()));
+  const xml=strFromU8(reopened["word/document.xml"]),before=xml.indexOf("before"),drawing=xml.indexOf(`r:embed="${image.relationshipId}"`),after=xml.indexOf("after");
+  assert.ok(before>=0&&before<drawing&&drawing<after);
+  assert.deepEqual(reopened[image.part],new Uint8Array([137,80,78,71]));
+});

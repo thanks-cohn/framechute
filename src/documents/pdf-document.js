@@ -41,6 +41,13 @@ export function growPdfTextField(edit, requiredLines) {
   return { ...value, height: requiredHeight, y: oldTop - requiredHeight };
 }
 
+/** Mutate the existing PDF image edit so identity/history references stay stable. */
+export function repositionPdfImage(edit, geometry) {
+  if (!edit || edit.kind !== "image") return null;
+  Object.assign(edit, geometry);
+  return edit;
+}
+
 export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });

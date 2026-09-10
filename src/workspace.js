@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { editorNodeToRuns, replaceTextNodes } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
@@ -24,6 +24,7 @@ import { PDFDocument } from "./vendor/pdf-lib.mjs";
 import { createSimpleDocx } from "./actions/document-operations.js";
 import { activeInternalDrag, beginInternalDrag, claimDocumentDrop, endInternalDrag, imageBlobsForDrop, isInternalFrameChuteDrag } from "./drag-ownership.mjs";
 import { customImageSourceBlob } from "./custom-image-source.mjs";
+import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from "./document-image-drag.mjs";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -65,6 +66,8 @@ workspace.addEventListener("dragstart", event => {
   try{event.dataTransfer.setData("application/x-framechute-object",block.dataset.blockId||"image");event.dataTransfer.effectAllowed="copyMove";}catch{}
 }, true);
 workspace.addEventListener("dragend", endInternalDrag, true);
+const clearDocumentDragState=()=>{workspace.classList.remove("is-drop-target");workspace.querySelectorAll(".is-docx-drop-target").forEach(node=>node.classList.remove("is-docx-drop-target"));};
+window.addEventListener("dragend",clearDocumentDragState,true);window.addEventListener("drop",clearDocumentDragState,true);window.addEventListener("blur",clearDocumentDragState,true);window.addEventListener("keydown",event=>{if(event.key==="Escape")clearDocumentDragState();},true);
 
 let zCounter = 1;
 let newBlockOffset = 0;
@@ -654,18 +657,18 @@ registerBlockType("pdf", {
     const textLayer = block.querySelector(".pdf-text-layer");
     const claimPdfImage = event => {
       if (!claimDocumentDrop("pdf", event)) return false;
-      event.preventDefault(); event.stopPropagation(); workspace.classList.remove("is-drop-target"); textLayer.classList.add("is-docx-drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect="copy";
+      event.preventDefault(); event.stopPropagation(); workspace.classList.remove("is-drop-target");
+      if (event.dataTransfer) event.dataTransfer.dropEffect=documentImageDropEffect(activeInternalDrag(),"pdf",block);
       return true;
     };
     textLayer.addEventListener("dragenter", claimPdfImage, true);
     textLayer.addEventListener("dragover", claimPdfImage, true);
-    textLayer.addEventListener("dragleave", event => { if(!textLayer.contains(event.relatedTarget))textLayer.classList.remove("is-docx-drop-target"); }, true);
+    textLayer.addEventListener("dragleave", clearDocumentDragState, true);
     textLayer.addEventListener("drop", async event => {
       if (!claimPdfImage(event)) return;
-      textLayer.classList.remove("is-docx-drop-target");
+      clearDocumentDragState();
       const drag=activeInternalDrag(),runtime=runtimeSources.get(block);
-      if(drag?.originKind==="pdf"&&drag.block===block){const edit=runtime?.edits?.find(item=>item.id===drag.originObjectId),surface=textLayer.getBoundingClientRect(),display=drag.originElement?.closest(".pdf-image-edit")?.getBoundingClientRect();if(edit&&display){pushPdfHistory(runtime);Object.assign(edit,viewportRectToPdf(runtime.pageData.viewport,{left:event.clientX-surface.left-display.width/2,top:event.clientY-surface.top-display.height/2,width:display.width,height:display.height}));endInternalDrag();setDocumentDirty(block,true);await setPdfPage(block,block.dataset.currentPage);return;}}
+      if(drag?.originKind==="pdf"&&drag.block===block){const edit=runtime?.edits?.find(item=>item.id===drag.originObjectId),surface=textLayer.getBoundingClientRect(),display=drag.originElement?.closest(".pdf-image-edit")?.getBoundingClientRect();if(edit&&display){pushPdfHistory(runtime);repositionPdfImage(edit,viewportRectToPdf(runtime.pageData.viewport,{left:event.clientX-surface.left-display.width/2,top:event.clientY-surface.top-display.height/2,width:display.width,height:display.height}));endInternalDrag();setDocumentDirty(block,true);await setPdfPage(block,block.dataset.currentPage);return;}}
       const blobs=await imageBlobsForDrop(event); if(!blobs.length||!runtime?.pageData){endInternalDrag();return;}
       let inserted=0; for(const blob of blobs){
         if(!/^image\/(png|jpeg)$/i.test(blob.type)){setStatus("PDF insertion supports PNG and JPEG images.");continue;}
@@ -815,18 +818,19 @@ registerBlockType("docx", {
       return imageItems(event).map((item) => item.getAsFile?.()).filter(imageFile);
     };
     const ownsImageDrag = (event) => isInternalFrameChuteDrag(event) || imageItems(event).length > 0 || imageFiles(event).length > 0;
-    const claimImageDrag = (event) => { if(!ownsImageDrag(event)||!claimDocumentDrop("docx",event))return false;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");editor.classList.add("is-docx-drop-target");return true; };
+    const claimImageDrag = (event) => { if(!ownsImageDrag(event)||!claimDocumentDrop("docx",event))return false;event.preventDefault();event.stopPropagation();workspace.classList.remove("is-drop-target");return true; };
     editor.addEventListener("dragenter", claimImageDrag, true);
-    editor.addEventListener("dragover", (event) => { if(!claimImageDrag(event))return;if(event.dataTransfer)event.dataTransfer.dropEffect="copy"; }, true);
-    editor.addEventListener("dragleave", (event) => { if(!editor.contains(event.relatedTarget))editor.classList.remove("is-docx-drop-target"); }, true);
+    editor.addEventListener("dragover", (event) => { if(!claimImageDrag(event))return;if(event.dataTransfer)event.dataTransfer.dropEffect=documentImageDropEffect(activeInternalDrag(),"docx",block); }, true);
+    editor.addEventListener("dragleave", clearDocumentDragState, true);
     editor.addEventListener("drop", async (event) => {
-      if(!claimImageDrag(event))return;const drag=activeInternalDrag();editor.classList.remove("is-docx-drop-target");workspace.classList.remove("is-drop-target");
+      if(!claimImageDrag(event))return;const drag=activeInternalDrag();clearDocumentDragState();
       const runtime=runtimeSources.get(block);if(!runtime?.model){setStatus("This DOCX is not ready for image insertion.");return;}
-      let target=(document.caretPositionFromPoint?.(event.clientX,event.clientY)?.offsetNode || document.caretRangeFromPoint?.(event.clientX,event.clientY)?.startContainer)?.parentElement?.closest("p,h1,h2,h3,h4,h5,h6,li,td") || editor.lastElementChild;
+      const dropRange=documentDropRange(document,editor,event.clientX,event.clientY,drag?.originElement);
+      let target=(dropRange?.startContainer?.parentElement || dropRange?.startContainer)?.closest?.("p,h1,h2,h3,h4,h5,h6,li,td") || editor.lastElementChild;
       if(!target || !editor.contains(target)){target=document.createElement("p");editor.append(target);}
-      if(drag?.originKind==="docx"&&drag.block===block&&drag.originElement){target.append(drag.originElement);endInternalDrag();setDocumentDirty(block,true);return;}
+      if(drag?.originKind==="docx"&&drag.block===block&&drag.originElement){if(dropRange)moveNodeToDropRange(drag.originElement,dropRange);else target.append(drag.originElement);endInternalDrag();setDocumentDirty(block,true);return;}
       const files=await imageBlobsForDrop(event);if(!files.length){endInternalDrag();return;}
-      for(const file of files){const bitmap=await createImageBitmap(file);const ratio=Math.min(1,Math.max(1,editor.clientWidth-32)/bitmap.width),descriptor=addDocxImage(runtime.model,new Uint8Array(await file.arrayBuffer()),{mime:file.type||"image/png",width:Math.round(bitmap.width*ratio),height:Math.round(bitmap.height*ratio)});bitmap.close();const img=document.createElement("img"),url=URL.createObjectURL(file);runtime.objectUrls.push(url);img.src=url;img.alt=file.name||"Inserted image";img.contentEditable="false";img.dataset.docxRelationship=descriptor.relationshipId;img.dataset.docxPart=descriptor.part;img.dataset.docxMime=descriptor.mime;img.dataset.docxWidth=String(descriptor.width);img.dataset.docxHeight=String(descriptor.height);img.style.width=`${descriptor.width}px`;img.style.height=`${descriptor.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";target.append(img);}endInternalDrag();
+      for(const file of files){const bitmap=await createImageBitmap(file);const ratio=Math.min(1,Math.max(1,editor.clientWidth-32)/bitmap.width),descriptor=addDocxImage(runtime.model,new Uint8Array(await file.arrayBuffer()),{mime:file.type||"image/png",width:Math.round(bitmap.width*ratio),height:Math.round(bitmap.height*ratio)});bitmap.close();const img=document.createElement("img"),url=URL.createObjectURL(file);runtime.objectUrls.push(url);img.src=url;img.alt=file.name||"Inserted image";img.contentEditable="false";img.dataset.docxRelationship=descriptor.relationshipId;img.dataset.docxPart=descriptor.part;img.dataset.docxMime=descriptor.mime;img.dataset.docxWidth=String(descriptor.width);img.dataset.docxHeight=String(descriptor.height);img.style.width=`${descriptor.width}px`;img.style.height=`${descriptor.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";if(dropRange){dropRange.insertNode(img);dropRange.setStartAfter(img);dropRange.collapse(true);}else target.append(img);}endInternalDrag();
       setDocumentDirty(block,true);setStatus(`${files.length} image${files.length===1?"":"s"} inserted into the DOCX.`);
     }, true);
     let savedRange=null;
