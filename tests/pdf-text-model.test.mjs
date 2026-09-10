@@ -42,3 +42,11 @@ test("PDF serialization embeds a JPEG image record", async () => {
   const blob=await serializeEditedPdf({bytes},[{kind:"image",page:1,index:-2,x:12,y:15,width:30,height:30,mime:"image/jpeg",base64:jpeg}]);
   assert.equal((await PDFDocument.load(await blob.arrayBuffer())).getPageCount(),1);
 });
+
+test("PDF tabs remain canonical but expand at deterministic four-column stops", async()=>{
+  const {growPdfTextField}=await import("../src/documents/pdf-document.js");
+  const font={widthOfTextAtSize:value=>value.length};
+  assert.deepEqual(wrapPdfText("a\tb",font,12,100),["a   b"]);
+  const grown=growPdfTextField({kind:"text",page:1,x:2,y:80,width:100,height:12,fontSize:10,text:"a\nb"},2);
+  assert.equal(grown.y+grown.height,92);assert.equal(grown.height,24);assert.equal(grown.y,68);
+});

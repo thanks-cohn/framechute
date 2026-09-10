@@ -20,3 +20,9 @@ test("Quick Actions uses a close control and never a selection-clearing control"
   const source=await readFile(new URL("../src/actions/quick-actions.js",import.meta.url),"utf8");
   assert.match(source,/quick-actions-close/);assert.doesNotMatch(source,/quick-actions-clear|>Clear</);
 });
+
+test("media synchronization accepts playable audio and rejects mislabeled static objects",()=>{
+  const audio={dataset:{blockType:"audio"},querySelector:selector=>selector==="audio"?{}:null};
+  assert.equal(supportsMediaSync(audio),true);
+  assert.equal(supportsMediaSync({dataset:{blockType:"image"},querySelector:()=>({})}),false);
+});

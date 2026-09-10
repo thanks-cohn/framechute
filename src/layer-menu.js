@@ -1,5 +1,6 @@
 import { readQuickActionsEnabled, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
 import { genericAdvancedVisibility } from "./actions/context-menu-model.mjs";
+import { positionSubmenu } from "./submenu-position.mjs";
 
 const workspace = document.querySelector("#workspace");
 
@@ -88,6 +89,7 @@ menu.innerHTML = `
   <div class="flashframe-layer-menu-separator timed-motion-separator" role="separator"></div>
 `;
 document.body.append(menu);
+const advancedTimingNodes=[...menu.querySelectorAll('[data-layer-action^="timed-"], [data-layer-action="layer-rule"], .timed-motion-separator')];
 
 const style = document.createElement("style");
 style.textContent = `
@@ -216,6 +218,7 @@ function showMenu(block, x, y) {
   targetBlock = block;
   menu.hidden = false;
   const advanced = window.frameChuteAdvancedMode === true;
+  advancedTimingNodes.forEach(node=>menu.append(node));
   const visibility = genericAdvancedVisibility({ advanced, block });
   menu.querySelectorAll(".workspace-menu-action").forEach(item => { item.hidden = !showWorkspaceActionsForTarget(Boolean(block)); });
   menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
@@ -264,6 +267,7 @@ function showMenu(block, x, y) {
   menu.querySelector('[data-layer-action="timed-clear"]').hidden = !advanced || !hasTimedMotion;
   menu.querySelector('[data-layer-action="layer-rule"]').hidden = !advanced || !block;
   menu.querySelector(".timed-motion-separator").hidden = !advanced || !block;
+  if(!advanced)advancedTimingNodes.forEach(node=>node.remove());
   closeButton.hidden = !block;
   closeButton.textContent = isVisualMedia ? "Close object" : "Close frame";
 
@@ -296,9 +300,9 @@ workspace.addEventListener("contextmenu", (event) => {
 menu.addEventListener("click", (event) => {
   const submenuTrigger = event.target.closest(".layer-submenu-trigger");
   if (submenuTrigger) {
-    const submenu=submenuTrigger.nextElementSibling,rect=submenuTrigger.getBoundingClientRect();
+    const submenu=submenuTrigger.nextElementSibling;
     menu.querySelectorAll(".layer-submenu.is-open").forEach(node=>{if(node!==submenu)node.classList.remove("is-open")});submenu.classList.toggle("is-open");
-    submenu.style.top=`${Math.min(rect.top,innerHeight-submenu.getBoundingClientRect().height-8)}px`;submenu.style.left=`${rect.right+submenu.getBoundingClientRect().width>innerWidth-8?rect.left-submenu.getBoundingClientRect().width:rect.right}px`;
+    if(submenu.classList.contains("is-open"))positionSubmenu(submenuTrigger,submenu);
     submenu.querySelector("button:not([hidden])")?.focus();return;
   }
   const button = event.target.closest("button[data-layer-action]");
