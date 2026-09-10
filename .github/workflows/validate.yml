@@ -16,6 +16,8 @@ jobs:
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
       - name: Check JavaScript syntax
         run: find src -name '*.js' -type f -print0 | xargs -0 -n1 node --check
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
       - name: Build Chrome Web Store package
         run: sh scripts/package-web-store.sh
       - name: Inspect package
