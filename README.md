@@ -1,607 +1,332 @@
-```text
+# FrameChute
 
-███████╗ ██╗   ██╗ ██████╗  ███████╗ ████████╗ ██████╗   █████╗  ████████╗ ███████╗
-██╔════╝ ██║   ██║ ██╔══██╗ ██╔════╝ ╚══██╔══╝ ██╔══██╗ ██╔══██╗ ╚══██╔══╝ ██╔════╝
-███████╗ ██║   ██║ ██████╔╝ ███████╗    ██║    ██████╔╝ ███████║    ██║    █████╗
-╚════██║ ██║   ██║ ██╔══██╗ ╚════██║    ██║    ██╔══██╗ ██╔══██║    ██║    ██╔══╝
-███████║ ╚██████╔╝ ██████╔╝ ███████║    ██║    ██║  ██║ ██║  ██║    ██║    ███████╗
-╚══════╝  ╚═════╝  ╚═════╝  ╚══════╝    ╚═╝    ╚═╝  ╚═╝ ╚═╝  ╚═╝    ╚═╝    ╚══════╝
+**Your browser has tabs. FrameChute gives it a desk.**
 
-                         ░▒▓ ⟦ Where Greatness Grows ⟧ ▓▒░
-
-```
-
-*Previously known as FrameChute.*
-
-**Open it. Change it. Save it.**
-
-> **Your browser has tabs. Substrate gives it a desk.**
-
-Substrate is a local-first, browser-native workspace for everyday file work.
-
-Instead of deciding which application should open a file, put the file on the Substrate workspace and decide what you want to do to it.
+FrameChute is a local-first spatial workspace for Chrome and Chromium. Instead of opening one application for a PDF, another for an image, another for a DOCX, and another for a CSV, FrameChute puts those things on one shared workspace and lets useful operations compose.
 
 ```text
-Traditional desktop workflow
-
-File
- ↓
-Which app?
- ↓
-Open / import / convert
- ↓
-Do one job
- ↓
-Export
- ↓
-Find another app for the next job
-
-
-Substrate
-
 Open / Drop / Paste
- ↓
-File becomes a workspace object
- ↓
-Move · edit · extract · compare · combine · convert
- ↓
-Keep the result in the workspace or Save As
+        ↓
+file becomes a workspace object
+        ↓
+move · edit · extract · compare · combine · convert
+        ↓
+keep working or Save As
 ```
 
-Substrate is deliberately not trying to become Photoshop, Word, Acrobat, Premiere, a spreadsheet suite, and a whiteboard all at once.
+The goal is not to reproduce every professional feature in Photoshop, Word, Acrobat, Premiere, Excel, or Blender.
 
-The goal is smaller and, in practice, surprisingly broad:
+The goal is to make a very large class of ordinary file work feel immediate:
 
-> **Give ordinary digital things one consistent place where obvious operations are immediate.**
-
----
-
-## Contents
-
-- [Install](#install)
-- [What Substrate can do](#what-substrate-can-do)
-- [Supported kinds of material](#supported-kinds-of-material)
-- [Workspace and direct manipulation](#workspace-and-direct-manipulation)
-- [Images](#images)
-- [Video and audio](#video-and-audio)
-- [PDF](#pdf)
-- [DOCX and text](#docx-and-text)
-- [CSV and structured data](#csv-and-structured-data)
-- [ZIP and CBZ archives](#zip-and-cbz-archives)
-- [Capture tools](#capture-tools)
-- [Quick Actions and batch work](#quick-actions-and-batch-work)
-- [Snapshots and workspace export](#snapshots-and-workspace-export)
-- [Local-first privacy and security](#local-first-privacy-and-security)
-- [Simple and Advanced modes](#simple-and-advanced-modes)
-- [Example workflows](#example-workflows)
-- [Development and testing](#development-and-testing)
-- [Project structure](#project-structure)
-- [Current limitations](#current-limitations)
-- [Roadmap](#roadmap)
-- [Design principles](#design-principles)
-- [License](#license)
+> **Open it. Change it. Save it. Keep going.**
 
 ---
 
-# Install
+## Project status
 
-Substrate is currently packaged as a **Manifest V3 Chrome/Chromium extension**. The current manifest version is **1.0.14**.
+FrameChute is in **active development**. It is already usable from source as a Manifest V3 Chrome/Chromium extension, but the project is still in the stage where interaction rules, document fidelity, export behavior, and workspace primitives are being hardened aggressively.
 
-There is no npm build step required just to run the extension from source.
+**Current extension version:** `1.0.14`
 
-## Option A: clone the repository
+**Primary target:** Chrome / Chromium desktop
+
+**Architecture:** browser-side JavaScript/CSS/HTML, local-first, no required cloud backend, no native companion
+
+**Repository status:** the latest document-interaction stabilization work has been merged into `main` through PR #56.
+
+The most important recent milestone was not another giant feature dump. It was making the existing surface behave more like one coherent system.
+
+Recent stabilization includes:
+
+- DOCX/PDF surfaces owning their own drag/drop behavior instead of accidentally triggering the global workspace ingest overlay
+- same-document image drags behaving as **moves**, while cross-container drops behave as **copies**
+- precise DOCX image placement at the browser caret instead of simply appending images to the nearest block
+- PDF image moves preserving the existing edit object rather than replacing its identity
+- safer DOCX find/replace that mutates text nodes instead of rewriting arbitrary HTML
+- improved DOCX run/style round-trip for properties such as strike, color, highlight, and numbering
+- PDF tab/newline preservation and more predictable replacement-field growth
+- nested submenu positioning that stays attached and clamps to the viewport
+- Advanced-only timing controls being removed from the rendered menu when Advanced mode is off
+- PDF-specific settings for link-annotation deletion behavior
+
+This is the current character of the project: **broad utility already exists; now the universal interaction laws are being made dependable.**
+
+---
+
+## Try FrameChute in about five minutes
+
+There is no npm build step required just to run the extension.
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/thanks-cohn/framechute.git
 cd framechute
 ```
 
-Then in Chrome or another Chromium-family browser:
+You can also download the repository ZIP from GitHub and extract it somewhere permanent.
 
-1. Open the browser's extensions page.
-   - Chrome: `chrome://extensions`
-   - Edge: `edge://extensions`
-   - Brave: `brave://extensions`
-2. Turn on **Developer mode**.
+### 2. Load it in Chromium
+
+In Chrome:
+
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
-4. Select the repository folder that contains `manifest.json`.
-5. Pin Substrate if you want quick access.
-6. Click the Substrate extension icon to open the workspace.
+4. Select the repository folder containing `manifest.json`.
+5. Click the FrameChute extension icon.
 
-## Option B: download the repository as a ZIP
+The equivalent extension pages also work in other Chromium-family browsers, for example `edge://extensions` or `brave://extensions`.
 
-1. On GitHub, choose **Code → Download ZIP**.
-2. Extract the ZIP somewhere permanent.
-3. Open your browser's extensions page.
-4. Enable **Developer mode**.
-5. Choose **Load unpacked**.
-6. Select the extracted folder containing `manifest.json`.
+### 3. Give it real files
 
-Do not select the ZIP itself. Chromium expects an unpacked directory.
+The fastest way to understand FrameChute is not to stare at the interface. Drop ordinary files into it.
 
-## Updating an unpacked installation
-
-If you cloned the repository:
-
-```bash
-git pull
-```
-
-Then return to the browser's extensions page and press **Reload** on Substrate.
-
-If you installed from a downloaded ZIP, replace the extracted files with the newer version and reload the extension.
-
-## Build a Chrome Web Store package
-
-The repository includes a release gate and packaging script:
-
-```bash
-bash scripts/package-web-store.sh
-```
-
-This requires a POSIX-compatible shell and Python 3 **for packaging only**. Python is not required to run Substrate.
-
-A successful run creates a ZIP under:
+A good first test set is:
 
 ```text
-dist/flashframe-chrome-web-store-v<version>.zip
+1 image
+1 short video
+1 PDF
+1 DOCX
+1 CSV
 ```
 
-The release script verifies the manifest, required assets, package contents, permissions, host access, and several classes of forbidden runtime dependency before producing the ZIP.
+Put them on the workspace together and try moving between file types without leaving the desk.
 
 ---
 
-# What Substrate can do
+## Recommended first-run smoke test
 
-Substrate treats files and generated results as objects on one shared spatial workspace.
+If you are evaluating the project, this is the short path that exercises the most important ideas.
 
-Today the project can work with combinations of:
+### Workspace
 
-- images
-- local video
-- local audio
-- PDF documents
-- DOCX documents
-- plain text / notes
-- CSV tables
-- ZIP archives
-- CBZ comic archives
-- supported web / URL objects
-- screenshots
-- screen recordings
-- microphone recordings
-- generated charts
-- generated image results
-- generated PDFs
-- extracted archive contents
+- drop an image onto the workspace
+- move and resize it
+- right-click it and inspect its object-specific actions
+- duplicate it or create a derived result
+- resize the browser window and confirm that passive UI changes do not silently rewrite the object's world position
 
-The important part is that the output of one operation can immediately become the input to another.
-
-For example:
-
-```text
-video
- ↓
-extract frame
- ↓
-image object
- ↓
-crop / resize / annotate / convert
- ↓
-make PDF or Save As
-```
-
-Or:
-
-```text
-CSV
- ↓
-clean / sort / filter
- ↓
-quick chart
- ↓
-image object
- ↓
-place beside a PDF or notes
-```
-
----
-
-# Supported kinds of material
-
-Exact codec and browser support still depend on Chromium and the operating system, but the current object model covers these broad classes:
-
-| Material | Typical examples | Current Substrate role |
-| --- | --- | --- |
-| Images | PNG, JPEG, WebP and other browser-decodable images | View, move, resize, edit, transform, batch, save |
-| Video | MP4, WebM and browser-playable video | Play, seek, arrange, extract frames, advanced timing/sync |
-| Audio | MP3, WAV, OGG and browser-playable audio | Play, arrange, advanced timing/sync |
-| PDF | `.pdf` | Read, replace text, page operations, extract/merge/crop/save |
-| Word | `.docx` | Practical editing, formatting, tables, images, Save As DOCX |
-| Text | TXT, Markdown-like/plain textual sources | Notes, editing, find/replace, comparison, conversion |
-| CSV | `.csv` | Editable grid, filtering, cleaning, dedupe, charting, Save As |
-| Archives | ZIP, CBZ | Browse contents, open supported entries, CBZ image navigation |
-| URLs / web | supported direct URLs and web objects | Keep references/content alongside local work |
-| Capture | screen / microphone | Screenshot, screen recording, microphone recording |
-| Workspace | `.fcx` | Reopen a Substrate session with supported state/assets |
-
----
-
-# Workspace and direct manipulation
-
-The workspace is the core of Substrate.
-
-Files are not meant to disappear into a modal or replace the entire application. They become objects that can sit beside one another.
-
-Current workspace behavior includes:
-
-- drag/drop/open/paste ingestion paths
-- movable top-level objects
-- resizable objects where the object type supports it
-- z-order / layering behavior
-- object naming
-- duplicate/copy workflows
-- maximize / restore style object presentation
-- explicit **Bring to Center** recovery
-- image/video frameless presentation
-- fading object chrome for media-focused viewing
-- object-specific right-click actions
-- contextual Quick Actions
-- Simple and Advanced interaction modes
-- native Save / Save As where supported
-- workspace-wide snapshot export
-- `.fcx` workspace save/reopen
-
-A central rule of the project is:
+The workspace rule is:
 
 > **The viewport moves. The artwork does not.**
 
-Passive browser resize, toolbar wrapping, scrolling, or other UI changes should not silently rewrite the user's object positions.
+### DOCX
+
+Open a normal `.docx` file and try:
+
+- editing text
+- bold / italic / underline
+- paragraph styles and alignment
+- lists and tables
+- find/replace
+- dragging an embedded image to another position inside the same document
+- dropping another image into the document
+- Save As DOCX
+
+For the image test, same-document movement should keep the same semantic image and place it at the resolved inline caret. A document-owned drag should not cause the big global "Drop into FrameChute" workspace overlay to appear.
+
+After saving, reopen the result in Word or LibreOffice if available. That manual round-trip test is especially useful because FrameChute is intentionally trying to preserve ordinary files as ordinary files rather than trapping them in a private format.
+
+### PDF
+
+Open a PDF and try:
+
+- page navigation
+- rotate / duplicate / delete / reorder pages
+- extract or merge pages
+- replace text
+- move/resize a committed replacement field
+- insert or move an editable image
+- open the PDF-specific **Settings...** item from the document context menu
+- Save / Save As PDF
+
+The current PDF editor is a practical utility layer, not a complete Acrobat-style arbitrary-object editor. Text replacement currently uses a cover-and-redraw model.
+
+### Video
+
+Open a local playable video, seek to a frame, then extract that frame as an image.
+
+```text
+video
+  ↓
+Extract Frame
+  ↓
+image object
+  ↓
+crop / annotate / convert / save
+```
+
+That little workflow captures a large part of the FrameChute philosophy: **the result of one tool should immediately become normal material for the next tool.**
+
+### CSV
+
+Open a CSV and try:
+
+- editing cells
+- sorting
+- filtering
+- cleaning whitespace
+- removing duplicates
+- splitting or merging columns
+- generating a quick chart
+- Save As CSV
+
+The chart becomes another visual object on the workspace.
+
+### Preserve the desk
+
+Finally try both concepts:
+
+- **Take Snapshot** for a flattened visual export of the used workspace
+- **Export Workspace** / **Open Workspace** for the actual `.fcx` working session
+
+`.fcx` exists to preserve the desk. It is not intended to replace native file formats.
 
 ---
 
-# Images
+## What works today
 
-Images are currently one of Substrate's deepest utility surfaces.
+| Material / surface | Current role |
+| --- | --- |
+| Images | view, move, resize, crop, rotate, flip, convert, annotate, paint/edit, batch operations, save |
+| Video | local playback, seek, frame extraction, workspace arrangement, advanced timing/sync |
+| Audio | local playback, workspace arrangement, advanced timing/sync |
+| PDF | rendering, page operations, text replacement, image edits, merge/extract/crop, save |
+| DOCX | practical text editing, formatting, lists/tables, embedded images, image insertion/movement, save |
+| Text | notes, editing, find/replace, comparison, conversion |
+| CSV | editable grid, sort/filter/clean/dedupe, quick charts, merge, save |
+| ZIP | browse supported entries and open them as workspace objects |
+| CBZ | local comic/image navigation |
+| Capture | screenshot, screen recording, microphone recording |
+| Workspace | spatial arrangement, object-specific menus, snapshot export, `.fcx` save/reopen |
 
-## Core image operations
+Browser codec and file-system behavior still depend on Chromium and the operating system.
 
-Current image tooling includes or exposes paths for:
+---
+
+## Images and visual work
+
+Images are currently one of the deepest surfaces in FrameChute.
+
+Available or actively exposed image paths include:
 
 - crop
 - resize
 - rotate left/right
 - flip horizontal/vertical
-- format conversion
 - PNG / JPEG / WebP output
-- quality/compression control for lossy formats
+- lossy quality control
 - transparent-background handling
-- Save As
-- batch conversion to ZIP
 - paint / image editing mode
 - trim transparent margins
 - make a selected color transparent
 - fill transparency with a background color
-- blur or pixelate a selected region
+- blur / pixelate a selected region
 - annotations
 - straighten
 - basic perspective correction
+- Save As
 
-Some of the more advanced transform operations are currently being hardened so that their live workspace preview, undo behavior, and exported result always use the same canonical image state. See [Current limitations](#current-limitations).
+Multi-image workflows include:
 
-## Multi-image operations
-
-Substrate also includes multi-image workflows such as:
-
-- stitch images vertically or horizontally
-- create a contact sheet
-- generate common icon sizes
-- compare two images with an opacity slider
-- turn selected images into a PDF
-- batch convert/compress images with one configuration
+- stitch images horizontally or vertically
+- contact sheets
+- common icon-size generation
+- two-image comparison
+- image-to-PDF
+- batch conversion/compression
 - ZIP selected results
 
-The source image is generally kept intact unless the user explicitly chooses a destructive/save route; many operations create a new result object instead.
+Some image transforms are still being unified around one stronger canonical image state so that preview, undo, snapshot, and exported output cannot disagree.
 
 ---
 
-# Video and audio
+## Documents
 
-Playable media can live directly on the workspace instead of forcing the user into a separate player application.
+### DOCX
 
-Current media behavior includes:
+FrameChute opens DOCX as editable document material rather than flattening it immediately.
 
-- local video playback
-- local audio playback
-- seeking
-- movable media objects
-- frameless media presentation
-- fading controls/chrome
-- extracting the currently decoded video frame as a PNG image object
-- screen-recording output as a workspace media object
-- microphone-recording output as an audio object
-- advanced timing/synchronization features for playable media
+The current implementation handles a useful subset of OOXML and tries to preserve untouched package content least-destructively where practical.
 
-Frame extraction is intentionally composable:
+Current document work includes:
 
-```text
-seek video
- ↓
-Extract Frame
- ↓
-normal Substrate image
- ↓
-all normal image tools become available
-```
+- paragraphs and runs
+- text editing
+- basic inline formatting
+- paragraph styles
+- alignment
+- lists / numbering
+- tables
+- embedded images
+- adding new images to the DOCX package
+- same-document image movement
+- cross-container image copying
+- find/replace
+- Save As DOCX
 
-Advanced `Sync with…` / independence behavior belongs to actual playable video/audio objects, not static images or documents.
+It is **not yet a complete Microsoft Word layout engine**. Complex Word documents may contain structures FrameChute does not fully understand yet.
 
----
+### PDF
 
-# PDF
-
-Substrate includes a practical PDF editor/utility layer built from PDF.js for rendering and pdf-lib for document mutation/export.
+FrameChute uses PDF.js for local rendering and pdf-lib for practical mutation/export paths.
 
 Current PDF work includes:
 
-- render normal PDF pages locally
 - page navigation
-- rotate page
-- delete page
-- duplicate page
-- move/reorder page
-- extract page(s)
+- rotate / delete / duplicate / reorder
+- extract pages
 - merge another PDF
-- crop page margins
-- conservative PDF re-save/compression attempt
-- export PDF page images
+- crop margins
+- conservative re-save/compression attempts
+- export page images
+- direct replacement-text fields
+- image edit placement
+- undo/redo for supported edits
 - Save / Save As
 
-## PDF text replacement
-
-Substrate also has a direct replacement-text model:
-
-- click/select editable text regions
-- replace text
-- move a committed replacement field
-- resize its field
-- change font size
-- nudge selected replacements
-- undo / redo replacement operations
-- keep the original source region masked in the live view
-- serialize the replacement back into a PDF
-
-The current replacement serializer uses a simple cover-and-redraw model. It is intentionally practical rather than a full Acrobat-style object editor.
+The PDF replacement system is intentionally useful before it is exhaustive.
 
 ---
 
-# DOCX and text
+## Quick Actions and composition
 
-Substrate can open and re-save practical Word documents without converting the whole workflow into a remote service.
-
-Current DOCX support includes:
-
-- parse paragraphs and runs
-- text editing
-- bold
-- italic
-- underline
-- paragraph styles
-- alignment
-- list representation
-- tables
-- embedded images
-- adding images to the DOCX package
-- preserving unique relationship/drawing identifiers for inserted images
-- Save As DOCX
-
-Where possible, ordinary text/format edits take a least-destructive path that patches the original OOXML package instead of rebuilding unrelated document content.
-
-For larger structural changes, Substrate can rebuild the supported subset honestly rather than pretending unsupported Word behavior will be preserved perfectly.
-
-## Cross-document utilities
-
-The current action system also contains useful document/text operations:
-
-- Extract text from text/DOCX/PDF sources where selectable text exists
-- Compare two text-oriented documents
-- Find & Replace in text and DOCX
-- Convert text/DOCX content to a simple PDF
-- Convert text/PDF-extracted text to a simple DOCX
-
-These are intentionally lightweight conversions, not claims of perfect office-suite fidelity.
-
----
-
-# CSV and structured data
-
-CSV files become editable table objects rather than inert downloads.
-
-Current CSV features include:
-
-- edit cells directly
-- add rows
-- remove rows
-- remove columns
-- click a header to sort
-- live find/filter rows
-- remove duplicate rows
-- split a column by delimiter
-- merge selected columns
-- normalize whitespace
-- remove blank rows during cleaning
-- capitalization cleanup
-- quick bar-chart generation
-- merge compatible CSV tables
-- Save As CSV
-
-Quick Chart creates an SVG image result that can then be treated like another visual object on the workspace.
-
-This is not yet a spreadsheet/formula engine. A richer grid/formula/reference system is a natural future substrate.
-
----
-
-# ZIP and CBZ archives
-
-Substrate can inspect supported archives locally.
-
-Current archive behavior includes:
-
-- ZIP tree/list browsing
-- open supported archive entries as new Substrate result objects
-- CBZ image navigation
-- previous / next comic-page controls
-- safe archive-budget checks to reduce decompression abuse
-- persistence of supported archive state in the workspace
-
-Current archive snapshots intentionally have limits; archives over 100 MB are not embedded into workspace snapshots by this path yet.
-
----
-
-# Capture tools
-
-Substrate includes browser-native capture actions:
-
-- Screenshot
-- Record screen
-- Record microphone
-
-Screen and microphone permissions are requested when the user invokes the relevant action, rather than as broad always-on extension permissions.
-
-Captured results become normal workspace objects, so a screenshot can immediately be cropped/annotated/exported and a recording can sit beside the rest of the work.
-
-The screenshot path is currently being hardened around first-frame readiness on different Chromium/OS combinations. See [Current limitations](#current-limitations).
-
----
-
-# Quick Actions and batch work
-
-Quick Actions are the contextual utility layer for selected objects.
-
-The underlying action registry supports both single-object and multi-object operations so the same mental model can scale from:
+FrameChute's action system is built around a simple idea:
 
 ```text
-resize this image
+select material
+      ↓
+do the obvious operation
+      ↓
+result becomes material too
 ```
 
-to:
+That lets one-object actions and multi-object actions share the same mental model.
 
-```text
-convert these images together
-```
+Examples include:
 
-Current action families include:
-
-- rename
-- duplicate
-- Copy To… where the browser exposes a writable directory picker
-- image transforms and exports
-- image comparison / contact sheet / stitching / icon generation
+- rename / duplicate
+- image transforms
+- image comparison
+- contact sheets and stitching
 - image-to-PDF
-- document text extraction / comparison / conversion
+- text extraction and comparison
+- document conversion
 - CSV merge
 - video frame extraction
-- compress selected supported objects into a ZIP
+- ZIP selected results
 
-The Quick Actions presentation itself is being simplified so it stays contextual rather than becoming a permanent application sidebar.
-
----
-
-# Snapshots and workspace export
-
-Substrate has two different save concepts because they solve different problems.
-
-## Save / Save As
-
-Save the actual object as a normal file.
-
-Examples:
-
-```text
-image → PNG / JPEG / WebP
-PDF   → PDF
-DOCX  → DOCX
-CSV   → CSV
-```
-
-Substrate should not trap ordinary files inside a proprietary workspace format just because they were edited in Substrate.
-
-## Take Snapshot
-
-Take Snapshot creates a flattened image of the used visual workspace.
-
-Current snapshot options include:
-
-- Tight Bounds
-- Square bounds
-- PNG
-- JPEG
-- WebP
-- scale control
-- quality control where relevant
-- transparent background where the output format supports it
-
-The snapshot bounds are based on visible workspace objects rather than simply capturing the browser viewport.
-
-## Export Workspace / Open Workspace
-
-When the whole desk matters, Substrate can save a `.fcx` workspace.
-
-Conceptually:
-
-```text
-objects
-+ positions
-+ supported state
-+ generated results
-+ optionally packaged local assets
-        ↓
-      .fcx
-```
-
-The portable workspace path supports **Include Files** and **State Only** style behavior so a workspace can choose between stronger portability and lighter references where appropriate.
-
-The project's persistence promise is:
-
-> **Everything just as it was, as far as the supported object model can honestly preserve it.**
+As the project grows, Quick Actions should stay contextual instead of becoming a giant permanent application sidebar.
 
 ---
 
-# Local-first privacy and security
+## Simple and Advanced modes
 
-Substrate is designed around the idea that ordinary file chores should not require uploading personal material to a third-party server.
+FrameChute separates normal file work from specialist controls.
 
-The current Chrome Web Store packaging gate enforces an unusually small extension security surface:
-
-```text
-Manifest V3
-Extension API permissions: NONE
-Host permissions: NONE
-Broad host access: NONE
-Remote executable code: NONE
-Native companion: NONE
-Python/EXE runtime dependency: NONE
-```
-
-The release script also rejects packaged remote script imports, `eval`, native-messaging dependencies, loopback/localhost dependencies, and several desktop-runtime artifacts.
-
-Substrate still uses browser permissions at the moment a user explicitly requests a browser-mediated capability, such as choosing a file/folder or starting screen/microphone capture.
-
-The distinction is important:
-
-> **Substrate can browse what the user explicitly grants it access to.**
-
-It should not quietly become a general filesystem or web surveillance surface.
-
----
-
-# Simple and Advanced modes
-
-Substrate is intended to stay approachable as capabilities grow.
-
-## Simple mode
-
-Simple mode is for the normal file-work flow:
+### Simple
 
 ```text
 open
@@ -611,101 +336,21 @@ edit
 save
 ```
 
-The goal is to keep timing, synchronization, and other specialist controls out of the way unless they are actually needed.
+### Advanced
 
-## Advanced mode
+Advanced mode exposes deeper timing, synchronization, and specialist object behavior when it is actually relevant.
 
-Advanced mode exposes deeper capabilities such as media timing/synchronization and other specialist object behavior.
-
-The distinction is a product rule, not a limitation of the substrate:
+A current UI invariant is that Advanced-only commands should not merely be disabled or hidden awkwardly in Simple mode. They should not be part of the rendered normal menu at all.
 
 > **Power can exist without requiring every user to look at it all the time.**
 
 ---
 
-# Example workflows
+## Development and automated testing
 
-## Video frame to finished image
+A normal local validation pass is intentionally small.
 
-```text
-Open video
- ↓
-Seek to a frame
- ↓
-Extract Frame
- ↓
-Crop / resize / annotate / convert
- ↓
-Save As or keep the result in the workspace
-```
-
-## Several images to one PDF
-
-```text
-Select images
- ↓
-Make PDF
- ↓
-PDF object appears
- ↓
-Continue working or Save As
-```
-
-## Clean a CSV and explain it visually
-
-```text
-Open CSV
- ↓
-Filter / sort / dedupe / clean
- ↓
-Quick Chart
- ↓
-SVG image result
- ↓
-Place beside notes or a PDF
-```
-
-## Inspect an archive
-
-```text
-Open ZIP / CBZ
- ↓
-Browse entries
- ↓
-Open supported entry
- ↓
-Entry becomes another workspace object
-```
-
-## Compare documents
-
-```text
-Select two text-oriented documents
- ↓
-Compare documents
- ↓
-Comparison result becomes editable text
-```
-
-## Preserve the entire working session
-
-```text
-files + layout + generated results
- ↓
-Export Workspace
- ↓
-.fcx
- ↓
-Open Workspace later
-```
-
----
-
-# Development and testing
-
-Substrate is plain browser-side JavaScript/CSS/HTML plus packaged local libraries. The source tree is intentionally inspectable without requiring a large framework build system.
-
-## Run tests
+### Run the unit suite
 
 With a current Node.js installation:
 
@@ -713,59 +358,228 @@ With a current Node.js installation:
 node --test tests/*.test.mjs
 ```
 
-## Check JavaScript syntax
+The tests cover areas including workspace/action foundations, document save behavior, DOCX images, internal drag ownership, exact document-image drop placement, PDF replacement behavior, FCX persistence, image editing primitives, submenu geometry, and related invariants.
 
-For changed JavaScript files:
+### Check JavaScript syntax
+
+For a changed file:
 
 ```bash
 node --check path/to/file.js
 ```
 
-## Check patch whitespace
+### Check patch whitespace
 
 ```bash
 git diff --check
 ```
 
-## Run the release/package gate
+### Run the Chrome Web Store release/package gate
 
 ```bash
 bash scripts/package-web-store.sh
 ```
 
-A normal development validation pass usually includes all four.
+Packaging requires a POSIX-compatible shell and Python 3. Python is **not** required to run the extension itself.
 
-## Runtime dependencies
-
-Substrate packages the browser-side code and vendored libraries it needs with the extension. The Chrome Web Store release gate intentionally forbids a desktop companion or remote executable-code dependency.
+A normal development validation pass should include all four checks where applicable.
 
 ---
 
-# Project structure
+## Manual testing matters
 
-The exact tree changes as Substrate grows, but the major areas are:
+Automated tests are necessary, but they cannot prove browser UI behavior or office-document compatibility by themselves.
+
+For changes touching documents or drag/drop, a useful manual matrix is:
+
+```text
+Chrome on Windows
+Chrome/Chromium on Linux when available
+
+DOCX:
+  open → edit → move image → insert image → save → reopen externally
+
+PDF:
+  open → replace text → move/resize edit → save → reopen externally
+
+Workspace:
+  drag internal object → drag external file → resize browser → export/reopen workspace
+```
+
+When something fails, the most useful bug report includes:
+
+- browser + version
+- operating system
+- exact file type
+- exact steps to reproduce
+- what you expected
+- what happened instead
+- whether the problem survives an extension reload
+- a small non-sensitive sample file when possible
+
+---
+
+## Current limitations
+
+FrameChute is broad enough that clarity about the edges matters.
+
+### DOCX fidelity
+
+The editor supports a practical subset, not every Microsoft Word feature. Rich layout, unusual OOXML structures, floating shapes, complex section behavior, and other advanced Word constructs may not round-trip perfectly.
+
+### PDF editing
+
+Replacement text is currently a practical cover-and-redraw system. This is not arbitrary low-level editing of every original PDF object.
+
+Very large PDFs do not yet have the full range-loading, virtual-page, and bounded-cache architecture needed for truly enormous documents.
+
+### Screenshot capture
+
+The screenshot path is still being hardened for browser/OS combinations that may expose an unready or black first captured video frame.
+
+### Image transforms
+
+Some advanced transforms are still being consolidated so the live preview, undo history, snapshot, and exported raster all use one canonical state.
+
+### Archives
+
+Archive persistence is intentionally bounded. Very large archive embedding is not treated as free or unlimited.
+
+### Browser APIs
+
+Save As, directory access, capture behavior, and codecs depend on the browser and OS. Chrome/Chromium desktop remains the primary target.
+
+---
+
+# Where FrameChute is going
+
+The project is moving from **many useful capabilities** toward **a small number of universal, dependable primitives**.
+
+The roadmap follows one rule:
+
+> **Do not build twenty separate applications. Build enough universal primitives that twenty useful workflows emerge.**
+
+## Near term: make documents feel normal
+
+The next major pass is the structured-text/document experience.
+
+The target is for a normal DOCX user to find the basic things they expect without hunting:
+
+- dependable font-size controls
+- practical font-family controls
+- bold / italic / underline
+- H1 / H2 / H3 and normal paragraph styles
+- paragraph spacing and line spacing
+- alignment and indentation
+- lists / numbering
+- useful document-specific right-click actions
+- predictable image insertion and movement
+- stronger save/reopen fidelity
+- better handling of document structure without flattening unrelated content
+
+PDF work continues in parallel around stable geometry, predictable text-field behavior, and faithful export.
+
+The bar is not "be Microsoft Word." The bar is:
+
+> **A person opening an ordinary document should immediately understand how to make ordinary changes.**
+
+## Next: a stronger spatial substrate
+
+The workspace itself is planned to become more capable without making object coordinates fragile.
+
+Planned spatial primitives include:
+
+```text
+Ctrl +     zoom camera in
+Ctrl -     zoom camera out
+Ctrl 0     reset camera
+Fit Selection
+Fit Workspace
+```
+
+Zoom should affect the **camera**, not mutate object geometry.
+
+The workspace should also become expandable beyond the initial viewport instead of feeling naturally pinned to the upper-left corner.
+
+## Selection and region export
+
+A clearer distinction is planned between selecting real objects and framing pixels in world space.
+
+```text
+Select Mode
+→ select actual objects
+→ move / group / arrange / batch
+
+Region / Frame
+→ choose an area of world space
+→ export exactly that visual area
+```
+
+This opens the door to better composition, deterministic PDF arrangement, page framing, and visual publishing.
+
+## Small drawing primitives, large compositional reach
+
+FrameChute does not need hundreds of illustration tools before it can become useful for diagrams, tutorials, comics, storyboards, and annotated screenshots.
+
+The useful primitive set is comparatively small:
+
+- rectangle
+- ellipse
+- line
+- arrow
+- polygon
+- text box
+- frame/panel
+- speech bubble
+- thought bubble
+- grouping
+- align/distribute
+- better brush controls
+
+If those objects obey the same workspace rules as files, much richer workflows emerge naturally.
+
+## Structured data after CSV
+
+CSV is the beginning of the data surface, not the endpoint.
+
+A future grid primitive can grow toward:
+
+- cells
+- formulas
+- references
+- sorting/filtering
+- charts
+- lightweight spreadsheet-style work
+
+without requiring FrameChute to become a separate spreadsheet application internally.
+
+## Longer term
+
+The long-term direction is a browser workspace where files, generated results, drawings, structured data, documents, media, and eventually lightweight 3D/web objects can share the same direct-manipulation rules.
+
+> **Files become objects. Objects become scenes. Scenes can eventually become worlds.**
+
+---
+
+## Project structure
+
+The exact tree changes often, but the major areas currently include:
 
 ```text
 manifest.json
 src/
-  workspace.html / workspace.js / workspace.css
+  workspace.html
+  workspace.js
+  workspace.css
   actions/
-    quick-actions.js
-    image-operations.js
-    data-utilities.js
-    capture-actions.js
-    native-save.js
-    document-operations.js
   documents/
-    pdf-document.js
-    docx-document.js
   image-edit/
+  drag-ownership.mjs
+  document-image-drag.mjs
+  submenu-position.mjs
   fcx-format.mjs
   fcx-portable.js
   workspace-snapshot.js
-  web-drop.js
-  drop-local-sources.js
-  media / gallery / toolbar / appearance modules
 vendor/
 assets/
 icons/
@@ -775,234 +589,32 @@ scripts/
 agents/codex/prompts/
 ```
 
-A recurring architectural preference is to extract testable helpers/modules instead of letting `workspace.js` become the implementation of everything.
+A recurring architectural preference is to pull invariants into small testable modules instead of letting `workspace.js` become the implementation of everything.
 
 ---
 
-# Current limitations
+## Privacy and security model
 
-Substrate is ambitious, but the project is intentionally honest about where the current browser implementation is still being hardened.
+FrameChute is local-first. Ordinary file chores should not require uploading personal files to a remote service merely because the interface happens to run in a browser.
 
-## Image transforms
+The current extension manifest uses Manifest V3 and does not request general extension API permissions or broad host permissions.
 
-Several image operations already have raster/export implementations, but some are being unified around a stronger live-preview + undo model so the visible object and saved object can never disagree.
+The Web Store packaging gate also checks for classes of runtime dependency the project intentionally does not want, including remote executable code and native-companion assumptions.
 
-## Screenshot first-frame readiness
-
-The current screenshot path is being hardened because some browser/OS combinations can deliver an unready/black first video frame if capture is sampled too early.
-
-## PDF editing
-
-PDF text replacement is currently a practical cover-and-redraw system, not arbitrary editing of every original PDF object. The current serializer uses a standard replacement font and a simple source cover.
-
-Very large PDFs are not yet handled with the range-loading / virtual-page / bounded-cache architecture needed for Sumatra-like huge-file behavior.
-
-## DOCX fidelity
-
-Substrate is not a complete Microsoft Word layout engine. It supports a useful subset and tries to preserve untouched OOXML least-destructively where practical.
-
-## Snapshot fidelity
-
-Workspace snapshots can represent local visual objects well, but cross-origin iframes cannot be freely rasterized by browser security rules. Web content may therefore appear as a placeholder. Video snapshotting may use an available poster rather than an arbitrary live frame.
-
-## Archives
-
-Large archive persistence is deliberately bounded. The current archive object path does not embed archives over 100 MB into workspace snapshots.
-
-## Browser APIs
-
-Some Save As, folder, capture, and codec behavior depends on browser/OS support. Chrome/Chromium is the primary target today.
+Browser-mediated capabilities such as opening a local file/folder or starting screen/microphone capture are requested when the user explicitly invokes those actions.
 
 ---
 
-# Roadmap
+## License
 
-The roadmap follows one rule:
+FrameChute is **source-available proprietary software**, not MIT-licensed open-source software.
 
-> **Do not build twenty separate applications. Build enough universal primitives that twenty useful workflows emerge.**
+The repository may be downloaded, inspected, installed, and used for the personal, recreational, hobby, educational, and evaluation purposes allowed by the included `LICENSE`, but commercial reuse, redistribution, derivative products, cloning, repackaging, and other uses outside that license require prior written permission.
 
-The following are directions, not claims about the current release.
-
-## Camera, zoom, and a larger world
-
-Planned spatial/camera work includes:
-
-```text
-Ctrl +     zoom in
-Ctrl -     zoom out
-Ctrl 0     100%
-Fit Selection
-Fit Workspace
-```
-
-Zoom should affect the **camera**, not rewrite object geometry.
-
-The workspace should also become truly expandable beyond the initial viewport in every direction:
-
-> **Push an object against an edge and Substrate makes more desk.**
-
-Work should be frameable/centerable instead of naturally collapsing toward the upper-left corner.
-
-## Separate workspace UI from workspace zoom
-
-Toolbar, Settings, media controls, Quick Actions, dialogs, and context menus should live in a UI/chrome layer that stays human-readable while the workspace itself zooms.
-
-Quick Actions in particular is expected to evolve toward a floating, movable panel rather than behaving like a viewport-height fixed sidebar.
-
-## Select Mode and region/frame export
-
-The planned distinction is:
-
-```text
-Select Mode
-→ select actual objects
-→ move / group / batch / arrange
-
-Region / Frame tool
-→ draw a rectangle in world space
-→ export exactly that visual area
-```
-
-Region output should support normal image formats and eventually one-page PDF output without depending on the user's current camera zoom.
-
-## Better composition
-
-Planned composition work includes:
-
-- first-class multi-object Select Mode
-- marquee selection
-- bulk object actions
-- selection-specific FrameSnap
-- Arrange into PDF
-- deterministic page ordering
-- region snapshot/export
-
-## Drawing and explanation primitives
-
-Substrate does not need hundreds of professional illustration tools to become useful for visual explanation.
-
-A small dependable primitive set can unlock a lot:
-
-- rectangle
-- ellipse
-- line
-- arrow
-- triangle/polygon
-- text box
-- panel/frame rectangle
-- speech bubble with movable tail
-- thought bubble
-- better brush size
-- hardness
-- opacity
-- smoothing
-- simple brush shapes
-- grouping
-- align/distribute
-- clipping/masks later
-
-Those primitives can support:
-
-- comics
-- storyboards
-- tutorials
-- annotated screenshots
-- classroom explainers
-- visual notes
-- diagrams
-- memes
-- simple page layouts
-- manuals and handouts
-
-A plausible comic workflow is already visible in the substrate:
-
-```text
-DOCX script
- ↓
-copy dialogue into workspace
- ↓
-arrange panel frames + images
- ↓
-add speech bubbles / text
- ↓
-frame the finished page
- ↓
-export image or PDF
-```
-
-The goal is not Adobe-level complexity.
-
-The goal is enough reliable primitives that useful complexity can emerge from combination.
-
-## Richer documents and publishing
-
-Longer-term document work can build on the same substrate with stronger Markdown/typography, font handling, print/PDF layout, and richer cross-format conversion while keeping the local-first model.
-
-## Structured data
-
-CSV utilities are the beginning, not the end. A future grid primitive could add cells, formulas, references, sorting/filtering, charts, and spreadsheet-style workflows without requiring a separate application architecture.
+Read the full [`LICENSE`](LICENSE) before reusing the source.
 
 ---
 
-# Design principles
+## In one sentence
 
-Substrate is held together by a few rules.
-
-## 1. If an action feels obvious, support it directly
-
-```text
-select the thing
- ↓
-do the obvious thing
- ↓
-see the result
-```
-
-## 2. Files become objects
-
-A PDF, image, video, note, chart, archive entry, and generated result should be able to occupy the same conceptual workspace.
-
-## 3. Results stay usable
-
-The output of one action should be able to become the input to another without a download/re-upload ritual.
-
-## 4. Native files remain native files
-
-Save an image as an image, a PDF as a PDF, a DOCX as a DOCX, and a CSV as a CSV whenever the operation honestly supports it.
-
-`.fcx` exists to preserve the **workspace**, not to replace ordinary file formats.
-
-## 5. Local-first by default
-
-If the browser and the user's computer can perform the operation locally, a server should not be mandatory merely because the software happens to run in a browser.
-
-## 6. The viewport moves. The artwork does not
-
-Passive UI changes are not permission to move the user's work.
-
-## 7. Power should compose from small guarantees
-
-> **Files become objects. Objects become scenes. Scenes can eventually become worlds.**
-
-Substrate becomes more capable by strengthening universal primitives rather than by accumulating disconnected mini-applications.
-
----
-
-# What Substrate is not
-
-Substrate is not claiming to replace the deepest professional capabilities of Photoshop, Premiere, Word, Acrobat, Excel, Blender, or specialist conversion systems.
-
-It is aimed at a different problem:
-
-> **You should not need a professional suite for every thirty-second file chore.**
-
-A surprising amount of everyday computing is made of small transformations, comparisons, extractions, arrangements, and conversions. Substrate tries to make those jobs feel like one coherent activity.
-
----
-
-# In one sentence
-
-**Substrate is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
-
----
-
+**FrameChute is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
