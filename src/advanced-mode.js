@@ -138,24 +138,72 @@ style.textContent = `
   .classic-toolbar-primary {
     display: none;
     align-items: center;
-    gap: 6px;
     min-width: 0;
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
 
-  .classic-toolbar-actions {
-    display: flex;
+  .framechute-toolbar-pager {
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+    white-space: nowrap;
   }
 
-  .classic-toolbar-actions + .classic-toolbar-actions {
-    padding-left: 10px;
-    border-left: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  .framechute-toolbar-pager-window {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    max-width: min(320px, 42vw);
+    flex: 0 1 auto;
+    overflow: hidden;
   }
 
-  .classic-toolbar-primary select { max-width: 220px; }
+  .framechute-toolbar-pager-item {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+
+  .framechute-toolbar-pager-item:not(.is-toolbar-pager-active) {
+    display: none !important;
+  }
+
+  .framechute-toolbar-pager-window > button,
+  .framechute-toolbar-pager-window > select,
+  .framechute-toolbar-pager-window > .toolbar-slot {
+    max-width: 100%;
+  }
+
+  .framechute-toolbar-pager-window > button {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .framechute-toolbar-pager-arrow {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    min-width: 30px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    flex: 0 0 30px;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .framechute-toolbar-pager-arrow:disabled {
+    visibility: hidden;
+  }
+
+  .classic-toolbar-primary select { max-width: min(220px, 36vw); }
 
   body.framechute-classic .toolbar-primary { display: none !important; }
   body.framechute-classic .classic-toolbar-primary { display: flex; }
@@ -231,6 +279,102 @@ function proxyButton(label, targetId, title = label) {
   return button;
 }
 
+function toolbarItemLabel(item) {
+  return item?.getAttribute?.("aria-label")
+    || item?.title
+    || item?.textContent?.replace(/\s+/g, " ").trim()
+    || "toolbar command";
+}
+
+function createToolbarPager(container, label) {
+  if (!container) return null;
+  const initialItems = [...container.children];
+  const shell = document.createElement("div");
+  shell.className = "framechute-toolbar-pager";
+  shell.setAttribute("role", "group");
+  shell.setAttribute("aria-label", label);
+
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "framechute-toolbar-pager-arrow";
+  previous.textContent = "‹";
+  previous.title = "Previous toolbar command";
+  previous.setAttribute("aria-label", previous.title);
+
+  const windowNode = document.createElement("div");
+  windowNode.className = "framechute-toolbar-pager-window";
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "framechute-toolbar-pager-arrow";
+  next.textContent = "›";
+  next.title = "Next toolbar command";
+  next.setAttribute("aria-label", next.title);
+
+  shell.append(previous, windowNode, next);
+  container.replaceChildren(shell);
+
+  const items = [];
+  let index = 0;
+
+  const isAvailable = (item) => {
+    if (!item || item.hidden) return false;
+    if (item.id === "frame-sequence-slot" && item.childElementCount === 0) return false;
+    return true;
+  };
+
+  const render = (preferred = null) => {
+    const visible = items.filter(isAvailable);
+    if (!visible.length) {
+      shell.hidden = true;
+      return;
+    }
+    shell.hidden = false;
+    if (preferred && visible.includes(preferred)) index = visible.indexOf(preferred);
+    index = ((index % visible.length) + visible.length) % visible.length;
+    const active = visible[index];
+    for (const item of items) item.classList.toggle("is-toolbar-pager-active", item === active);
+    previous.disabled = visible.length < 2;
+    next.disabled = visible.length < 2;
+    windowNode.setAttribute("aria-label", `${label}: ${toolbarItemLabel(active)}`);
+  };
+
+  const add = (item) => {
+    if (!item || items.includes(item)) return item;
+    item.classList.add("framechute-toolbar-pager-item");
+    windowNode.append(item);
+    items.push(item);
+    render();
+    return item;
+  };
+
+  initialItems.forEach(add);
+
+  previous.addEventListener("click", () => {
+    const visible = items.filter(isAvailable);
+    if (visible.length < 2) return;
+    index = (index - 1 + visible.length) % visible.length;
+    render();
+  });
+
+  next.addEventListener("click", () => {
+    const visible = items.filter(isAvailable);
+    if (visible.length < 2) return;
+    index = (index + 1) % visible.length;
+    render();
+  });
+
+  new MutationObserver(() => render()).observe(windowNode, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+
+  render();
+  return { add, render };
+}
+
 function syncClassicSavedSelect(classicSelect, sourceSelect) {
   const copy = () => {
     const wanted = classicSelect.value || sourceSelect.value;
@@ -245,13 +389,19 @@ function syncClassicSavedSelect(classicSelect, sourceSelect) {
 }
 
 if (toolbar && advancedToolbar) {
+  const advancedPager = createToolbarPager(advancedToolbar, "FrameChute advanced controls");
+
   const classic = document.createElement("div");
   classic.className = "classic-toolbar-primary";
   classic.setAttribute("aria-label", "FrameChute classic controls");
+  advancedToolbar.insertAdjacentElement("afterend", classic);
 
-  const add = document.createElement("div");
-  add.className = "classic-toolbar-actions";
-  add.append(
+  const classicPager = createToolbarPager(classic, "FrameChute classic controls");
+  const saved = document.createElement("select");
+  saved.id = "classic-saved-frames";
+  saved.setAttribute("aria-label", "Saved FrameChutes");
+
+  [
     proxyButton("New note", "add-text"),
     proxyButton("Open text", "open-text"),
     proxyButton("Open PDF", "open-pdf"),
@@ -259,24 +409,26 @@ if (toolbar && advancedToolbar) {
     proxyButton("Open image", "open-image"),
     proxyButton("Open gallery", "open-gallery"),
     proxyButton("Open video", "open-video"),
-    proxyButton("Open URL", "open-url")
-  );
-
-  const frames = document.createElement("div");
-  frames.className = "classic-toolbar-actions";
-  const save = proxyButton("Save FrameChute", "save-frame");
-  const saved = document.createElement("select");
-  saved.id = "classic-saved-frames";
-  saved.setAttribute("aria-label", "Saved FrameChutes");
-  const restore = proxyButton("Restore", "restore-frame");
-  const reconnect = proxyButton("Reconnect all", "reconnect-all");
-  const openWorkspace = proxyButton("Open Workspace", "import-fcx", "Open an editable portable FrameChute workspace");
-  const exportWorkspace = proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace");
-  const takeSnapshot = proxyButton("Take Snapshot", "take-snapshot", "Save the used visual canvas as a flattened image");
-  frames.append(save, saved, restore, reconnect, openWorkspace, exportWorkspace, takeSnapshot);
-  classic.append(add, frames);
-  advancedToolbar.insertAdjacentElement("afterend", classic);
+    proxyButton("Open URL", "open-url"),
+    proxyButton("Save FrameChute", "save-frame"),
+    saved,
+    proxyButton("Restore", "restore-frame"),
+    proxyButton("Reconnect all", "reconnect-all"),
+    proxyButton("Open Workspace", "import-fcx", "Open an editable portable FrameChute workspace"),
+    proxyButton("Export Workspace", "export-fcx", "Export an editable portable FrameChute workspace"),
+    proxyButton("Take Snapshot", "take-snapshot", "Save the used visual canvas as a flattened image")
+  ].forEach(item => classicPager?.add(item));
 
   const sourceSaved = document.querySelector("#saved-frames");
   if (sourceSaved) syncClassicSavedSelect(saved, sourceSaved);
+
+  window.FrameChuteToolbarPager = {
+    add(item, mode = window.frameChuteAdvancedMode ? "advanced" : "classic") {
+      return (mode === "advanced" ? advancedPager : classicPager)?.add(item);
+    },
+    refresh() {
+      advancedPager?.render();
+      classicPager?.render();
+    }
+  };
 }
