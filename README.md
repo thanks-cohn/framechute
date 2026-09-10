@@ -79,7 +79,8 @@ The goal is smaller and, in practice, surprisingly broad:
 - [Current limitations](#current-limitations)
 - [Roadmap](#roadmap)
 - [Design principles](#design-principles)
-- [License](#license)
+- [What Substrate is not](#what-substrate-is-not)
+- [In one sentence](#in-one-sentence)
 
 ---
 
@@ -163,14 +164,13 @@ Today the project can work with combinations of:
 - PDF documents
 - DOCX documents
 - plain text / notes
-- CSV tables
+- CSV files as text
 - ZIP archives
 - CBZ comic archives
 - supported web / URL objects
 - screenshots
 - screen recordings
 - microphone recordings
-- generated charts
 - generated image results
 - generated PDFs
 - extracted archive contents
@@ -194,15 +194,13 @@ make PDF or Save As
 Or:
 
 ```text
-CSV
+DOCX
  ↓
-clean / sort / filter
+edit / format / add image
  ↓
-quick chart
+Save As DOCX
  ↓
-image object
- ↓
-place beside a PDF or notes
+keep it beside source material on the workspace
 ```
 
 ---
@@ -216,10 +214,10 @@ Exact codec and browser support still depend on Chromium and the operating syste
 | Images | PNG, JPEG, WebP and other browser-decodable images | View, move, resize, edit, transform, batch, save |
 | Video | MP4, WebM and browser-playable video | Play, seek, arrange, extract frames, advanced timing/sync |
 | Audio | MP3, WAV, OGG and browser-playable audio | Play, arrange, advanced timing/sync |
-| PDF | `.pdf` | Read, replace text, page operations, extract/merge/crop/save |
-| Word | `.docx` | Practical editing, formatting, tables, images, Save As DOCX |
+| PDF | `.pdf` | Read, replace/add text, page operations, extract/merge/crop/save; richer object editing is in progress |
+| Word | `.docx` | Practical editing, formatting, paragraph/page controls, tables, images, Save As DOCX |
 | Text | TXT, Markdown-like/plain textual sources | Notes, editing, find/replace, comparison, conversion |
-| CSV | `.csv` | Editable grid, filtering, cleaning, dedupe, charting, Save As |
+| CSV | `.csv` | Opens as editable plain text today; structured row/column grid editing is not yet wired into the active workspace path |
 | Archives | ZIP, CBZ | Browse contents, open supported entries, CBZ image navigation |
 | URLs / web | supported direct URLs and web objects | Keep references/content alongside local work |
 | Capture | screen / microphone | Screenshot, screen recording, microphone recording |
@@ -251,12 +249,16 @@ Current workspace behavior includes:
 - native Save / Save As where supported
 - workspace-wide snapshot export
 - `.fcx` workspace save/reopen
+- horizontal and vertical travel through the workspace using normal scrollbars
+- hidden-toolbar canvas expansion during direct object manipulation
 
 A central rule of the project is:
 
 > **The viewport moves. The artwork does not.**
 
 Passive browser resize, toolbar wrapping, scrolling, or other UI changes should not silently rewrite the user's object positions.
+
+When the top toolbar is hidden, grabbing/moving/resizing an object may deliberately expand the canvas beyond its current edges. Objects can be left outside the current viewport for collage/composition work; the workspace should provide scrollable space to get back to them rather than teleporting the objects toward the viewport.
 
 ---
 
@@ -287,7 +289,7 @@ Current image tooling includes or exposes paths for:
 - straighten
 - basic perspective correction
 
-Some of the more advanced transform operations are currently being hardened so that their live workspace preview, undo behavior, and exported result always use the same canonical image state. See [Current limitations](#current-limitations).
+Some of the more advanced transform operations are still being hardened so that their live workspace preview, undo behavior, and exported result always use the same canonical image state. See [Current limitations](#current-limitations).
 
 ## Multi-image operations
 
@@ -357,21 +359,47 @@ Current PDF work includes:
 - export PDF page images
 - Save / Save As
 
-## PDF text replacement
+## PDF text editing
 
-Substrate also has a direct replacement-text model:
+The current PDF editor has a direct replacement/free-text model:
 
-- click/select editable text regions
+- click/select editable source text regions
 - replace text
-- move a committed replacement field
+- add a free text field
+- move a committed replacement/free-text field
 - resize its field
-- change font size
-- nudge selected replacements
-- undo / redo replacement operations
+- change literal font size
+- choose from packaged PDF standard fonts
+- nudge selected edits
+- delete/duplicate editable text objects
+- undo / redo text-object operations
 - keep the original source region masked in the live view
-- serialize the replacement back into a PDF
+- serialize replacement/free text back into a PDF
 
-The current replacement serializer uses a simple cover-and-redraw model. It is intentionally practical rather than a full Acrobat-style object editor.
+Editable PDF geometry is stored in PDF page coordinates and projected into the current PDF.js viewport. Resizing the FrameChute document object should therefore change the view, not rewrite the saved PDF coordinates.
+
+The replacement serializer uses a practical cover-and-redraw model. It is intentionally useful rather than a claim of full Acrobat-style original-content editing.
+
+## PDF image editing status
+
+**PDF image insertion is not yet implemented in the active editor path.**
+
+At present you cannot reliably:
+
+- drop an OS image directly into a PDF page;
+- drag a FrameChute workspace image into a PDF;
+- paste an image into a PDF;
+- select/move/resize/delete an inserted PDF image object and save it natively.
+
+The PDF context-menu model already contains placeholders such as **Insert Image…** and **Paste Text / Paste Image**, but those image paths remain disabled until the PDF object model and serializer actually support them.
+
+This is the highest-priority PDF parity gap. The intended behavior is straightforward: an image dropped onto a PDF should become a first-class PDF page object at the drop coordinates, not a new workspace frame and not a temporary overlay.
+
+The detailed implementation audit is in:
+
+```text
+agents/codex/debug/PDF_EDITOR_PARITY_AUDIT_V1.md
+```
 
 ---
 
@@ -382,18 +410,30 @@ Substrate can open and re-save practical Word documents without converting the w
 Current DOCX support includes:
 
 - parse paragraphs and runs
-- text editing
-- bold
-- italic
-- underline
-- paragraph styles
+- direct text editing
+- literal point-size formatting
+- font-family controls
+- bold / italic / underline / strikethrough
+- Normal / Heading 1 / Heading 2 / Heading 3 paragraph styles
+- text color and highlighting
 - alignment
-- list representation
+- bullets / numbering
+- line spacing
+- paragraph spacing before/after
+- left/right, first-line, and hanging indents
+- page breaks
+- basic page setup including Letter/A4, portrait/landscape, and margins
 - tables
+- hyperlinks
+- Find / Replace
 - embedded images
-- adding images to the DOCX package
-- preserving unique relationship/drawing identifiers for inserted images
-- Save As DOCX
+- add images to the DOCX package
+- select and resize embedded images
+- Delete/Backspace selected images
+- Undo/Redo image and formatting changes
+- Word-style image wrapping choices including inline, square, tight, top/bottom, behind text, and in-front/free-position modes
+- preserve unique relationship/drawing identifiers for inserted images
+- Save / Save As DOCX
 
 Where possible, ordinary text/format edits take a least-destructive path that patches the original OOXML package instead of rebuilding unrelated document content.
 
@@ -415,29 +455,35 @@ These are intentionally lightweight conversions, not claims of perfect office-su
 
 # CSV and structured data
 
-CSV files become editable table objects rather than inert downloads.
+CSV support is currently **textual, not spreadsheet-like**.
 
-Current CSV features include:
+A `.csv` file can be opened so you can see and edit its comma-separated text, but the current active workspace path treats CSV as a text file. It does **not** presently reconstruct the file into a structured row/column grid with real cell semantics.
 
-- edit cells directly
-- add rows
-- remove rows
-- remove columns
-- click a header to sort
-- live find/filter rows
-- remove duplicate rows
-- split a column by delimiter
-- merge selected columns
-- normalize whitespace
-- remove blank rows during cleaning
-- capitalization cleanup
-- quick bar-chart generation
-- merge compatible CSV tables
-- Save As CSV
+In other words, today this:
 
-Quick Chart creates an SVG image result that can then be treated like another visual object on the workspace.
+```csv
+name,quantity,price
+pencil,4,1.25
+notebook,2,3.50
+```
 
-This is not yet a spreadsheet/formula engine. A richer grid/formula/reference system is a natural future substrate.
+opens essentially like a simple text file. You can read the values, but Substrate is not yet presenting them as a table with separately addressable cells.
+
+Therefore structured features such as the following are roadmap work rather than current-release claims:
+
+- cell editing in a grid
+- add/remove rows and columns through table controls
+- header sorting
+- structured filtering
+- deduplication by row/cell semantics
+- split/merge columns
+- formula/reference behavior
+- table-aware cleanup
+- chart generation directly from a structured CSV model
+
+There is already CSV/data-utility code in the project that can inform this future surface, but until it is wired into the actual file-open/edit/save path, the README treats CSV honestly as **openable editable text**.
+
+The target is not necessarily to clone Excel. A small dependable grid primitive with rows, columns, selection, sorting/filtering, formulas/references, and charts could eventually unlock spreadsheet-style workflows while remaining consistent with the rest of Substrate.
 
 ---
 
@@ -499,9 +545,10 @@ Current action families include:
 - image comparison / contact sheet / stitching / icon generation
 - image-to-PDF
 - document text extraction / comparison / conversion
-- CSV merge
 - video frame extraction
 - compress selected supported objects into a ZIP
+
+Some data-oriented utilities also exist internally, but the README does not claim a structured CSV editor until that surface is actually connected to normal CSV open/edit/save behavior.
 
 The Quick Actions presentation itself is being simplified so it stays contextual rather than becoming a permanent application sidebar.
 
@@ -521,7 +568,7 @@ Examples:
 image → PNG / JPEG / WebP
 PDF   → PDF
 DOCX  → DOCX
-CSV   → CSV
+text  → textual source
 ```
 
 Substrate should not trap ordinary files inside a proprietary workspace format just because they were edited in Substrate.
@@ -617,6 +664,8 @@ The goal is to keep timing, synchronization, and other specialist controls out o
 
 Advanced mode exposes deeper capabilities such as media timing/synchronization and other specialist object behavior.
 
+Core creation should not disappear merely because Advanced mode is off. The primary **New** control is intended to remain available in both modes for foundational formats such as DOCX, PDF, WEBX, and Canvas.
+
 The distinction is a product rule, not a limitation of the substrate:
 
 > **Power can exist without requiring every user to look at it all the time.**
@@ -651,19 +700,33 @@ PDF object appears
 Continue working or Save As
 ```
 
-## Clean a CSV and explain it visually
+This creates/arranges a PDF from image inputs. Directly dropping a new image **inside an already-open PDF page as an editable PDF object** is a separate capability and is not complete yet.
+
+## Edit a DOCX without leaving the workspace
+
+```text
+Open DOCX
+ ↓
+format text / paragraphs
+ ↓
+insert or reposition an image
+ ↓
+Undo / redo as needed
+ ↓
+Save / Save As DOCX
+```
+
+## Inspect a CSV today
 
 ```text
 Open CSV
  ↓
-Filter / sort / dedupe / clean
+comma-separated content opens as text
  ↓
-Quick Chart
- ↓
-SVG image result
- ↓
-Place beside notes or a PDF
+read or edit the textual values
 ```
+
+Structured grid editing, sorting, filtering, cell-aware cleanup, and charts remain future work.
 
 ## Inspect an archive
 
@@ -713,6 +776,8 @@ With a current Node.js installation:
 node --test tests/*.test.mjs
 ```
 
+The repository validation workflow runs this regression suite in addition to syntax and packaging checks.
+
 ## Check JavaScript syntax
 
 For changed JavaScript files:
@@ -733,7 +798,7 @@ git diff --check
 bash scripts/package-web-store.sh
 ```
 
-A normal development validation pass usually includes all four.
+A normal development validation pass includes all four.
 
 ## Runtime dependencies
 
@@ -759,6 +824,11 @@ src/
   documents/
     pdf-document.js
     docx-document.js
+  docx-editor-correctness.js
+  docx-wrap-persistence.js
+  docx-serialization-guard.js
+  responsive-toolbar.js
+  offscreen-rescue.js
   image-edit/
   fcx-format.mjs
   fcx-portable.js
@@ -772,7 +842,9 @@ icons/
 tests/
 scripts/
   package-web-store.sh
-agents/codex/prompts/
+agents/codex/
+  debug/
+  prompts/
 ```
 
 A recurring architectural preference is to extract testable helpers/modules instead of letting `workspace.js` become the implementation of everything.
@@ -793,13 +865,25 @@ The current screenshot path is being hardened because some browser/OS combinatio
 
 ## PDF editing
 
-PDF text replacement is currently a practical cover-and-redraw system, not arbitrary editing of every original PDF object. The current serializer uses a standard replacement font and a simple source cover.
+PDF text replacement is currently a practical cover-and-redraw system, not arbitrary editing of every original PDF content object.
+
+PDF image insertion/editing is not yet at DOCX parity. In particular, dropping/pasting/importing an image into a PDF page as a first-class editable PDF image object is not complete. The target is for FrameChute-created PDF images to support selection, move, resize, delete, duplicate, undo/redo, native PDF serialization, and format-aware drag interchange without invoking the global workspace drop overlay.
+
+The current PDF undo model is also stronger for text-object edits than for page-structure mutations. Page operations and editable objects should eventually participate in one coherent document transaction/history model.
 
 Very large PDFs are not yet handled with the range-loading / virtual-page / bounded-cache architecture needed for Sumatra-like huge-file behavior.
+
+See `agents/codex/debug/PDF_EDITOR_PARITY_AUDIT_V1.md` for the detailed parity plan.
 
 ## DOCX fidelity
 
 Substrate is not a complete Microsoft Word layout engine. It supports a useful subset and tries to preserve untouched OOXML least-destructively where practical.
+
+The current editor is designed to make ordinary formatting, paragraph/page controls, tables, images, and native save behavior dependable before attempting the full complexity of Word.
+
+## CSV structure
+
+CSV currently opens through the text-file path. The data can be read and textually edited, but the file is not yet presented as a structured grid with cell/row/column semantics.
 
 ## Snapshot fidelity
 
@@ -823,6 +907,33 @@ The roadmap follows one rule:
 
 The following are directions, not claims about the current release.
 
+## PDF editor parity
+
+The immediate document priority is to bring PDF editing to the same practical standard as DOCX without pretending to reproduce every Acrobat feature.
+
+The target baseline is:
+
+```text
+Open a real PDF
+Read it comfortably
+Add/edit text
+Add/drop/paste images
+Select PDF objects predictably
+Move/resize/delete/duplicate them directly
+Undo/redo what you did
+Perform normal page operations
+Save a valid PDF
+Reopen it without surprises
+```
+
+The first implementation milestone is a general PDF page-object model plus an image asset store. Then PNG/JPEG insertion, preview, selection, move/resize/delete/undo/save should be wired through one primitive. Drag/drop/paste and cross-document image interchange come after that foundation.
+
+See:
+
+```text
+agents/codex/debug/PDF_EDITOR_PARITY_AUDIT_V1.md
+```
+
 ## Camera, zoom, and a larger world
 
 Planned spatial/camera work includes:
@@ -837,11 +948,7 @@ Fit Workspace
 
 Zoom should affect the **camera**, not rewrite object geometry.
 
-The workspace should also become truly expandable beyond the initial viewport in every direction:
-
-> **Push an object against an edge and Substrate makes more desk.**
-
-Work should be frameable/centerable instead of naturally collapsing toward the upper-left corner.
+The workspace already supports expanding its usable area during hidden-toolbar direct manipulation; this behavior should continue to be hardened so growth feels symmetric in every direction and offscreen work remains recoverable through scrolling.
 
 ## Separate workspace UI from workspace zoom
 
@@ -901,18 +1008,7 @@ A small dependable primitive set can unlock a lot:
 - align/distribute
 - clipping/masks later
 
-Those primitives can support:
-
-- comics
-- storyboards
-- tutorials
-- annotated screenshots
-- classroom explainers
-- visual notes
-- diagrams
-- memes
-- simple page layouts
-- manuals and handouts
+Those primitives can support comics, storyboards, tutorials, annotated screenshots, classroom explainers, visual notes, diagrams, memes, simple page layouts, manuals, and handouts.
 
 A plausible comic workflow is already visible in the substrate:
 
@@ -930,9 +1026,7 @@ frame the finished page
 export image or PDF
 ```
 
-The goal is not Adobe-level complexity.
-
-The goal is enough reliable primitives that useful complexity can emerge from combination.
+The goal is not Adobe-level complexity. The goal is enough reliable primitives that useful complexity can emerge from combination.
 
 ## Richer documents and publishing
 
@@ -940,7 +1034,21 @@ Longer-term document work can build on the same substrate with stronger Markdown
 
 ## Structured data
 
-CSV utilities are the beginning, not the end. A future grid primitive could add cells, formulas, references, sorting/filtering, charts, and spreadsheet-style workflows without requiring a separate application architecture.
+CSV is currently openable as text, not a structured table surface. A future grid primitive could parse CSV into rows/columns and add cells, formulas, references, sorting/filtering, cleanup, charts, and spreadsheet-style workflows without requiring a separate application architecture.
+
+The important transition is:
+
+```text
+CSV text
+   ↓ parse deliberately
+structured table model
+   ↓
+selection / row / column semantics
+   ↓
+filter / sort / transform / chart / save CSV
+```
+
+Do not claim that transition until normal CSV open/edit/save uses it.
 
 ---
 
@@ -1005,4 +1113,3 @@ A surprising amount of everyday computing is made of small transformations, comp
 **Substrate is a local-first browser workbench where everyday files become movable, editable, composable objects that can be opened, changed, combined, converted, captured, and saved without bouncing between a pile of separate applications and websites.**
 
 ---
-
