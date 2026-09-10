@@ -647,7 +647,17 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-edit-controls label { display: inline-flex; align-items: center; gap: 3px; }
 .pdf-font-size { width: 55px; }
 .docx-block { min-width: 420px; min-height: 360px; }
-.docx-editor { flex: 1; overflow: auto; margin: 0; padding: 48px 56px; background: white; color: #171717; font: 16px/1.5 Arial, sans-serif; outline: none; }
+.docx-toolbar { overflow: visible; flex-wrap: wrap; align-content: center; row-gap: 4px; }
+.docx-size-label { display: inline-flex; align-items: center; gap: 2px; }
+.docx-font-size { width: 58px; }
+.docx-toolbar button[aria-pressed="true"] { color: #fff; background: #245fbd; }
+.docx-more { position: relative; }
+.docx-panel { position: absolute; z-index: 20; top: calc(100% + 5px); right: 0; width: 260px; padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 1px solid #888; border-radius: 7px; background: Canvas; color: CanvasText; box-shadow: 0 8px 24px #0004; }
+.docx-panel label { display: grid; gap: 3px; font-size: 12px; }
+.docx-editor { flex: 1; overflow: auto; width: min(816px, 100%); min-height: 0; box-sizing: border-box; margin: 14px auto; padding: 72px 72px; background: white; color: #171717; font: 12pt/1.15 Arial, sans-serif; outline: none; box-shadow: 0 2px 12px #0003; caret-color: #111; }
+.docx-editor:focus { box-shadow: 0 2px 12px #0003, 0 0 0 2px #4385e7; }
+.docx-editor p, .docx-editor li { margin-block: 0 8pt; min-height: 1em; }
+.docx-editor [data-page-break="true"] { display: block; height: 0; margin: 28px 0; border-top: 2px dashed #a6a6a6; break-after: page; }
 .docx-editor h1, .docx-editor h2, .docx-editor h3 { line-height: 1.2; }
 .docx-editor table { border-collapse: collapse; width: 100%; }
 .docx-editor td { border: 1px solid #888; padding: 5px; vertical-align: top; }

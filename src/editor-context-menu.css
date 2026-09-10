@@ -1,1 +1,6 @@
+/* CODEX DEBUG V10: submenu geometry must use ONE coordinate system. The current
+   `.menu-submenu { position:absolute }` is paired with viewport math in JS and is
+   a known source of detached popouts. Replace it together with openSubmenu() using
+   the shared attached-submenu primitive described in
+   agents/codex/debug/PR55_STABILIZATION_MAP_V10.md. Do not patch only this CSS. */
 .flashframe-editor-context-menu,.menu-submenu{position:fixed;z-index:2147483647;min-width:210px;padding:6px;border:1px solid #ffffff2a;border-radius:9px;background:#151719f7;color:#fff;box-shadow:0 14px 34px #0007;font:13px system-ui,sans-serif}.flashframe-editor-context-menu[hidden],.menu-submenu:not(.is-open){display:none}.flashframe-editor-context-menu button,.menu-submenu button{display:flex;justify-content:space-between;gap:20px;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left}.flashframe-editor-context-menu button:hover,.flashframe-editor-context-menu button:focus-visible{background:#ffffff1a;outline:0}.flashframe-editor-context-menu button:disabled{opacity:.45}.flashframe-editor-context-menu hr{border:0;border-top:1px solid #ffffff24}.menu-submenu-owner{position:relative}.menu-submenu{position:absolute;left:calc(100% + 4px);top:0}.menu-submenu.opens-left{right:calc(100% + 4px);left:auto}
