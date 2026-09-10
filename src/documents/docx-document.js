@@ -6,6 +6,9 @@ const REL = "http://schemas.openxmlformats.org/package/2006/relationships";
 const IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 const CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const WRAP_MARKER = "|fcwrap:";
+const WRAP_MODES = new Set(["square", "tight", "top-bottom", "behind", "front"]);
 
 const local = (node) => node?.localName || node?.nodeName?.split(":").pop();
 const children = (node, name) => [...(node?.children || [])].filter((item) => local(item) === name);
@@ -19,14 +22,47 @@ const attribute = (node, namespace, plain) => node?.getAttributeNS?.(namespace, 
 const imageMime = (path) => ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml" })[path.split(".").pop().toLowerCase()] || "application/octet-stream";
 const normalizePart = (target) => `word/${String(target).replace(/^\//, "").replace(/^word\//, "")}`.replace(/\/\.\//g, "/");
 
+function splitWrappedRelationship(value = "") {
+  const text = String(value);
+  const at = text.indexOf(WRAP_MARKER);
+  if (at < 0) return { base: text, layout: null };
+  const base = text.slice(0, at);
+  const [mode = "", x = "0", y = "0"] = text.slice(at + WRAP_MARKER.length).split(",");
+  return { base, layout: WRAP_MODES.has(mode) ? { mode, x: Number(x) || 0, y: Number(y) || 0 } : null };
+}
+
+function wrappedRelationship(base, layout) {
+  if (!layout || !WRAP_MODES.has(layout.mode)) return base;
+  const clean = value => Math.round((Number(value) || 0) * 100) / 100;
+  return `${base}${WRAP_MARKER}${layout.mode},${clean(layout.x)},${clean(layout.y)}`;
+}
+
+function anchorLayout(node) {
+  const anchor = allDescendants(node, "anchor")[0];
+  if (!anchor) return null;
+  const position = axis => {
+    const holder = allDescendants(anchor, axis)[0];
+    const offset = holder ? allDescendants(holder, "posOffset")[0] : null;
+    return (Number(offset?.textContent) || 0) / 9525;
+  };
+  let mode = "front";
+  if (["1", "true"].includes(String(anchor.getAttribute("behindDoc") || "").toLowerCase())) mode = "behind";
+  else if (allDescendants(anchor, "wrapTight").length) mode = "tight";
+  else if (allDescendants(anchor, "wrapSquare").length) mode = "square";
+  else if (allDescendants(anchor, "wrapTopAndBottom").length) mode = "top-bottom";
+  else if (allDescendants(anchor, "wrapNone").length) mode = "front";
+  return { mode, x: position("positionH"), y: position("positionV") };
+}
+
 function imageFromNode(node, relationships, parts) {
   const blip = allDescendants(node, "blip")[0] || allDescendants(node, "imagedata")[0];
-  const relationshipId = attribute(blip, R, "embed") || attribute(blip, R, "id");
-  const part = relationships.get(relationshipId);
+  const actualRelationshipId = attribute(blip, R, "embed") || attribute(blip, R, "id");
+  const part = relationships.get(actualRelationshipId);
   const extent = allDescendants(node, "extent")[0];
   const widthEmu = Number(extent?.getAttribute("cx")) || 0, heightEmu = Number(extent?.getAttribute("cy")) || 0;
-  if (!relationshipId || !part) return { kind: "image", relationshipId, unsupported: true, message: "Image relationship is unavailable." };
-  return { kind: "image", relationshipId, part, mime: imageMime(part), width: widthEmu ? widthEmu / 9525 : null, height: heightEmu ? heightEmu / 9525 : null, unsupported: !parts[part] };
+  if (!actualRelationshipId || !part) return { kind: "image", relationshipId: actualRelationshipId, unsupported: true, message: "Image relationship is unavailable." };
+  const layout = anchorLayout(node);
+  return { kind: "image", relationshipId: wrappedRelationship(actualRelationshipId, layout), part, mime: imageMime(part), width: widthEmu ? widthEmu / 9525 : null, height: heightEmu ? heightEmu / 9525 : null, unsupported: !parts[part] };
 }
 
 function parseRun(run, relationships, parts) {
@@ -101,9 +137,27 @@ function runXml(run, drawingIds) {
   const xml=`<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
   return run.hyperlinkId ? `<w:hyperlink r:id="${esc(run.hyperlinkId)}">${xml}</w:hyperlink>` : xml;
 }
+
+function pictureXml(relationshipId, drawingId, width, height) {
+  return `<wp:docPr id="${drawingId}" name="Picture ${drawingId}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${drawingId}" name="Picture ${drawingId}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${esc(relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>`;
+}
+
+function wrapXml(mode) {
+  if (mode === "square") return '<wp:wrapSquare wrapText="bothSides"/>';
+  if (mode === "tight") return '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>';
+  if (mode === "top-bottom") return '<wp:wrapTopAndBottom/>';
+  return '<wp:wrapNone/>';
+}
+
 function imageXml(image, drawingId) {
+  const parsed = splitWrappedRelationship(image.relationshipId);
   const width = Math.max(1, Math.round((image.width || 320) * 9525)), height = Math.max(1, Math.round((image.height || 240) * 9525));
-  return `<w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${drawingId}" name="Picture ${drawingId}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${drawingId}" name="Picture ${drawingId}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${esc(image.relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+  const picture = pictureXml(parsed.base, drawingId, width, height);
+  if (!parsed.layout) return `<w:drawing><wp:inline xmlns:wp="${WP}"><wp:extent cx="${width}" cy="${height}"/>${picture}</wp:inline></w:drawing>`;
+  const x = Math.round((parsed.layout.x || 0) * 9525), y = Math.round((parsed.layout.y || 0) * 9525);
+  const behind = parsed.layout.mode === "behind" ? "1" : "0";
+  const distance = ["square", "tight"].includes(parsed.layout.mode) ? 91440 : 0;
+  return `<w:drawing><wp:anchor xmlns:wp="${WP}" distT="${distance}" distB="${distance}" distL="${distance}" distR="${distance}" simplePos="0" relativeHeight="251658240" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y}</wp:posOffset></wp:positionV><wp:extent cx="${width}" cy="${height}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>${wrapXml(parsed.layout.mode)}${picture}</wp:anchor></w:drawing>`;
 }
 
 export function addDocxImage(model, bytes, { mime = "image/png", width = 320, height = 240 } = {}) {
@@ -123,11 +177,13 @@ export function addDocxImage(model, bytes, { mime = "image/png", width = 320, he
   if (model.parts[contentPath]) { let types = strFromU8(model.parts[contentPath]); if (!new RegExp(`Extension=["']${extension}["']`, "i").test(types)) types = types.replace(/<\/Types>\s*$/, `<Default Extension="${extension}" ContentType="${mime}"/></Types>`); model.parts[contentPath] = strToU8(types); }
   return { kind: "image", relationshipId, part, mime, width, height };
 }
+
 function paragraphXml(p, drawingIds) {
   const twips=value=>Math.round(Number(value||0)*1440),spacing=(p.lineSpacing||p.spaceBefore||p.spaceAfter!=null)?`<w:spacing${p.spaceBefore?` w:before="${Math.round(p.spaceBefore*20)}"`:""}${p.spaceAfter!=null?` w:after="${Math.round(p.spaceAfter*20)}"`:""}${p.lineSpacing?` w:line="${Math.round(p.lineSpacing*240)}" w:lineRule="auto"`:""}/>`:"",indent=(p.indentLeft||p.indentRight||p.firstLine)?`<w:ind${p.indentLeft?` w:left="${twips(p.indentLeft)}"`:""}${p.indentRight?` w:right="${twips(p.indentRight)}"`:""}${p.firstLine>0?` w:firstLine="${twips(p.firstLine)}"`:p.firstLine<0?` w:hanging="${twips(-p.firstLine)}"`:""}/>`:"";
   const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${spacing}${indent}${p.pageBreak?"<w:pageBreakBefore/>":""}${p.list ? `<w:numPr><w:ilvl w:val="${Math.max(0,Number(p.level)||0)}"/><w:numId w:val="${p.list === "number" ? 2 : 1}"/></w:numPr>` : ""}`;
   return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map((run) => runXml(run, drawingIds)).join("")}</w:p>`;
 }
+
 function blockXml(block, drawingIds) {
   if (block.type === "table") return `<w:tbl>${block.rows.map((row) => `<w:tr>${row.map((cell) => `<w:tc>${cell.map((p) => paragraphXml(p, drawingIds)).join("")}<w:tcPr/></w:tc>`).join("")}</w:tr>`).join("")}</w:tbl>`;
   return paragraphXml(block, drawingIds);
@@ -143,7 +199,7 @@ export function serializeDocx(model) {
   if(createdStyles&&!rels.includes("relationships/styles"))rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="rIdFrameChuteStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
   if(createdStyles&&parts["[Content_Types].xml"]){let types=strFromU8(parts["[Content_Types].xml"]);if(!types.includes("word/styles.xml"))types=types.replace(/<\/Types>\s*$/,`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`);parts["[Content_Types].xml"]=strToU8(types);}
   const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table"}:{type:"paragraph",style:block.style||"",alignment:block.alignment||"left",list:block.list||"",level:block.level||0,lineSpacing:block.lineSpacing||null,spaceBefore:block.spaceBefore||0,spaceAfter:block.spaceAfter??null,indentLeft:block.indentLeft||0,indentRight:block.indentRight||0,firstLine:block.firstLine||0,pageBreak:Boolean(block.pageBreak)}));
-  let nextRel=1, needsCanonicalXml=!model.originalBlocks || structure(model.originalBlocks)!==structure(model.blocks); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
+  let nextRel=1, needsCanonicalXml=Boolean(model.pageSetup)||!model.originalBlocks || structure(model.originalBlocks)!==structure(model.blocks); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
   for(const run of (()=>{const out=[];const walk=blocks=>blocks.forEach(block=>block.type==="table"?block.rows.forEach(row=>row.forEach(walk)):out.push(...(block.runs||[])));walk(model.blocks);return out;})()) if(run.hyperlink){
     if(!run.hyperlinkId){needsCanonicalXml=true;while(ids.has(`rIdFrameChuteLink${nextRel}`))nextRel++;run.hyperlinkId=`rIdFrameChuteLink${nextRel++}`;ids.add(run.hyperlinkId);rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="${run.hyperlinkId}" Type="${HYPERLINK_REL}" Target="${escAttr(run.hyperlink)}" TargetMode="External"/></Relationships>`);}
   }
