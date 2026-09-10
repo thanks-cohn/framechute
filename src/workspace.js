@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, remapPdfEditsForPageOperation, resizePdfEditDisplay } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { editorNodeToRuns, replaceTextNodes } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
@@ -499,9 +499,12 @@ async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfD
 
 async function applyPdfPageOperation(block, operation) {
   const previous = runtimeSources.get(block); if (!previous?.model) return;
-  const edited = await previous.serialize();
-  const bytes = await transformPdfPages(new Uint8Array(await edited.arrayBuffer()), operation);
-  const model = await openPdfDocument(bytes); const runtime = { handle: previous.handle, model, edits: [], structurallyDirty: true };
+  // Transform the untouched source and remap pending edits instead of burning them into
+  // the page and losing their selectable identity.
+  const bytes = await transformPdfPages(previous.model.bytes, operation);
+  const edits = structuredClone(previous.edits);
+  remapPdfEditsForPageOperation(edits, operation);
+  const model = await openPdfDocument(bytes); const runtime = { handle: previous.handle, model, edits, structurallyDirty: true };
   runtime.serialize = () => serializeEditedPdf(model, runtime.edits); runtimeSources.set(block, runtime);
   setDocumentDirty(block, true); await setPdfPage(block, Math.min(Number(operation.to || operation.page), model.pageCount));
   setStatus("PDF page change is ready. Use native Save or Save As to write the PDF.");
@@ -718,7 +721,7 @@ registerBlockType("pdf", {
     textLayer.addEventListener("pointerdown",event=>{
       const handle=event.target.closest(".pdf-move-handle,.pdf-resize-handle"),span=handle?.closest(".pdf-text-edit"),runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!handle||!span||!edit)return;
       event.preventDefault();event.stopPropagation();const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};pushPdfHistory(runtime);handle.setPointerCapture(event.pointerId);
-      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle"),display={left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))};Object.assign(edit,viewportRectToPdf(runtime.pageData.viewport,display));Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});};
+      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle"),display=isMove?{left:start.left+dx,top:start.top+dy,width:start.width,height:start.height}:resizePdfEditDisplay({left:start.left,top:start.top,width:start.width,height:start.height},dx,dy,edit.kind==="image"&&!moveEvent.altKey);Object.assign(edit,viewportRectToPdf(runtime.pageData.viewport,display));Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});};
       handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
