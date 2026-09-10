@@ -11,6 +11,7 @@ export const PDF_STANDARD_FONTS = Object.freeze([
   ["Courier Oblique", StandardFonts.CourierOblique]
 ]);
 const PDF_FONT_MAP = new Map(PDF_STANDARD_FONTS);
+export const PDF_SOURCE_MASK_BLEED = 0.75;
 
 export function resolvePdfStandardFont(name) { return PDF_FONT_MAP.get(name) || StandardFonts.Helvetica; }
 
@@ -90,13 +91,24 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   return { viewport, content };
 }
 
-/** Return the fixed cover used by both the live preview and PDF serialization. */
+/** Return the fixed source cover used by both live preview and PDF serialization.
+ *  A tiny PDF-point bleed covers glyph antialiasing that can survive an exact
+ *  text bounding box. The bleed is intentionally bounded and remains attached
+ *  only to immutable source geometry; moving/resizing replacement text cannot
+ *  enlarge or relocate the area being covered.
+ */
 export function sourceMaskForEdit(edit) {
+  const sourceX = Number(edit.sourceX ?? edit.x) || 0;
+  const sourceY = Number(edit.sourceY ?? edit.y) || 0;
+  const sourceWidth = Math.max(Number(edit.sourceWidth ?? edit.width) || 0, 2);
+  const sourceHeight = Math.max(Number(edit.sourceHeight ?? edit.height) || 0, 2);
+  const requestedBleed = edit.sourceMaskBleed == null ? PDF_SOURCE_MASK_BLEED : Number(edit.sourceMaskBleed);
+  const bleed = Math.max(0, Math.min(2, Number.isFinite(requestedBleed) ? requestedBleed : PDF_SOURCE_MASK_BLEED));
   return {
-    x: edit.sourceX ?? edit.x,
-    y: edit.sourceY ?? edit.y,
-    width: Math.max(edit.sourceWidth ?? edit.width, 2),
-    height: Math.max(edit.sourceHeight ?? edit.height, 2)
+    x: sourceX - bleed,
+    y: sourceY - bleed,
+    width: sourceWidth + bleed * 2,
+    height: sourceHeight + bleed * 2
   };
 }
 
@@ -142,7 +154,9 @@ export async function serializeEditedPdf(model, edits) {
     const page = output.getPage(edit.page - 1);
     const size = edit.fontSize;
     // V1 visual replacement: cover the source glyph area and draw the edit.
-    // This preserves every unedited page and keeps the replacement searchable.
+    // The cover is fill-only: FrameChute selection/hover chrome is never serialized.
+    // A small fixed source bleed prevents antialiased glyph fragments from surviving
+    // around otherwise exact text bounds on ordinary white page regions.
     if (edit.kind === "replacement") page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
     edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.firstBaseline - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
   }
