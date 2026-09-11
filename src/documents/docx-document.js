@@ -220,12 +220,35 @@ export function parseDocx(bytes) {
     }
   }
   const blocks = [];
-  for (const child of body.children) {
-    if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts,numbering,styles));
-    if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering,styles)))) });
-  }
+  const originalBodyChildren = [];
+  [...body.children].forEach((child, sourceIndex) => {
+    const kind=local(child);
+    const raw=new XMLSerializer().serializeToString(child);
+    originalBodyChildren.push({ sourceIndex, kind, raw });
+
+    if (kind === "p") {
+      const block=parseParagraph(child, relationships, parts,numbering,styles);
+      block.sourceIndex=sourceIndex;
+      blocks.push(block);
+      return;
+    }
+
+    if (kind === "tbl") {
+      blocks.push({
+        type: "table",
+        sourceIndex,
+        rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering,styles))))
+      });
+      return;
+    }
+
+    if (kind !== "sectPr") {
+      const previewText=String(child.textContent||"").replace(/\s+/g," ").trim();
+      blocks.push({ type:"preserved", sourceIndex, preservedTag:kind||"object", previewText });
+    }
+  });
   const pageLayout=parsePageLayout(body);
-  return { blocks, originalBlocks: structuredClone(blocks), parts, originalXml: xml, relationships, styles, numbering, pageLayout };
+  return { blocks, originalBlocks: structuredClone(blocks), originalBodyChildren, parts, originalXml: xml, relationships, styles, numbering, pageLayout };
 }
 
 function runXml(run, drawingIds) {
@@ -260,11 +283,13 @@ export function addDocxImage(model, bytes, { mime = "image/png", width = 320, he
 }
 function paragraphXml(p, drawingIds) {
   const twips=value=>Math.round(Number(value||0)*1440),spacing=(p.lineSpacing||p.spaceBefore||p.spaceAfter!=null)?`<w:spacing${p.spaceBefore?` w:before="${Math.round(p.spaceBefore*20)}"`:""}${p.spaceAfter!=null?` w:after="${Math.round(p.spaceAfter*20)}"`:""}${p.lineSpacing?` w:line="${Math.round(p.lineSpacing*240)}" w:lineRule="auto"`:""}/>`:"",indent=(p.indentLeft||p.indentRight||p.firstLine)?`<w:ind${p.indentLeft?` w:left="${twips(p.indentLeft)}"`:""}${p.indentRight?` w:right="${twips(p.indentRight)}"`:""}${p.firstLine>0?` w:firstLine="${twips(p.firstLine)}"`:p.firstLine<0?` w:hanging="${twips(-p.firstLine)}"`:""}/>`:"";
-  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${spacing}${indent}${p.pageBreak?"<w:pageBreakBefore/>":""}${p.list ? `<w:numPr><w:ilvl w:val="${Math.max(0,Number(p.level)||0)}"/><w:numId w:val="${p.list === "number" ? 2 : 1}"/></w:numPr>` : ""}`;
+  const listNumId=Number.isFinite(Number(p.numId))&&Number(p.numId)>0 ? Number(p.numId) : (p.list === "number" ? 2 : 1);
+  const props = `${p.style ? `<w:pStyle w:val="${esc(p.style)}"/>` : ""}${p.alignment && p.alignment !== "left" ? `<w:jc w:val="${esc(p.alignment)}"/>` : ""}${spacing}${indent}${p.pageBreak?"<w:pageBreakBefore/>":""}${p.list ? `<w:numPr><w:ilvl w:val="${Math.max(0,Number(p.level)||0)}"/><w:numId w:val="${listNumId}"/></w:numPr>` : ""}`;
   return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}${(p.runs || []).map((run) => runXml(run, drawingIds)).join("")}</w:p>`;
 }
 function blockXml(block, drawingIds) {
   if (block.type === "table") return `<w:tbl>${block.rows.map((row) => `<w:tr>${row.map((cell) => `<w:tc>${cell.map((p) => paragraphXml(p, drawingIds)).join("")}<w:tcPr/></w:tc>`).join("")}</w:tr>`).join("")}</w:tbl>`;
+  if (block.type === "preserved") return "";
   return paragraphXml(block, drawingIds);
 }
 
@@ -277,7 +302,8 @@ export function serializeDocx(model) {
   const relPath="word/_rels/document.xml.rels"; let rels=parts[relPath]?strFromU8(parts[relPath]):`<?xml version="1.0"?><Relationships xmlns="${REL}"></Relationships>`;
   if(createdStyles&&!rels.includes("relationships/styles"))rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="rIdFrameChuteStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
   if(createdStyles&&parts["[Content_Types].xml"]){let types=strFromU8(parts["[Content_Types].xml"]);if(!types.includes("word/styles.xml"))types=types.replace(/<\/Types>\s*$/,`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`);parts["[Content_Types].xml"]=strToU8(types);}
-  const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table"}:{type:"paragraph",style:block.style||"",alignment:block.alignment||"left",list:block.list||"",level:block.level||0,lineSpacing:block.lineSpacing||null,spaceBefore:block.spaceBefore||0,spaceAfter:block.spaceAfter??null,indentLeft:block.indentLeft||0,indentRight:block.indentRight||0,firstLine:block.firstLine||0,pageBreak:Boolean(block.pageBreak)}));
+  const structure = blocks => JSON.stringify((blocks||[]).map(block=>block.type==="table"?{type:"table",sourceIndex:block.sourceIndex??null}:block.type==="preserved"?{type:"preserved",sourceIndex:block.sourceIndex??null}:{type:"paragraph",sourceIndex:block.sourceIndex??null,style:block.style||"",alignment:block.alignment||"left",list:block.list||"",level:block.level||0,lineSpacing:block.lineSpacing||null,spaceBefore:block.spaceBefore||0,spaceAfter:block.spaceAfter??null,indentLeft:block.indentLeft||0,indentRight:block.indentRight||0,firstLine:block.firstLine||0,pageBreak:Boolean(block.pageBreak)}));
+  const comparable = block => JSON.stringify(block,(key,value)=>key==="sourceIndex"?undefined:value);
   let nextRel=1, needsCanonicalXml=!model.originalBlocks || structure(model.originalBlocks)!==structure(model.blocks); const ids=new Set([...rels.matchAll(/\bId=["']([^"']+)/g)].map(match=>match[1]));
   for(const run of (()=>{const out=[];const walk=blocks=>blocks.forEach(block=>block.type==="table"?block.rows.forEach(row=>row.forEach(walk)):out.push(...(block.runs||[])));walk(model.blocks);return out;})()) if(run.hyperlink){
     if(!run.hyperlinkId){needsCanonicalXml=true;while(ids.has(`rIdFrameChuteLink${nextRel}`))nextRel++;run.hyperlinkId=`rIdFrameChuteLink${nextRel++}`;ids.add(run.hyperlinkId);rels=rels.replace(/<\/Relationships>\s*$/,`<Relationship Id="${run.hyperlinkId}" Type="${HYPERLINK_REL}" Target="${escAttr(run.hyperlink)}" TargetMode="External"/></Relationships>`);}
@@ -290,7 +316,7 @@ export function serializeDocx(model) {
   }
   parts[relPath]=strToU8(rels);
   const runs = [];
-  const collect = (blocks) => { for (const block of blocks) { if (block.type === "table") for (const row of block.rows) for (const cell of row) collect(cell); else runs.push(...(block.runs || [])); } };
+  const collect = (blocks) => { for (const block of blocks) { if (block.type === "table") for (const row of block.rows) for (const cell of row) collect(cell); else if(block.type !== "preserved") runs.push(...(block.runs || [])); } };
   collect(model.blocks);
   const originalTextCount = (model.originalXml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) || []).length;
   const textRuns = runs.filter((run) => typeof run.text === "string" && run.text.length > 0);
@@ -319,7 +345,18 @@ export function serializeDocx(model) {
     const usedDrawingIds = new Set([...model.originalXml.matchAll(/<wp:docPr\b[^>]*\bid=["'](\d+)["']/g)].map((match) => Number(match[1])));
     let nextDrawingId = 1;
     const drawingIds = { next() { while (usedDrawingIds.has(nextDrawingId)) nextDrawingId += 1; usedDrawingIds.add(nextDrawingId); return nextDrawingId++; } };
-    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${model.blocks.map((block) => blockXml(block, drawingIds)).join("")}${section}</w:body></w:document>`);
+    const originalBySource=new Map((model.originalBlocks||[]).filter(block=>block.sourceIndex!=null).map(block=>[Number(block.sourceIndex),block]));
+    const rawBySource=new Map((model.originalBodyChildren||[]).map(entry=>[Number(entry.sourceIndex),entry.raw]));
+    const bodyXml=(model.blocks||[]).map(block=>{
+      const sourceIndex=block.sourceIndex==null?null:Number(block.sourceIndex);
+      if(sourceIndex!=null){
+        const original=originalBySource.get(sourceIndex),raw=rawBySource.get(sourceIndex);
+        if(block.type==="preserved"&&raw)return raw;
+        if(original&&raw&&comparable(block)===comparable(original))return raw;
+      }
+      return blockXml(block,drawingIds);
+    }).join("");
+    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${bodyXml}${section}</w:body></w:document>`);
   }
   return new Blob([zipSync(parts, { level: 6 })], { type: CONTENT_TYPE });
 }
