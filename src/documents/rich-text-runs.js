@@ -31,7 +31,7 @@ function sameStyle(left, right) {
 export function editorNodeToRuns(root, imageReader) {
   const runs = [];
   const append = (run) => {
-    if (!run.text && !run.images?.length) return;
+    if (!run.text && !run.images?.length && !run.mathXml) return;
     const previous = runs.at(-1);
     if (run.text && previous?.text && !previous.images?.length && sameStyle(previous, run)) previous.text += run.text;
     else runs.push(run);
@@ -39,8 +39,12 @@ export function editorNodeToRuns(root, imageReader) {
   const visit = (node, inherited) => {
     if (node.nodeType === 3) { append({ text: node.textContent || "", ...inherited }); return; }
     if (node.nodeType !== 1) return;
-    const image = imageReader?.(node);
-    if (image) { append({ text: "", images: [image], ...inherited }); return; }
+    const embedded = imageReader?.(node);
+    if (embedded?.kind === "math") {
+      append({ text: "", mathXml: embedded.mathXml || "", math: embedded.math || null, mathDisplay: Boolean(embedded.mathDisplay), ...inherited });
+      return;
+    }
+    if (embedded) { append({ text: "", images: [embedded], ...inherited }); return; }
     const style = readRunStyle(node, inherited);
     for (const child of node.childNodes || []) visit(child, style);
   };
