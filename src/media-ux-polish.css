@@ -21,6 +21,27 @@
   display: none !important;
 }
 
+/* Compact object headers own a fixed 76px Grab control. Grab artwork must stay
+   inside that control; a generic 100% image width otherwise spills across the
+   filename and neighboring header actions. */
+.compact-drag-handle.grab-image-slot {
+  overflow: hidden;
+}
+
+body:not(.hide-block-headers) .compact-drag-handle .grab-art-image,
+body:not(.hide-block-headers) .compact-drag-handle .grab-fallback-art {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 26px;
+  max-width: 30px;
+  max-height: 26px;
+}
+
+body:not(.hide-block-headers) .compact-drag-handle .grab-text-label {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 body.hide-block-headers .compact-drag-handle {
   top: 8px;
   left: 8px;
