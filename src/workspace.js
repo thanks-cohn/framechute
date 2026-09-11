@@ -757,6 +757,7 @@ function docxBlocksFromEditor(editor) {
   const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
   const paragraph = (node, list="") => ({
     type: "paragraph",
+    sourceIndex: node.dataset.docxSourceIndex ? Number(node.dataset.docxSourceIndex) : null,
     style: node.dataset.docxStyle || (/^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : ""),
     list: node.dataset.docxList || list,
     numId: node.dataset.docxNumId ? Number(node.dataset.docxNumId) : null,
@@ -776,7 +777,15 @@ function docxBlocksFromEditor(editor) {
   });
   const blocks = [];
   for (const node of editor.children) {
-    if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
+    if (node.matches?.(".docx-preserved-object")) {
+      blocks.push({
+        type: "preserved",
+        sourceIndex: Number(node.dataset.docxSourceIndex),
+        preservedTag: node.dataset.docxPreservedTag || "object",
+        previewText: node.dataset.docxPreviewText || node.textContent || ""
+      });
+    }
+    else if (node.tagName === "TABLE") blocks.push({ type: "table", sourceIndex: node.dataset.docxSourceIndex ? Number(node.dataset.docxSourceIndex) : null, rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
     else if (["UL", "OL"].includes(node.tagName)) for (const item of node.children) blocks.push(paragraph(item,node.tagName === "OL" ? "number" : "bullet"));
     else blocks.push(paragraph(node));
   }
@@ -836,6 +845,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     const tag = listItem ? "li" : (heading ? `h${heading[1]}` : "p");
     const element = document.createElement(tag);
 
+    if(p.sourceIndex!=null) element.dataset.docxSourceIndex=String(p.sourceIndex);
     if(p.style) element.dataset.docxStyle=p.style;
     if(p.list) element.dataset.docxList=p.list;
     if(p.numId!=null) element.dataset.docxNumId=String(p.numId);
@@ -910,9 +920,27 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
   let activeList=null;
   let activeListKey="";
   for (const item of blocks || []) {
+    if (item.type === "preserved") {
+      activeList=null; activeListKey="";
+      const preserved=document.createElement("div");
+      preserved.className="docx-preserved-object";
+      preserved.contentEditable="false";
+      preserved.dataset.docxSourceIndex=String(item.sourceIndex ?? "");
+      preserved.dataset.docxPreservedTag=item.preservedTag||"object";
+      preserved.dataset.docxPreviewText=item.previewText||"";
+      preserved.title="Preserved DOCX content. FrameChute will keep this original OOXML when you save.";
+      const label=document.createElement("span");
+      label.className="docx-preserved-label";
+      label.textContent=item.previewText || `Preserved ${item.preservedTag||"DOCX object"}`;
+      preserved.append(label);
+      editor.append(preserved);
+      continue;
+    }
+
     if (item.type === "table") {
       activeList=null; activeListKey="";
       const table = document.createElement("table");
+      if(item.sourceIndex!=null) table.dataset.docxSourceIndex=String(item.sourceIndex);
       for (const row of item.rows) {
         const tr = table.insertRow();
         for (const cell of row) {
