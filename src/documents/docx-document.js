@@ -2,6 +2,7 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from "../vendor/fflate.mjs";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const M = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const REL = "http://schemas.openxmlformats.org/package/2006/relationships";
 const IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
@@ -129,6 +130,125 @@ function parsePageLayout(body) {
   };
 }
 
+function mathAttr(node, name = "val") {
+  if (!node) return "";
+  for (const attr of [...(node.attributes || [])]) {
+    if (attr.localName === name || attr.name === name || attr.name.endsWith(\`:\${name}\`)) return attr.value || "";
+  }
+  return "";
+}
+function mathChild(node, name) {
+  return [...(node?.children || [])].find(child => local(child) === name) || null;
+}
+function mathSequence(node) {
+  const content = [...(node?.children || [])]
+    .filter(child => !/Pr$/.test(local(child) || "") && !["ctrlPr","argPr"].includes(local(child)))
+    .map(parseMathAst)
+    .filter(Boolean);
+  return content.length === 1 ? content[0] : { type:"row", children:content };
+}
+function parseMathAst(node) {
+  if (!node) return { type:"row", children:[] };
+  const kind = local(node);
+
+  if (["oMath","oMathPara","e","num","den","sub","sup","deg","fName","lim"].includes(kind)) {
+    return mathSequence(node);
+  }
+
+  if (kind === "r") {
+    const text = allDescendants(node, "t").map(item => item.textContent || "").join("");
+    return { type:"token", text };
+  }
+
+  if (kind === "f") {
+    const pr=mathChild(node,"fPr"),type=mathAttr(mathChild(pr,"type"))||"bar";
+    return {
+      type:"frac",
+      numerator:parseMathAst(mathChild(node,"num")),
+      denominator:parseMathAst(mathChild(node,"den")),
+      bar:type!=="noBar",
+      fractionType:type
+    };
+  }
+
+  if (kind === "sSup") return { type:"sup", base:parseMathAst(mathChild(node,"e")), sup:parseMathAst(mathChild(node,"sup")) };
+  if (kind === "sSub") return { type:"sub", base:parseMathAst(mathChild(node,"e")), sub:parseMathAst(mathChild(node,"sub")) };
+  if (kind === "sSubSup") return { type:"subsup", base:parseMathAst(mathChild(node,"e")), sub:parseMathAst(mathChild(node,"sub")), sup:parseMathAst(mathChild(node,"sup")) };
+
+  if (kind === "rad") {
+    const pr=mathChild(node,"radPr"),hideDeg=/^(?:1|true|on)$/i.test(mathAttr(mathChild(pr,"degHide")));
+    return { type:"rad", degree:hideDeg?null:parseMathAst(mathChild(node,"deg")), body:parseMathAst(mathChild(node,"e")) };
+  }
+
+  if (kind === "nary") {
+    const pr=mathChild(node,"naryPr"),chr=mathAttr(mathChild(pr,"chr"))||"∑";
+    return {
+      type:"nary", operator:chr,
+      sub:parseMathAst(mathChild(node,"sub")),
+      sup:parseMathAst(mathChild(node,"sup")),
+      body:parseMathAst(mathChild(node,"e"))
+    };
+  }
+
+  if (kind === "d") {
+    const pr=mathChild(node,"dPr");
+    const begin=mathAttr(mathChild(pr,"begChr"));
+    const end=mathAttr(mathChild(pr,"endChr"));
+    const separator=mathAttr(mathChild(pr,"sepChr"))||"";
+    return {
+      type:"delim",
+      begin:begin===""?"(":begin,
+      end:end===""?")":end,
+      separator,
+      items:children(node,"e").map(parseMathAst)
+    };
+  }
+
+  if (kind === "func") return { type:"func", name:parseMathAst(mathChild(node,"fName")), body:parseMathAst(mathChild(node,"e")) };
+
+  if (kind === "acc") {
+    const pr=mathChild(node,"accPr"),chr=mathAttr(mathChild(pr,"chr"))||"ˆ";
+    return { type:"accent", accent:chr, body:parseMathAst(mathChild(node,"e")) };
+  }
+
+  if (kind === "bar") {
+    const pr=mathChild(node,"barPr"),pos=mathAttr(mathChild(pr,"pos"))||"top";
+    return { type:"bar", position:pos, body:parseMathAst(mathChild(node,"e")) };
+  }
+
+  if (kind === "groupChr") {
+    const pr=mathChild(node,"groupChrPr"),chr=mathAttr(mathChild(pr,"chr"))||"⏞",pos=mathAttr(mathChild(pr,"pos"))||"top";
+    return { type:"group", character:chr, position:pos, body:parseMathAst(mathChild(node,"e")) };
+  }
+
+  if (kind === "limLow") return { type:"limlow", base:parseMathAst(mathChild(node,"e")), limit:parseMathAst(mathChild(node,"lim")) };
+  if (kind === "limUpp") return { type:"limupp", base:parseMathAst(mathChild(node,"e")), limit:parseMathAst(mathChild(node,"lim")) };
+
+  if (kind === "eqArr") return { type:"eqarr", rows:children(node,"e").map(parseMathAst) };
+
+  if (kind === "m") {
+    return {
+      type:"matrix",
+      rows:children(node,"mr").map(row => children(row,"e").map(parseMathAst))
+    };
+  }
+
+  if (["box","borderBox"].includes(kind)) return { type:"box", body:parseMathAst(mathChild(node,"e")) };
+  if (kind === "phant") return { type:"phantom", body:parseMathAst(mathChild(node,"e")) };
+
+  const nested=[...(node.children||[])].filter(child=>!/Pr$/.test(local(child)||"")).map(parseMathAst).filter(Boolean);
+  if(nested.length) return nested.length===1?nested[0]:{type:"row",children:nested};
+  const text=String(node.textContent||"");
+  return text?{type:"token",text}:null;
+}
+function serializeMathNode(node) {
+  let xml=new XMLSerializer().serializeToString(node);
+  if (/^<m:oMath(?:Para)?\b/.test(xml) && !/\bxmlns:m=/.test(xml)) {
+    xml=xml.replace(/^<(m:oMath(?:Para)?)(\b)/, \`<$1 xmlns:m="\${M}"$2\`);
+  }
+  return xml;
+}
+
 function imageFromNode(node, relationships, parts) {
   const blip = allDescendants(node, "blip")[0] || allDescendants(node, "imagedata")[0];
   const relationshipId = attribute(blip, R, "embed") || attribute(blip, R, "id");
@@ -167,7 +287,14 @@ function parseParagraph(paragraph, relationships, parts, numbering=new Map(), st
       } else if(local(child)==="hyperlink") {
         const id=attribute(child,R,"id"),rel=relationships.get(id);
         walk(child,rel?.target||"");
-      } else if(["fldSimple","smartTag","sdt","sdtContent","ins"].includes(local(child))) walk(child,hyperlink);
+      } else if(["oMath","oMathPara"].includes(local(child))) {
+        runs.push({
+          text:"",
+          math:parseMathAst(child),
+          mathXml:serializeMathNode(child),
+          mathDisplay:local(child)==="oMathPara"
+        });
+      } else if(["fldSimple","smartTag","sdt","sdtContent","ins","del"].includes(local(child))) walk(child,hyperlink);
     }
   };
   walk(paragraph);
@@ -252,6 +379,7 @@ export function parseDocx(bytes) {
 }
 
 function runXml(run, drawingIds) {
+  if(run.mathXml) return run.mathXml;
   const family=esc(run.fontFamily || ""), halfPoints=Math.max(2,Math.round(Number(run.fontSize)*2));
   const color=ooxmlColor(run.color),highlight=ooxmlColor(run.highlight),props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${run.strike?"<w:strike/>":""}${color?`<w:color w:val="${color}"/>`:""}${highlight?`<w:shd w:val="clear" w:color="auto" w:fill="${highlight}"/>`:""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
   const pieces = String(run.text ?? "").split(/([\t\n])/).map(part => part==="\t"?"<w:tab/>":part==="\n"?"<w:br/>":`<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
@@ -356,7 +484,7 @@ export function serializeDocx(model) {
       }
       return blockXml(block,drawingIds);
     }).join("");
-    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${bodyXml}${section}</w:body></w:document>`);
+    parts["word/document.xml"] = strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}" xmlns:m="${M}"><w:body>${bodyXml}${section}</w:body></w:document>`);
   }
   return new Blob([zipSync(parts, { level: 6 })], { type: CONTENT_TYPE });
 }
