@@ -119,6 +119,17 @@ for path in files:
         if pattern.search(text):
             raise SystemExit(f"Release gate failed: {name} found in {path.relative_to(root)}")
 
+# DOCX is part of the primary open-file path. Reject the exact escaped-template
+# corruption that can leave the extension shell visible while preventing
+# workspace.js and DOCX ingestion from loading at runtime.
+docx_module = (root / "src/documents/docx-document.js").read_text(encoding="utf-8")
+for malformed in (r"\`", r"\${"):
+    if malformed in docx_module:
+        raise SystemExit(
+            "Release gate failed: malformed escaped JavaScript template syntax "
+            f"{malformed!r} found in src/documents/docx-document.js"
+        )
+
 dist.mkdir(parents=True, exist_ok=True)
 output = dist / f"flashframe-chrome-web-store-v{version}.zip"
 if output.exists():
