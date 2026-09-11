@@ -755,7 +755,25 @@ registerBlockType("pdf", {
 
 function docxBlocksFromEditor(editor) {
   const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
-  const paragraph = (node, list="") => ({ type: "paragraph", style: /^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : "", list, level: Math.max(0,Number(node.dataset.listLevel)||0), alignment: node.style.textAlign || "left", lineSpacing: Number(node.style.lineHeight)||null, spaceBefore: parseFloat(node.style.marginTop)||0, spaceAfter: parseFloat(node.style.marginBottom)||0, indentLeft: parseFloat(node.style.marginLeft)||0, indentRight: parseFloat(node.style.marginRight)||0, firstLine: parseFloat(node.style.textIndent)||0, pageBreak: node.dataset.pageBreak==="true", runs: editorNodeToRuns(node, imageRun) });
+  const paragraph = (node, list="") => ({
+    type: "paragraph",
+    style: node.dataset.docxStyle || (/^H[1-6]$/.test(node.tagName) ? `Heading${node.tagName.slice(1)}` : ""),
+    list: node.dataset.docxList || list,
+    numId: node.dataset.docxNumId ? Number(node.dataset.docxNumId) : null,
+    level: Math.max(0, Number(node.dataset.docxListLevel) || 0),
+    numberFormat: node.dataset.docxNumberFormat || "",
+    numberText: node.dataset.docxNumberText || "",
+    numberStart: Math.max(1, Number(node.dataset.docxNumberStart) || 1),
+    alignment: node.style.textAlign || "left",
+    lineSpacing: Number(node.style.lineHeight)||null,
+    spaceBefore: parseFloat(node.style.marginTop)||0,
+    spaceAfter: parseFloat(node.style.marginBottom)||0,
+    indentLeft: parseFloat(node.style.marginLeft)||0,
+    indentRight: parseFloat(node.style.marginRight)||0,
+    firstLine: parseFloat(node.style.textIndent)||0,
+    pageBreak: node.dataset.pageBreak==="true",
+    runs: editorNodeToRuns(node, imageRun)
+  });
   const blocks = [];
   for (const node of editor.children) {
     if (node.tagName === "TABLE") blocks.push({ type: "table", rows: [...node.rows].map((row) => [...row.cells].map((cell) => [...cell.children].map(paragraph))) });
@@ -766,29 +784,164 @@ function docxBlocksFromEditor(editor) {
 }
 
 function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.model) {
-  const editor = block.querySelector(".docx-editor"); editor.replaceChildren();
+  const editor = block.querySelector(".docx-editor");
+  editor.replaceChildren();
+
+  const layout=model?.pageLayout;
+  if(layout) {
+    editor.style.width=`${layout.widthIn}in`;
+    editor.style.maxWidth="calc(100% - 28px)";
+    editor.style.minHeight=`${layout.heightIn}in`;
+    editor.style.padding=`${layout.marginTopIn}in ${layout.marginRightIn}in ${layout.marginBottomIn}in ${layout.marginLeftIn}in`;
+    editor.dataset.docxPageWidth=String(layout.widthIn);
+    editor.dataset.docxPageHeight=String(layout.heightIn);
+  }
+
   const urls = [];
-  const addParagraph = (p, parent = editor) => {
+  const counters=new Map();
+
+  const roman=(value,upper=true)=>{
+    const map=[[1000,"m"],[900,"cm"],[500,"d"],[400,"cd"],[100,"c"],[90,"xc"],[50,"l"],[40,"xl"],[10,"x"],[9,"ix"],[5,"v"],[4,"iv"],[1,"i"]];
+    let n=Math.max(1,Math.floor(value)),out="";
+    for(const [amount,glyph] of map)while(n>=amount){out+=glyph;n-=amount;}
+    return upper?out.toUpperCase():out;
+  };
+  const alpha=(value,upper=true)=>{
+    let n=Math.max(1,Math.floor(value)),out="";
+    while(n){n-=1;out=String.fromCharCode(97+n%26)+out;n=Math.floor(n/26);}
+    return upper?out.toUpperCase():out;
+  };
+  const formatNumber=(value,format)=>{
+    switch(String(format||"decimal").toLowerCase()){
+      case "decimalzero": return String(value).padStart(4,"0");
+      case "upperroman": return roman(value,true);
+      case "lowerroman": return roman(value,false);
+      case "upperletter": return alpha(value,true);
+      case "lowerletter": return alpha(value,false);
+      default: return String(value);
+    }
+  };
+  const markerFor=(p)=>{
+    if(!p.list) return "";
+    if(p.list==="bullet") return p.numberText && !/%\d+/.test(p.numberText) ? p.numberText : "•";
+    const key=`${p.numId ?? "list"}:${p.level ?? 0}`;
+    const current=(counters.get(key) ?? ((Number(p.numberStart)||1)-1))+1;
+    counters.set(key,current);
+    const token=formatNumber(current,p.numberFormat);
+    return String(p.numberText||"%1.").replace(/%1/g,token);
+  };
+
+  const addParagraph = (p, parent = editor, { listItem = false } = {}) => {
     const heading = /^Heading([1-6])$/i.exec(p.style || "");
-    const tag = heading ? `h${heading[1]}` : "p";
-    const element = document.createElement(tag); element.style.textAlign = p.alignment || "left";if(p.lineSpacing)element.style.lineHeight=String(p.lineSpacing);if(p.spaceBefore)element.style.marginTop=`${p.spaceBefore}pt`;if(p.spaceAfter!=null)element.style.marginBottom=`${p.spaceAfter}pt`;if(p.indentLeft)element.style.marginLeft=`${p.indentLeft}in`;if(p.indentRight)element.style.marginRight=`${p.indentRight}in`;if(p.firstLine)element.style.textIndent=`${p.firstLine}in`;if(p.pageBreak)element.dataset.pageBreak="true";
+    const tag = listItem ? "li" : (heading ? `h${heading[1]}` : "p");
+    const element = document.createElement(tag);
+
+    if(p.style) element.dataset.docxStyle=p.style;
+    if(p.list) element.dataset.docxList=p.list;
+    if(p.numId!=null) element.dataset.docxNumId=String(p.numId);
+    if(p.level!=null) element.dataset.docxListLevel=String(p.level);
+    if(p.numberFormat) element.dataset.docxNumberFormat=p.numberFormat;
+    if(p.numberText) element.dataset.docxNumberText=p.numberText;
+    if(p.numberStart) element.dataset.docxNumberStart=String(p.numberStart);
+
+    element.style.textAlign = p.alignment || "left";
+    if(p.lineSpacing) element.style.lineHeight=String(p.lineSpacing);
+    if(p.spaceBefore) element.style.marginTop=`${p.spaceBefore}pt`;
+    if(p.spaceAfter!=null) element.style.marginBottom=`${p.spaceAfter}pt`;
+    if(p.indentLeft) element.style.marginLeft=`${p.indentLeft}in`;
+    if(p.indentRight) element.style.marginRight=`${p.indentRight}in`;
+    if(p.firstLine) element.style.textIndent=`${p.firstLine}in`;
+    if(p.pageBreak) element.dataset.pageBreak="true";
+
+    if(listItem) {
+      element.dataset.docxNumberLabel=markerFor(p);
+      element.classList.add("docx-list-item");
+    }
+
     for (const run of p.runs || []) {
-      if (run.text) { const span = run.hyperlink ? document.createElement("a") : document.createElement("span"); span.textContent = run.text;if(run.hyperlink)span.href=run.hyperlink; span.style.fontWeight=run.bold?"bold":"";span.style.fontStyle=run.italic?"italic":"";span.style.textDecoration=[run.underline&&"underline",run.strike&&"line-through"].filter(Boolean).join(" ");if(run.color)span.style.color=run.color.startsWith("#")?run.color:`#${run.color}`;if(run.highlight)span.style.backgroundColor=run.highlight.startsWith("#")?run.highlight:`#${run.highlight}`;if(run.fontFamily)span.style.fontFamily=run.fontFamily;if(run.fontSize)span.style.fontSize=`${run.fontSize}pt`;element.append(span); }
+      if (run.text) {
+        const span = run.hyperlink ? document.createElement("a") : document.createElement("span");
+        span.textContent = run.text;
+        if(run.hyperlink) span.href=run.hyperlink;
+        span.style.fontWeight=run.bold?"bold":"";
+        span.style.fontStyle=run.italic?"italic":"";
+        span.style.textDecoration=[run.underline&&"underline",run.strike&&"line-through"].filter(Boolean).join(" ");
+        if(run.color) span.style.color=run.color;
+        if(run.highlight) span.style.backgroundColor=run.highlight;
+        if(run.fontFamily) span.style.fontFamily=run.fontFamily;
+        if(run.fontSize) span.style.fontSize=`${run.fontSize}pt`;
+        element.append(span);
+      }
+
       for (const image of run.images || []) {
-        if (image.unsupported || !model?.parts?.[image.part]) { const placeholder=document.createElement("span");placeholder.className="docx-image-unavailable";placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;placeholder.contentEditable="false";element.append(placeholder);continue; }
-        const img=document.createElement("img"),url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));urls.push(url);
-        img.src=url;img.alt="Embedded document image";img.draggable=true;img.dataset.docxRelationship=image.relationshipId;img.dataset.docxPart=image.part;img.dataset.docxMime=image.mime;img.dataset.docxWidth=String(image.width||"");img.dataset.docxHeight=String(image.height||"");img.contentEditable="false";
-        if(image.width)img.style.width=`${image.width}px`;if(image.height)img.style.height=`${image.height}px`;img.style.maxWidth="100%";img.style.objectFit="contain";element.append(img);
+        if (image.unsupported || !model?.parts?.[image.part]) {
+          const placeholder=document.createElement("span");
+          placeholder.className="docx-image-unavailable";
+          placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;
+          placeholder.contentEditable="false";
+          element.append(placeholder);
+          continue;
+        }
+
+        const img=document.createElement("img");
+        const url=URL.createObjectURL(new Blob([model.parts[image.part]],{type:image.mime}));
+        urls.push(url);
+        img.src=url;
+        img.alt="Embedded document image";
+        img.draggable=true;
+        img.dataset.docxRelationship=image.relationshipId;
+        img.dataset.docxPart=image.part;
+        img.dataset.docxMime=image.mime;
+        img.dataset.docxWidth=String(image.width||"");
+        img.dataset.docxHeight=String(image.height||"");
+        img.contentEditable="false";
+        if(image.width) img.style.width=`${image.width}px`;
+        if(image.height) img.style.height=`${image.height}px`;
+        img.style.maxWidth="100%";
+        img.style.objectFit="contain";
+        element.append(img);
       }
     }
-    parent.append(element); return element;
+
+    parent.append(element);
+    return element;
   };
+
   let activeList=null;
+  let activeListKey="";
   for (const item of blocks || []) {
-    if (item.type === "table") { const table = document.createElement("table"); for (const row of item.rows) { const tr = table.insertRow(); for (const cell of row) { const td = tr.insertCell(); for (const p of cell) addParagraph(p, td); } } editor.append(table); }
-    else if(item.list){const tag=item.list==="number"?"OL":"UL";if(!activeList||activeList.tagName!==tag){activeList=document.createElement(tag);editor.append(activeList);}const li=addParagraph(item,activeList);if(li.tagName!=="LI"){const replacement=document.createElement("li");replacement.replaceChildren(...li.childNodes);li.replaceWith(replacement);}}
-    else {activeList=null;addParagraph(item);}
+    if (item.type === "table") {
+      activeList=null; activeListKey="";
+      const table = document.createElement("table");
+      for (const row of item.rows) {
+        const tr = table.insertRow();
+        for (const cell of row) {
+          const td = tr.insertCell();
+          for (const p of cell) addParagraph(p, td);
+        }
+      }
+      editor.append(table);
+      continue;
+    }
+
+    if(item.list) {
+      const tag=item.list==="number"?"OL":"UL";
+      const key=`${tag}:${item.numId ?? ""}:${item.level ?? 0}`;
+      if(!activeList||activeList.tagName!==tag||activeListKey!==key){
+        activeList=document.createElement(tag);
+        activeList.className="docx-imported-list";
+        activeListKey=key;
+        editor.append(activeList);
+      }
+      addParagraph(item,activeList,{listItem:true});
+      continue;
+    }
+
+    activeList=null;
+    activeListKey="";
+    addParagraph(item);
   }
+
   return urls;
 }
 
@@ -798,7 +951,13 @@ async function loadDocxHandle(block, handle, state = {}) {
   if (Array.isArray(state.blocks)) model.blocks = structuredClone(state.blocks);
   const runtime = { handle, model, objectUrls: [] }; runtimeSources.set(block, runtime);
   runtime.objectUrls = renderDocxEditor(block, model.blocks, model);
-  if(state.pageSetup)block.querySelector(".docx-editor").dataset.pageSetup=state.pageSetup;
+  if(state.pageSetup){
+    const editor=block.querySelector(".docx-editor");
+    editor.dataset.pageSetup=state.pageSetup;
+    const [,orientation="portrait",top=1,right=1,bottom=1,left=1]=state.pageSetup.split(",");
+    editor.style.padding=`${top}in ${right}in ${bottom}in ${left}in`;
+    if(orientation==="landscape"&&model.pageLayout){editor.style.width=`${model.pageLayout.heightIn}in`;editor.style.minHeight=`${model.pageLayout.widthIn}in`;}
+  }
   runtime.serialize = () => { const editor=block.querySelector(".docx-editor");model.blocks = docxBlocksFromEditor(editor);model.pageSetup=editor.dataset.pageSetup||"";return serializeDocx(model); };
   clearSourceUnavailable(block); setDocumentDirty(block, Boolean(state.dirty));
   requestAnimationFrame(() => { block.querySelector(".docx-editor").scrollTop = Number(state.scrollTop) || 0; });
