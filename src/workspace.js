@@ -91,6 +91,8 @@ function clampInteger(value, min = 1) {
 }
 function bytesToBase64(bytes) { let result="";for(let at=0;at<bytes.length;at+=0x8000)result+=String.fromCharCode(...bytes.subarray(at,at+0x8000));return btoa(result); }
 function base64ToBytes(value) { const binary=atob(value||""),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes; }
+function textToBase64(value) { return bytesToBase64(new TextEncoder().encode(String(value ?? ""))); }
+function base64ToText(value) { return new TextDecoder().decode(base64ToBytes(value || "")); }
 
 function formatTime(seconds) {
   const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
@@ -754,7 +756,22 @@ registerBlockType("pdf", {
 });
 
 function docxBlocksFromEditor(editor) {
-  const imageRun = (node) => node.matches?.("img[data-docx-relationship]") ? ({ kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height }) : null;
+  const imageRun = (node) => {
+    if (node.matches?.("img[data-docx-relationship]")) {
+      return { kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height };
+    }
+    if (node.matches?.(".docx-math[data-docx-math-xml]")) {
+      let math=null;
+      try { math=node.dataset.docxMathAst ? JSON.parse(base64ToText(node.dataset.docxMathAst)) : null; } catch { math=null; }
+      return {
+        kind:"math",
+        mathXml:base64ToText(node.dataset.docxMathXml),
+        math,
+        mathDisplay:node.dataset.docxMathDisplay==="true"
+      };
+    }
+    return null;
+  };
   const paragraph = (node, list="") => ({
     type: "paragraph",
     sourceIndex: node.dataset.docxSourceIndex ? Number(node.dataset.docxSourceIndex) : null,
@@ -790,6 +807,130 @@ function docxBlocksFromEditor(editor) {
     else blocks.push(paragraph(node));
   }
   return blocks;
+}
+
+const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
+
+function mathMlElement(name, ...children) {
+  const node=document.createElementNS(MATHML_NS,name);
+  for(const child of children.flat()) if(child) node.append(child);
+  return node;
+}
+
+function mathMlToken(text) {
+  const value=String(text ?? "");
+  const trimmed=value.trim();
+  const operator=/^(?:[+\-−=×÷·⋅±∓<>≤≥≈≠∑∏∫∮√∞∂∇∈∉∋∩∪∧∨¬→←↔⇒⇐⇔,:;|()\[\]{}])$/u.test(trimmed);
+  const numeric=/^[0-9]+(?:[.,][0-9]+)?$/.test(trimmed);
+  const tag=operator?"mo":numeric?"mn":"mi";
+  const node=mathMlElement(tag);
+  node.textContent=value;
+  if(tag==="mi" && value.length>1) node.setAttribute("mathvariant","normal");
+  return node;
+}
+
+function mathAstEmpty(ast) {
+  if(!ast) return true;
+  if(ast.type==="token") return !ast.text;
+  if(ast.type==="row") return !(ast.children||[]).some(child=>!mathAstEmpty(child));
+  return false;
+}
+
+function renderMathAst(ast) {
+  if(!ast) return mathMlElement("mrow");
+  switch(ast.type) {
+    case "token": return mathMlToken(ast.text);
+    case "row": return mathMlElement("mrow",(ast.children||[]).map(renderMathAst));
+    case "frac": {
+      const node=mathMlElement("mfrac",renderMathAst(ast.numerator),renderMathAst(ast.denominator));
+      if(ast.bar===false) node.setAttribute("linethickness","0");
+      return node;
+    }
+    case "sup": return mathMlElement("msup",renderMathAst(ast.base),renderMathAst(ast.sup));
+    case "sub": return mathMlElement("msub",renderMathAst(ast.base),renderMathAst(ast.sub));
+    case "subsup": return mathMlElement("msubsup",renderMathAst(ast.base),renderMathAst(ast.sub),renderMathAst(ast.sup));
+    case "rad":
+      return ast.degree && !mathAstEmpty(ast.degree)
+        ? mathMlElement("mroot",renderMathAst(ast.body),renderMathAst(ast.degree))
+        : mathMlElement("msqrt",renderMathAst(ast.body));
+    case "nary": {
+      const op=mathMlToken(ast.operator||"∑");
+      let scripted=op;
+      const hasSub=ast.sub&&!mathAstEmpty(ast.sub),hasSup=ast.sup&&!mathAstEmpty(ast.sup);
+      if(hasSub&&hasSup) scripted=mathMlElement("munderover",op,renderMathAst(ast.sub),renderMathAst(ast.sup));
+      else if(hasSub) scripted=mathMlElement("munder",op,renderMathAst(ast.sub));
+      else if(hasSup) scripted=mathMlElement("mover",op,renderMathAst(ast.sup));
+      return mathMlElement("mrow",scripted,renderMathAst(ast.body));
+    }
+    case "delim": {
+      const row=mathMlElement("mrow");
+      if(ast.begin) row.append(mathMlToken(ast.begin));
+      (ast.items||[]).forEach((item,index)=>{
+        if(index&&ast.separator) row.append(mathMlToken(ast.separator));
+        row.append(renderMathAst(item));
+      });
+      if(ast.end) row.append(mathMlToken(ast.end));
+      return row;
+    }
+    case "func": return mathMlElement("mrow",renderMathAst(ast.name),renderMathAst(ast.body));
+    case "accent": {
+      const mark=mathMlToken(ast.accent||"ˆ");
+      mark.setAttribute("accent","true");
+      return mathMlElement("mover",renderMathAst(ast.body),mark);
+    }
+    case "bar": {
+      const mark=mathMlToken(ast.position==="bot"?"_":"¯");
+      mark.setAttribute("accent","true");
+      return ast.position==="bot"
+        ? mathMlElement("munder",renderMathAst(ast.body),mark)
+        : mathMlElement("mover",renderMathAst(ast.body),mark);
+    }
+    case "group": {
+      const mark=mathMlToken(ast.character||"⏞");
+      return ast.position==="bot"
+        ? mathMlElement("munder",renderMathAst(ast.body),mark)
+        : mathMlElement("mover",renderMathAst(ast.body),mark);
+    }
+    case "limlow": return mathMlElement("munder",renderMathAst(ast.base),renderMathAst(ast.limit));
+    case "limupp": return mathMlElement("mover",renderMathAst(ast.base),renderMathAst(ast.limit));
+    case "eqarr": {
+      const table=mathMlElement("mtable");
+      for(const rowAst of ast.rows||[]) table.append(mathMlElement("mtr",mathMlElement("mtd",renderMathAst(rowAst))));
+      return table;
+    }
+    case "matrix": {
+      const table=mathMlElement("mtable");
+      for(const row of ast.rows||[]) {
+        table.append(mathMlElement("mtr",(row||[]).map(cell=>mathMlElement("mtd",renderMathAst(cell)))));
+      }
+      return table;
+    }
+    case "box": {
+      const enclosure=mathMlElement("menclose",renderMathAst(ast.body));
+      enclosure.setAttribute("notation","box");
+      return enclosure;
+    }
+    case "phantom": return mathMlElement("mphantom",renderMathAst(ast.body));
+    default: return mathMlElement("mrow");
+  }
+}
+
+function renderDocxMath(run) {
+  const wrapper=document.createElement("span");
+  wrapper.className="docx-math";
+  if(run.mathDisplay) wrapper.classList.add("docx-math-display");
+  wrapper.contentEditable="false";
+  wrapper.draggable=false;
+  wrapper.title="DOCX equation preserved as Office Math";
+  wrapper.dataset.docxMathXml=textToBase64(run.mathXml||"");
+  wrapper.dataset.docxMathAst=textToBase64(JSON.stringify(run.math||null));
+  wrapper.dataset.docxMathDisplay=String(Boolean(run.mathDisplay));
+
+  const math=mathMlElement("math",renderMathAst(run.math));
+  math.setAttribute("display",run.mathDisplay?"block":"inline");
+  math.setAttribute("aria-label","Equation");
+  wrapper.append(math);
+  return wrapper;
 }
 
 function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.model) {
@@ -869,6 +1010,10 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     }
 
     for (const run of p.runs || []) {
+      if (run.mathXml || run.math) {
+        element.append(renderDocxMath(run));
+      }
+
       if (run.text) {
         const span = run.hyperlink ? document.createElement("a") : document.createElement("span");
         span.textContent = run.text;
