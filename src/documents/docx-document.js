@@ -133,7 +133,7 @@ function parsePageLayout(body) {
 function mathAttr(node, name = "val") {
   if (!node) return "";
   for (const attr of [...(node.attributes || [])]) {
-    if (attr.localName === name || attr.name === name || attr.name.endsWith(\`:\${name}\`)) return attr.value || "";
+    if (attr.localName === name || attr.name === name || attr.name.endsWith(`:${name}`)) return attr.value || "";
   }
   return "";
 }
@@ -244,7 +244,7 @@ function parseMathAst(node) {
 function serializeMathNode(node) {
   let xml=new XMLSerializer().serializeToString(node);
   if (/^<m:oMath(?:Para)?\b/.test(xml) && !/\bxmlns:m=/.test(xml)) {
-    xml=xml.replace(/^<(m:oMath(?:Para)?)(\b)/, \`<$1 xmlns:m="\${M}"$2\`);
+    xml=xml.replace(/^<(m:oMath(?:Para)?)(\b)/, `<$1 xmlns:m="${M}"$2`);
   }
   return xml;
 }
