@@ -1315,17 +1315,32 @@ restoreFrameButton.addEventListener("click", async () => {
   }
 });
 
+let persistenceReady = true;
+
 try {
   await refreshSnapshotList();
+} catch (error) {
+  persistenceReady = false;
+  console.error("FrameChute local persistence could not initialize:", error);
+  savedFramesSelect.replaceChildren(new Option("Local saves unavailable", ""));
+  savedFramesSelect.disabled = true;
+  restoreFrameButton.disabled = true;
+}
+
+try {
   await createBlock({
     type: "text",
     name: "Welcome",
     state: {
-      text: "Flashframe is running as a Chrome/Chromium extension.\n\nOpen local text, PDFs, image folders, or video. Arrange the blocks, leave each item where it is useful, then save a Flashframe."
+      text: "FrameChute is running as a Chrome/Chromium extension.\n\nOpen local text, PDFs, image folders, or video. Arrange the blocks, leave each item where it is useful, then save a FrameChute."
     }
   });
-  setStatus("Ready. Your workspace data stays local in this extension.");
 } catch (error) {
-  console.error(error);
-  setStatus("Flashframe opened, but local persistence could not initialize.");
+  console.error("FrameChute workspace initialization failed:", error);
 }
+
+setStatus(
+  persistenceReady
+    ? "Ready. Your workspace data stays local in this extension."
+    : "Ready. Local workspace saves are unavailable in this browser session, but FrameChute can still open and edit files."
+);
