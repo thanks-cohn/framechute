@@ -657,6 +657,22 @@ body.hide-block-headers .compact-drag-handle {
 .docx-editor { flex: 1; overflow: auto; width: min(816px, 100%); min-height: 0; box-sizing: border-box; margin: 14px auto; padding: 72px 72px; background: white; color: #171717; font: 12pt/1.15 Arial, sans-serif; outline: none; box-shadow: 0 2px 12px #0003; caret-color: #111; }
 .docx-editor:focus { box-shadow: 0 2px 12px #0003, 0 0 0 2px #4385e7; }
 .docx-editor p, .docx-editor li { margin-block: 0 8pt; min-height: 1em; }
+.docx-editor .docx-imported-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.docx-editor .docx-list-item {
+  list-style: none;
+}
+.docx-editor .docx-list-item::before {
+  content: attr(data-docx-number-label);
+  display: inline-block;
+  min-width: 2.4em;
+  margin-right: .55em;
+  text-align: right;
+  white-space: pre;
+}
 .docx-editor [data-page-break="true"] { display: block; height: 0; margin: 28px 0; border-top: 2px dashed #a6a6a6; break-after: page; }
 .docx-editor h1, .docx-editor h2, .docx-editor h3 { line-height: 1.2; }
 .docx-editor table { border-collapse: collapse; width: 100%; }
