@@ -18,6 +18,116 @@ const allDescendants = (node, name) => [...(node?.getElementsByTagName?.("*") ||
 const attribute = (node, namespace, plain) => node?.getAttributeNS?.(namespace, plain) || node?.getAttribute?.(`r:${plain}`) || node?.getAttribute?.(plain) || "";
 const imageMime = (path) => ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml" })[path.split(".").pop().toLowerCase()] || "application/octet-stream";
 const normalizePart = (target) => `word/${String(target).replace(/^\//, "").replace(/^word\//, "")}`.replace(/\/\.\//g, "/");
+const wVal = (node, name = "val") => node?.getAttributeNS?.(W, name) ?? node?.getAttribute?.(`w:${name}`) ?? node?.getAttribute?.(name) ?? "";
+const offValue = (value) => ["0", "false", "none", "off"].includes(String(value ?? "").toLowerCase());
+const mergeDefined = (...items) => Object.assign({}, ...items.filter(Boolean));
+const WORD_HIGHLIGHTS = Object.freeze({
+  black:"#000000", blue:"#0000ff", cyan:"#00ffff", green:"#00ff00", magenta:"#ff00ff",
+  red:"#ff0000", yellow:"#ffff00", white:"#ffffff", darkBlue:"#000080", darkCyan:"#008080",
+  darkGreen:"#008000", darkMagenta:"#800080", darkRed:"#800000", darkYellow:"#808000",
+  darkGray:"#808080", lightGray:"#c0c0c0"
+});
+function cssWordColor(value, highlight = false) {
+  const raw=String(value||"").trim();
+  if(!raw || /^(?:auto|none|nil)$/i.test(raw)) return "";
+  if(/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+  if(/^[0-9a-f]{6}$/i.test(raw)) return `#${raw}`;
+  if(highlight && WORD_HIGHLIGHTS[raw]) return WORD_HIGHLIGHTS[raw];
+  return raw;
+}
+function parseRunProps(props) {
+  if(!props) return {};
+  const out={};
+  for(const [xml,key] of [["b","bold"],["i","italic"],["strike","strike"]]) {
+    const node=descendant(props,xml)[0]; if(node) out[key]=!offValue(wVal(node));
+  }
+  const underline=descendant(props,"u")[0]; if(underline) out.underline=!offValue(wVal(underline));
+  const fonts=descendant(props,"rFonts")[0];
+  if(fonts) {
+    const family=wVal(fonts,"ascii")||wVal(fonts,"hAnsi")||wVal(fonts,"cs")||wVal(fonts,"eastAsia");
+    if(family) out.fontFamily=family;
+  }
+  const size=Number(wVal(descendant(props,"sz")[0])||wVal(descendant(props,"szCs")[0]));
+  if(Number.isFinite(size)&&size>0) out.fontSize=size/2;
+  const color=descendant(props,"color")[0]; if(color) out.color=cssWordColor(wVal(color));
+  const shading=descendant(props,"shd")[0], highlight=descendant(props,"highlight")[0];
+  if(shading && wVal(shading,"fill")) out.highlight=cssWordColor(wVal(shading,"fill"),true);
+  else if(highlight) out.highlight=cssWordColor(wVal(highlight),true);
+  return out;
+}
+function parseParagraphProps(pPr) {
+  if(!pPr) return {};
+  const out={};
+  const jc=descendant(pPr,"jc")[0]; if(jc) out.alignment=wVal(jc)||"left";
+  const spacing=descendant(pPr,"spacing")[0];
+  if(spacing) {
+    const line=Number(wVal(spacing,"line")),before=Number(wVal(spacing,"before")),after=Number(wVal(spacing,"after"));
+    if(Number.isFinite(line)&&line>0) out.lineSpacing=line/240;
+    if(Number.isFinite(before)) out.spaceBefore=before/20;
+    if(Number.isFinite(after)) out.spaceAfter=after/20;
+  }
+  const indent=descendant(pPr,"ind")[0];
+  if(indent) {
+    const left=Number(wVal(indent,"left")||wVal(indent,"start")),right=Number(wVal(indent,"right")||wVal(indent,"end"));
+    const first=Number(wVal(indent,"firstLine")),hanging=Number(wVal(indent,"hanging"));
+    if(Number.isFinite(left)) out.indentLeft=left/1440;
+    if(Number.isFinite(right)) out.indentRight=right/1440;
+    if(Number.isFinite(first)||Number.isFinite(hanging)) out.firstLine=((Number.isFinite(first)?first:0)-(Number.isFinite(hanging)?hanging:0))/1440;
+  }
+  if(descendant(pPr,"pageBreakBefore")[0]) out.pageBreak=true;
+  return out;
+}
+function parseStyles(parts) {
+  const source=parts["word/styles.xml"];
+  const styles=new Map();
+  let defaults={ p:{}, r:{} };
+  if(!source) return { styles, defaults, resolve:()=>({p:{},r:{}}) };
+  try {
+    const doc=new DOMParser().parseFromString(strFromU8(source),"application/xml");
+    const docDefaults=allDescendants(doc,"docDefaults")[0];
+    defaults={
+      p:parseParagraphProps(allDescendants(docDefaults,"pPr")[0]),
+      r:parseRunProps(allDescendants(docDefaults,"rPr")[0])
+    };
+    for(const style of allDescendants(doc,"style")) {
+      const id=wVal(style,"styleId")||style.getAttribute("styleId")||style.getAttribute("w:styleId");
+      if(!id) continue;
+      styles.set(id,{
+        id,
+        type:wVal(style,"type")||style.getAttribute("type")||style.getAttribute("w:type")||"",
+        basedOn:wVal(children(style,"basedOn")[0]),
+        p:parseParagraphProps(children(style,"pPr")[0]),
+        r:parseRunProps(children(style,"rPr")[0])
+      });
+    }
+  } catch(error) { console.warn("FrameChute could not parse DOCX styles.xml:",error); }
+  const cache=new Map();
+  const resolve=(id,seen=new Set())=>{
+    if(!id) return {p:{...defaults.p},r:{...defaults.r}};
+    if(cache.has(id)) return cache.get(id);
+    if(seen.has(id)) return {p:{...defaults.p},r:{...defaults.r}};
+    seen.add(id);
+    const own=styles.get(id);
+    const base=own?.basedOn ? resolve(own.basedOn,seen) : {p:{...defaults.p},r:{...defaults.r}};
+    const resolved={p:mergeDefined(base.p,own?.p),r:mergeDefined(base.r,own?.r)};
+    cache.set(id,resolved); return resolved;
+  };
+  return { styles, defaults, resolve };
+}
+function parsePageLayout(body) {
+  const sect=[...body.children].reverse().find(node=>local(node)==="sectPr") || descendant(body,"sectPr").at(-1);
+  if(!sect) return null;
+  const size=descendant(sect,"pgSz")[0], margins=descendant(sect,"pgMar")[0];
+  const width=Number(wVal(size,"w")),height=Number(wVal(size,"h"));
+  const twips=(name,fallback)=>{const n=Number(wVal(margins,name));return Number.isFinite(n)?n/1440:fallback;};
+  return {
+    widthIn:Number.isFinite(width)&&width>0?width/1440:8.5,
+    heightIn:Number.isFinite(height)&&height>0?height/1440:11,
+    marginTopIn:twips("top",1), marginRightIn:twips("right",1),
+    marginBottomIn:twips("bottom",1), marginLeftIn:twips("left",1),
+    orientation:wVal(size,"orient")||"portrait"
+  };
+}
 
 function imageFromNode(node, relationships, parts) {
   const blip = allDescendants(node, "blip")[0] || allDescendants(node, "imagedata")[0];
@@ -29,39 +139,47 @@ function imageFromNode(node, relationships, parts) {
   return { kind: "image", relationshipId, part, mime: imageMime(part), width: widthEmu ? widthEmu / 9525 : null, height: heightEmu ? heightEmu / 9525 : null, unsupported: !parts[part] };
 }
 
-function parseRun(run, relationships, parts) {
-  const props = children(run, "rPr")[0];
-  const text = [...run.childNodes].map((node) => {
-    if (local(node) === "t") return node.textContent || "";
-    if (local(node) === "tab") return "\t";
-    if (local(node) === "br") return "\n";
-    return "";
-  }).join("");
-  const images = [...run.children].filter((node) => ["drawing", "pict"].includes(local(node))).map((node) => imageFromNode(node, relationships, parts));
-  const enabled = (name) => {
-    const property = descendant(props, name)[0];
-    const value = property?.getAttributeNS?.(W, "val") || property?.getAttribute?.("w:val") || property?.getAttribute?.("val");
-    return Boolean(property) && !["0", "false", "none", "off"].includes(String(value || "").toLowerCase());
-  };
-  const fonts = descendant(props, "rFonts")[0], size = Number(descendant(props, "sz")[0]?.getAttributeNS(W, "val") || 0) / 2;
-  const color=descendant(props,"color")[0],highlight=descendant(props,"shd")[0]||descendant(props,"highlight")[0];
-  return { text, images, bold: enabled("b"), italic: enabled("i"), underline: enabled("u"), strike: enabled("strike"), color:color?.getAttributeNS(W,"val")||color?.getAttribute("w:val")||"", highlight:highlight?.getAttributeNS(W,"fill")||highlight?.getAttribute("w:fill")||highlight?.getAttributeNS(W,"val")||highlight?.getAttribute("w:val")||"", fontFamily: fonts?.getAttributeNS(W, "ascii") || fonts?.getAttribute("w:ascii") || "", fontSize: size || null };
+function parseRun(run, relationships, parts, inherited = {}, styles = null) {
+  const props=children(run,"rPr")[0];
+  const charStyle=wVal(descendant(props,"rStyle")[0]);
+  const styled=charStyle&&styles ? styles.resolve(charStyle).r : {};
+  const format=mergeDefined(inherited,styled,parseRunProps(props));
+  const text=[...run.childNodes].map(node=>local(node)==="t"?(node.textContent||""):local(node)==="tab"?"\t":local(node)==="br"?"\n":"").join("");
+  const images=[...run.children].filter(node=>["drawing","pict"].includes(local(node))).map(node=>imageFromNode(node,relationships,parts));
+  return { text, images, bold:false, italic:false, underline:false, strike:false, color:"", highlight:"", fontFamily:"", fontSize:null, ...format };
 }
 
-function parseParagraph(paragraph, relationships, parts, numbering=new Map()) {
-  const pPr = children(paragraph, "pPr")[0];
-  const style = descendant(pPr, "pStyle")[0]?.getAttributeNS(W, "val") || descendant(pPr, "pStyle")[0]?.getAttribute("w:val") || "";
-  const numPr = descendant(pPr, "numPr")[0], num = Boolean(numPr);
-  const numId = Number(descendant(numPr, "numId")[0]?.getAttributeNS(W, "val") || 0),level=Number(descendant(numPr,"ilvl")[0]?.getAttributeNS(W,"val")||0);
-  const alignment = descendant(pPr, "jc")[0]?.getAttributeNS(W, "val") || "left";
-  const spacing=descendant(pPr,"spacing")[0],indent=descendant(pPr,"ind")[0];
-  const runs = [];
-  for (const child of paragraph.children) {
-    if (local(child) === "r") runs.push(parseRun(child, relationships, parts));
-    if (local(child) === "hyperlink") for (const run of children(child, "r")) { const id=child.getAttributeNS(R, "id") || ""; runs.push({ ...parseRun(run, relationships, parts), hyperlink: relationships.get(id)?.target || "", hyperlinkId:id }); }
-  }
-  const value=(node,name)=>Number(node?.getAttributeNS(W,name)||node?.getAttribute(`w:${name}`)||0);
-  return { type: "paragraph", style, list: num ? (numbering.get(`${numId}:${level}`)||numbering.get(`${numId}:0`)||"number") : "", numId:num?numId:null, level, alignment, lineSpacing:value(spacing,"line")?value(spacing,"line")/240:null, spaceBefore:value(spacing,"before")/20, spaceAfter:value(spacing,"after")/20, indentLeft:value(indent,"left")/1440, indentRight:value(indent,"right")/1440, firstLine:(value(indent,"firstLine")-value(indent,"hanging"))/1440, pageBreak:Boolean(descendant(pPr,"pageBreakBefore")[0]), runs: runs.length ? runs : [{ text: "" }] };
+function parseParagraph(paragraph, relationships, parts, numbering=new Map(), styles=null) {
+  const pPr=children(paragraph,"pPr")[0];
+  const style=wVal(descendant(pPr,"pStyle")[0]);
+  const resolved=styles?.resolve(style)||{p:{},r:{}};
+  const pFormat=mergeDefined(resolved.p,parseParagraphProps(pPr));
+  const numPr=descendant(pPr,"numPr")[0],num=Boolean(numPr);
+  const numId=Number(wVal(descendant(numPr,"numId")[0])||0),level=Number(wVal(descendant(numPr,"ilvl")[0])||0);
+  const numberInfo=num ? (numbering.get(`${numId}:${level}`)||numbering.get(`${numId}:0`)||{list:"number",format:"decimal",text:"%1.",start:1}) : null;
+  const runs=[];
+  const walk=(node,hyperlink="")=>{
+    for(const child of node.children||[]) {
+      if(local(child)==="r") {
+        const parsed=parseRun(child,relationships,parts,resolved.r,styles);
+        if(hyperlink) { parsed.hyperlink=hyperlink; parsed.hyperlinkId=attribute(node,R,"id")||""; }
+        runs.push(parsed);
+      } else if(local(child)==="hyperlink") {
+        const id=attribute(child,R,"id"),rel=relationships.get(id);
+        walk(child,rel?.target||"");
+      } else if(["fldSimple","smartTag","sdt","sdtContent","ins"].includes(local(child))) walk(child,hyperlink);
+    }
+  };
+  walk(paragraph);
+  return {
+    type:"paragraph", style,
+    list:numberInfo?.list||"", numId:num?numId:null, level,
+    numberFormat:numberInfo?.format||"", numberText:numberInfo?.text||"", numberStart:numberInfo?.start||1,
+    alignment:pFormat.alignment||"left",
+    lineSpacing:pFormat.lineSpacing??null, spaceBefore:pFormat.spaceBefore??0, spaceAfter:pFormat.spaceAfter??null,
+    indentLeft:pFormat.indentLeft??0, indentRight:pFormat.indentRight??0, firstLine:pFormat.firstLine??0,
+    pageBreak:Boolean(pFormat.pageBreak), runs:runs.length?runs:[{text:"",...resolved.r}]
+  };
 }
 
 export function parseDocx(bytes) {
@@ -83,14 +201,31 @@ export function parseDocx(bytes) {
       if (type === HYPERLINK_REL) relationships.set(id, { target, external: relationship.getAttribute("TargetMode") === "External" });
     }
   }
+  const styles=parseStyles(parts);
   const numbering=new Map(),numberingSource=parts["word/numbering.xml"];
-  if(numberingSource){const numberingDoc=new DOMParser().parseFromString(strFromU8(numberingSource),"application/xml"),abstracts=new Map();for(const abstract of allDescendants(numberingDoc,"abstractNum")){const id=Number(abstract.getAttributeNS(W,"abstractNumId")||abstract.getAttribute("w:abstractNumId"));const levels=new Map();for(const lvl of children(abstract,"lvl")){const at=Number(lvl.getAttributeNS(W,"ilvl")||lvl.getAttribute("w:ilvl")||0),format=descendant(lvl,"numFmt")[0]?.getAttributeNS(W,"val")||descendant(lvl,"numFmt")[0]?.getAttribute("w:val");levels.set(at,format==="bullet"?"bullet":"number");}abstracts.set(id,levels);}for(const num of allDescendants(numberingDoc,"num")){const id=Number(num.getAttributeNS(W,"numId")||num.getAttribute("w:numId")),abstractId=Number(descendant(num,"abstractNumId")[0]?.getAttributeNS(W,"val")||descendant(num,"abstractNumId")[0]?.getAttribute("w:val"));for(const [level,type] of abstracts.get(abstractId)||[])numbering.set(`${id}:${level}`,type);}}
+  if(numberingSource){
+    const numberingDoc=new DOMParser().parseFromString(strFromU8(numberingSource),"application/xml"),abstracts=new Map();
+    for(const abstract of allDescendants(numberingDoc,"abstractNum")){
+      const id=Number(wVal(abstract,"abstractNumId")||abstract.getAttribute("w:abstractNumId"));
+      const levels=new Map();
+      for(const lvl of children(abstract,"lvl")){
+        const at=Number(wVal(lvl,"ilvl")||0),format=wVal(descendant(lvl,"numFmt")[0])||"decimal";
+        levels.set(at,{list:format==="bullet"?"bullet":"number",format,text:wVal(descendant(lvl,"lvlText")[0])||(format==="bullet"?"•":"%1."),start:Number(wVal(descendant(lvl,"start")[0])||1)});
+      }
+      abstracts.set(id,levels);
+    }
+    for(const num of allDescendants(numberingDoc,"num")){
+      const id=Number(wVal(num,"numId")||num.getAttribute("w:numId")),abstractId=Number(wVal(descendant(num,"abstractNumId")[0]));
+      for(const [level,info] of abstracts.get(abstractId)||[]) numbering.set(`${id}:${level}`,{...info});
+    }
+  }
   const blocks = [];
   for (const child of body.children) {
-    if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts,numbering));
-    if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering)))) });
+    if (local(child) === "p") blocks.push(parseParagraph(child, relationships, parts,numbering,styles));
+    if (local(child) === "tbl") blocks.push({ type: "table", rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering,styles)))) });
   }
-  return { blocks, originalBlocks: structuredClone(blocks), parts, originalXml: xml, relationships };
+  const pageLayout=parsePageLayout(body);
+  return { blocks, originalBlocks: structuredClone(blocks), parts, originalXml: xml, relationships, styles, numbering, pageLayout };
 }
 
 function runXml(run, drawingIds) {
