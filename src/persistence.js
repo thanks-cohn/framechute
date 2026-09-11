@@ -7,7 +7,30 @@ function openDatabase() {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let request;
+    let settled = false;
+
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback(value);
+    };
+
+    const timeout = setTimeout(() => {
+      finish(reject, new Error("FrameChute local database did not respond in time."));
+    }, 4000);
+
+    try {
+      if (!globalThis.indexedDB) {
+        finish(reject, new Error("IndexedDB is unavailable in this browser context."));
+        return;
+      }
+      request = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (error) {
+      finish(reject, error);
+      return;
+    }
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -25,8 +48,18 @@ function openDatabase() {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      if (settled) {
+        request.result?.close?.();
+        return;
+      }
+      finish(resolve, request.result);
+    };
+    request.onerror = () => finish(reject, request.error || new Error("FrameChute local database could not be opened."));
+    request.onblocked = () => finish(reject, new Error("FrameChute local database is blocked by another browser context."));
+  }).catch((error) => {
+    dbPromise = undefined;
+    throw error;
   });
 
   return dbPromise;
