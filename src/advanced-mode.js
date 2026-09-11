@@ -175,10 +175,10 @@ style.textContent = `
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-width: 0;
+    min-width: 44px;
     flex: 1 1 auto;
-    margin-left: 0;
-    padding: 0 0 0 7px;
+    margin-left: 4px;
+    padding: 0 0 0 9px;
     border: 0;
     border-left: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
     background: transparent;
@@ -223,7 +223,12 @@ style.textContent = `
   @media (max-width: 760px) {
     .framechute-mode-toggle > span:nth-child(2) { display: none; }
     .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
-    .framechute-toolbar-fixed { gap: 2px; padding-left: 5px; }
+    .framechute-toolbar-fixed {
+      gap: 2px;
+      min-width: 42px;
+      margin-left: 3px;
+      padding-left: 7px;
+    }
     .toolbar .status { display: none; }
   }
 
@@ -234,6 +239,7 @@ style.textContent = `
       min-width: 110px;
       max-width: 110px;
       gap: 2px;
+      margin-right: 1px;
     }
 
     .framechute-toolbar-pager-window > button[data-toolbar-icon] {
