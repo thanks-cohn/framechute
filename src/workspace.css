@@ -773,6 +773,43 @@ body.hide-block-headers .compact-drag-handle {
   white-space: pre;
 }
 .docx-editor [data-page-break="true"] { display: block; height: 0; margin: 28px 0; border-top: 2px dashed #a6a6a6; break-after: page; }
+
+.docx-math {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 .08em;
+  vertical-align: middle;
+  color: inherit;
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  cursor: default;
+  user-select: text;
+}
+
+.docx-math > math {
+  max-width: 100%;
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  font-size: 1.08em;
+}
+
+.docx-math-display {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: .45em auto;
+  text-align: center;
+}
+
+.docx-math-display > math {
+  display: block;
+}
+
+.docx-math mtable {
+  margin-inline: .18em;
+}
+
+.docx-math mtd {
+  padding-inline: .16em;
+}
 .docx-editor h1, .docx-editor h2, .docx-editor h3 { line-height: 1.2; }
 .docx-editor table { border-collapse: collapse; width: 100%; }
 .docx-editor td { border: 1px solid #888; padding: 5px; vertical-align: top; }
