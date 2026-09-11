@@ -135,34 +135,55 @@ style.textContent = `
 
   .framechute-mode-toggle:active { transform: translateY(1px); }
 
-  .classic-toolbar-primary {
-    display: none;
+  /* The top toolbar is deliberately split into protected sections.
+     The command pager must never be sacrificed to later fixed actions. */
+  .toolbar > .toolbar-primary,
+  .toolbar > .classic-toolbar-primary {
     align-items: center;
     gap: 6px;
     min-width: 0;
-    flex: 1 1 0;
+    flex: 1 1 auto;
     flex-wrap: nowrap;
-    overflow: visible;
+    overflow: hidden;
+  }
+
+  .classic-toolbar-primary {
+    display: none;
   }
 
   .framechute-toolbar-pager {
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: 30px minmax(86px, 1fr) 30px;
     align-items: center;
     gap: 3px;
-    min-width: 0;
-    max-width: 100%;
-    flex: 0 1 auto;
+    width: clamp(150px, 18vw, 220px);
+    min-width: 150px;
+    max-width: 220px;
+    flex: 0 0 auto;
+    padding: 2px;
+    border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
     white-space: nowrap;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .framechute-toolbar-fixed {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex: 0 0 auto;
-    margin-left: 4px;
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-left: 0;
+    padding: 2px 4px;
+    border: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, Canvas 98%, CanvasText 2%);
     white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
   }
 
   .framechute-toolbar-fixed > button {
@@ -197,11 +218,19 @@ style.textContent = `
   @media (max-width: 760px) {
     .framechute-mode-toggle > span:nth-child(2) { display: none; }
     .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
-    .framechute-toolbar-fixed { margin-left: 2px; gap: 2px; }
+    .framechute-toolbar-fixed { gap: 2px; }
+    .toolbar .status { display: none; }
   }
 
   @media (max-width: 520px) {
     .brand { display: none; }
+    .framechute-toolbar-pager {
+      grid-template-columns: 28px minmax(74px, 1fr) 28px;
+      width: 138px;
+      min-width: 138px;
+      max-width: 138px;
+      gap: 2px;
+    }
     .framechute-mode-toggle .framechute-mode-state { display: none; }
     .framechute-mode-toggle {
       width: 36px;
@@ -227,9 +256,9 @@ style.textContent = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 86px;
-    max-width: 180px;
-    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
     overflow: hidden;
   }
 
@@ -258,12 +287,11 @@ style.textContent = `
   .framechute-toolbar-pager-arrow {
     display: inline-grid;
     place-items: center;
-    width: 28px;
-    min-width: 28px;
+    width: 100%;
+    min-width: 0;
     height: 34px;
     min-height: 34px;
     padding: 0;
-    flex: 0 0 30px;
     font-size: 18px;
     line-height: 1;
   }
@@ -382,6 +410,8 @@ function openAnyFileButton() {
 function fixedToolbarActions(...items) {
   const group = document.createElement("div");
   group.className = "framechute-toolbar-fixed";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Persistent toolbar commands");
   group.append(...items);
   return group;
 }
