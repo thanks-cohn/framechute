@@ -127,6 +127,28 @@ Bring to Center is always number one. Use the established explicit-object comman
 ### Save As…
 Save As is always number two where saving applies. It must invoke the real format-aware save path, not a screenshot unless the user explicitly chose an image/snapshot export.
 
+#### Save As sizing law
+When Save As applies to a size-bearing visual object/export, resizing the object in the FrameChute canvas must **not silently rewrite the saved file dimensions by default**.
+
+The Save As UI must expose a clear checkbox:
+
+`Keep Modified Size`
+
+Semantics:
+
+- default OFF unless an existing user preference explicitly says otherwise;
+- OFF -> save/export using the object's original/native dimensions;
+- ON -> save/export using the object's current resized canvas dimensions;
+- the current canvas dimensions at the moment Save As is invoked are the modified dimensions;
+- preserve aspect ratio exactly as represented by the current object unless the user deliberately made a non-proportional resize and the format/export path supports it;
+- do not infer a modified size merely from zoom, viewport scaling, CSS projection, maximized state, or Bring to Center's temporary/object geometry;
+- only an actual user resize of the object counts as a modified size;
+- the choice must be applied by the real format-aware serializer/exporter, not by DOM/CSS-only scaling.
+
+For ordinary source-preserving Save As, OFF therefore means: **save the original/native size**.
+
+For DOCX/PDF frame objects specifically, resizing the outer FrameChute frame must not be misinterpreted as changing DOCX page size or PDF page dimensions. Only use `Keep Modified Size` where the saved/exported object itself has meaningful resizable output dimensions (for example images or explicit raster/snapshot-style exports). Document page-size changes remain format-native document operations.
+
 ### Clone
 Clone is always number three. Use the label `Clone`, not `Duplicate`.
 Clone creates exactly one new independent FrameChute workspace object based on the selected object current state/source, preserves its document/media type and current visible state, assigns a new object identity, does not alter the original, and does not accidentally share mutable geometry/history state. For document objects, cloning the FrameChute object is distinct from duplicating content inside the DOCX or PDF.
@@ -186,6 +208,9 @@ Menu tests:
 - object menu item #1 is Bring to Center;
 - item #2 is Save As where applicable;
 - item #3 is Clone;
+- Save As exposes `Keep Modified Size` for applicable size-bearing visual exports;
+- with `Keep Modified Size` OFF, Save As preserves original/native dimensions;
+- with `Keep Modified Size` ON, Save As uses the actual user-resized canvas dimensions and ignores mere zoom/maximize/Bring-to-Center geometry;
 - Clone creates exactly one independent object;
 - Bring to Center does not move other objects.
 
