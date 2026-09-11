@@ -156,13 +156,13 @@ style.textContent = `
   }
 
   .framechute-toolbar-pager {
-    display: grid;
-    grid-template-columns: 30px minmax(72px, 1fr) 30px;
+    display: inline-grid;
+    grid-template-columns: 30px max-content 30px;
     align-items: center;
     gap: 3px;
-    width: clamp(136px, 14vw, 190px);
-    min-width: 136px;
-    max-width: 190px;
+    width: max-content;
+    min-width: 0;
+    max-width: min(220px, 32vw);
     flex: 0 0 auto;
     padding: 0;
     border: 0;
@@ -234,12 +234,17 @@ style.textContent = `
 
   @media (max-width: 600px) {
     .framechute-toolbar-pager {
-      grid-template-columns: 28px minmax(38px, 1fr) 28px;
-      width: 110px;
-      min-width: 110px;
-      max-width: 110px;
+      grid-template-columns: 28px max-content 28px;
+      width: max-content;
+      min-width: 0;
+      max-width: 116px;
       gap: 2px;
       margin-right: 1px;
+    }
+
+    .framechute-toolbar-pager-window,
+    .framechute-toolbar-pager-item {
+      max-width: 56px;
     }
 
     .framechute-toolbar-pager-window > button[data-toolbar-icon] {
@@ -290,15 +295,16 @@ style.textContent = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
+    width: max-content;
     min-width: 0;
-    max-width: none;
+    max-width: 154px;
     overflow: hidden;
   }
 
   .framechute-toolbar-pager-item {
+    width: max-content;
     min-width: 0;
-    max-width: 100%;
+    max-width: 154px;
     flex: 0 1 auto;
   }
 
