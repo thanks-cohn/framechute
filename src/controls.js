@@ -275,16 +275,23 @@ function attachResizeHandle(block) {
     const startY = event.clientY;
     const startWidth = block.getBoundingClientRect().width;
     const startHeight = block.getBoundingClientRect().height;
+    let resized = false;
     const minimum = getComputedStyle(block);
     const minWidth = Number.parseFloat(minimum.minWidth) || 280;
     const minHeight = Number.parseFloat(minimum.minHeight) || 190;
     handle.setPointerCapture(event.pointerId);
     handle.classList.add("is-resizing");
     const move = (moveEvent) => {
+      resized = true;
       block.style.width = `${Math.max(minWidth, startWidth + moveEvent.clientX - startX)}px`;
       block.style.height = `${Math.max(minHeight, startHeight + moveEvent.clientY - startY)}px`;
     };
     const finish = () => {
+      const image = block.querySelector(".image-frame, .gallery-image");
+      if (resized && image) {
+        block.dataset.userResizedContentWidth = String(Math.max(1, Math.round(image.clientWidth)));
+        block.dataset.userResizedContentHeight = String(Math.max(1, Math.round(image.clientHeight)));
+      }
       handle.classList.remove("is-resizing");
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);
