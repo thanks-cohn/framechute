@@ -1,16 +1,128 @@
-import { saveBlobAs } from "./actions/native-save.js";
+import { saveBlobAs, normalizeFilename } from "./actions/native-save.js";
+import { getHandle, putHandle } from "./persistence.js";
 import { contentBounds, outputDimensions, squareBounds, validateRasterSize } from "./workspace-snapshot-bounds.mjs";
 
 const workspace = document.querySelector("#workspace");
 const dialog = document.querySelector("#snapshot-export-dialog");
 const form = dialog?.querySelector("form");
 const status = document.querySelector("#status");
+const snapshotFolderStatus = document.querySelector("#snapshot-folder-status");
+const snapshotFolderChoose = document.querySelector("#snapshot-folder-choose");
+const snapshotFolderClear = document.querySelector("#snapshot-folder-clear");
+const SNAPSHOT_FOLDER_HANDLE_ID = "__framechute_snapshot_folder__";
 
 function announce(message) { if (status) status.textContent = message; }
 function pad(value) { return String(value).padStart(2, "0"); }
 function defaultName(extension) {
   const now = new Date();
   return `framechute-snapshot-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.${extension}`;
+}
+
+async function snapshotFolderHandle() {
+  try {
+    const handle = await getHandle(SNAPSHOT_FOLDER_HANDLE_ID);
+    return handle?.kind === "directory" ? handle : null;
+  } catch (error) {
+    console.warn("FrameChute could not read the default snapshot folder:", error);
+    return null;
+  }
+}
+
+async function directoryPermission(handle, request = false) {
+  if (!handle) return false;
+  if (!handle.queryPermission) return true;
+  try {
+    const current = await handle.queryPermission({ mode: "readwrite" });
+    if (current === "granted") return true;
+    if (!request || !handle.requestPermission) return false;
+    return (await handle.requestPermission({ mode: "readwrite" })) === "granted";
+  } catch {
+    return false;
+  }
+}
+
+async function refreshSnapshotFolderSetting() {
+  if (!snapshotFolderStatus || !snapshotFolderChoose || !snapshotFolderClear) return;
+  if (typeof window.showDirectoryPicker !== "function") {
+    snapshotFolderStatus.textContent = "Default folders are unavailable in this browser. Take Snapshot will use Save As.";
+    snapshotFolderChoose.disabled = true;
+    snapshotFolderClear.disabled = true;
+    return;
+  }
+
+  const handle = await snapshotFolderHandle();
+  if (!handle) {
+    snapshotFolderStatus.textContent = "Not set. Take Snapshot will ask where to save.";
+    snapshotFolderChoose.textContent = "Choose folder…";
+    snapshotFolderClear.disabled = true;
+    return;
+  }
+
+  const granted = await directoryPermission(handle, false);
+  snapshotFolderStatus.textContent = granted
+    ? `Saving snapshots automatically to: ${handle.name}`
+    : `Remembered folder: ${handle.name}. Chrome needs permission again.`;
+  snapshotFolderChoose.textContent = granted ? "Change folder…" : "Reconnect folder…";
+  snapshotFolderClear.disabled = false;
+}
+
+async function chooseSnapshotFolder() {
+  if (typeof window.showDirectoryPicker !== "function") return;
+  try {
+    const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+    if (!handle) return;
+    await putHandle(SNAPSHOT_FOLDER_HANDLE_ID, handle);
+    await refreshSnapshotFolderSetting();
+    announce(`Default snapshot folder set to ${handle.name}.`);
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      console.error(error);
+      announce("FrameChute could not remember that snapshot folder.");
+    }
+  }
+}
+
+async function clearSnapshotFolder() {
+  try {
+    await putHandle(SNAPSHOT_FOLDER_HANDLE_ID, null);
+    await refreshSnapshotFolderSetting();
+    announce("Default snapshot folder cleared. Take Snapshot will ask where to save.");
+  } catch (error) {
+    console.error(error);
+    announce("FrameChute could not clear the snapshot folder setting.");
+  }
+}
+
+async function saveSnapshotOutput({ blob, filename, extension, mimeType }) {
+  const handle = await snapshotFolderHandle();
+
+  if (handle) {
+    const granted = await directoryPermission(handle, true);
+    if (!granted) {
+      await refreshSnapshotFolderSetting();
+      throw new DOMException("Default snapshot folder needs permission. Use Reconnect folder in Settings.", "NotAllowedError");
+    }
+
+    const name = normalizeFilename(filename, extension);
+    const fileHandle = await handle.getFileHandle(name, { create: true });
+    const writer = await fileHandle.createWritable();
+    try {
+      await writer.write(blob);
+      await writer.close();
+    } catch (error) {
+      await writer.abort?.();
+      throw error;
+    }
+    return { saved: true, directory: handle, fileHandle, filename: name };
+  }
+
+  return saveBlobAs({
+    blob,
+    filename,
+    extension,
+    mimeType,
+    description: "FrameChute snapshot image"
+  });
 }
 
 function measuredBlocks() {
@@ -115,13 +227,23 @@ async function takeSnapshot() {
   try {
     announce("Rendering the used workspace…");
     const blob = await renderSnapshot(records, bounds, { format, scale: Number(form.elements.scale.value), quality: Number(form.elements.quality.value), transparent, background: "#ffffff" });
-    await saveBlobAs({ blob, filename: form.elements.filename.value, extension: format === "jpeg" ? "jpg" : format, mimeType: `image/${format}`, description: "FrameChute snapshot image" });
-    announce(`Snapshot saved (${outputDimensions(bounds, Number(form.elements.scale.value)).width} × ${outputDimensions(bounds, Number(form.elements.scale.value)).height}).`);
+    const extension = format === "jpeg" ? "jpg" : format;
+    const saved = await saveSnapshotOutput({
+      blob,
+      filename: form.elements.filename.value,
+      extension,
+      mimeType: `image/${format}`
+    });
+    const destination = saved?.directory?.name ? ` to ${saved.directory.name}` : "";
+    announce(`Snapshot saved${destination} (${outputDimensions(bounds, Number(form.elements.scale.value)).width} × ${outputDimensions(bounds, Number(form.elements.scale.value)).height}).`);
   } catch (error) { announce(error.message); }
 }
 
 form?.addEventListener("change", () => { const bounds = contentBounds(measuredBlocks()); if (bounds) updateDialog(framedBounds(bounds)); });
+snapshotFolderChoose?.addEventListener("click", () => void chooseSnapshotFolder());
+snapshotFolderClear?.addEventListener("click", () => void clearSnapshotFolder());
 document.querySelector("#take-snapshot")?.addEventListener("click", () => void takeSnapshot());
 window.addEventListener("framechute:take-snapshot", () => void takeSnapshot());
 window.addEventListener("framechute:open-workspace", () => document.querySelector("#import-fcx")?.click());
 window.addEventListener("framechute:export-workspace", () => document.querySelector("#export-fcx")?.click());
+void refreshSnapshotFolderSetting();
