@@ -96,6 +96,8 @@ function initializeFloatingPosition(element, key) {
 }
 
 function attachDragOnly(element, handle, key) {
+  if (!(element instanceof HTMLElement) || !(handle instanceof HTMLElement)) return;
+
   handle.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
 
@@ -103,15 +105,26 @@ function attachDragOnly(element, handle, key) {
     event.stopPropagation();
 
     const rect = element.getBoundingClientRect();
+    const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
     const startLeft = rect.left;
     const startTop = rect.top;
+    let active = true;
 
     element.classList.add("is-dragging");
-    handle.setPointerCapture(event.pointerId);
+
+    // Pointer capture is useful when Chromium supports it reliably, but floating
+    // docks must not depend on it. Window-level tracking keeps Settings/Media
+    // movable on machines where capture is lost or never starts.
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // Window listeners below remain authoritative.
+    }
 
     const move = (moveEvent) => {
+      if (!active || moveEvent.pointerId !== pointerId) return;
       placeFloating(
         element,
         key,
@@ -120,19 +133,31 @@ function attachDragOnly(element, handle, key) {
       );
     };
 
-    const finish = () => {
+    const finish = (finishEvent) => {
+      if (!active) return;
+      if (finishEvent?.pointerId != null && finishEvent.pointerId !== pointerId) return;
+      active = false;
+
       element.classList.remove("is-dragging");
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", finish);
-      handle.removeEventListener("pointercancel", finish);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", finish, true);
+      window.removeEventListener("pointercancel", finish, true);
+      window.removeEventListener("blur", finish, true);
+
+      try {
+        if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch {
+        // The pointer may already have been released by Chromium.
+      }
 
       const finalRect = element.getBoundingClientRect();
       placeFloating(element, key, finalRect.left, finalRect.top, true);
     };
 
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", finish);
-    handle.addEventListener("pointercancel", finish);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", finish, true);
+    window.addEventListener("pointercancel", finish, true);
+    window.addEventListener("blur", finish, true);
   });
 }
 
