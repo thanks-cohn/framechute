@@ -657,6 +657,39 @@ body.hide-block-headers .compact-drag-handle {
 .docx-editor { flex: 1; overflow: auto; width: min(816px, 100%); min-height: 0; box-sizing: border-box; margin: 14px auto; padding: 72px 72px; background: white; color: #171717; font: 12pt/1.15 Arial, sans-serif; outline: none; box-shadow: 0 2px 12px #0003; caret-color: #111; }
 .docx-editor:focus { box-shadow: 0 2px 12px #0003, 0 0 0 2px #4385e7; }
 .docx-editor p, .docx-editor li { margin-block: 0 8pt; min-height: 1em; }
+.docx-editor p,
+.docx-editor li,
+.docx-editor h1,
+.docx-editor h2,
+.docx-editor h3,
+.docx-editor h4,
+.docx-editor h5,
+.docx-editor h6 {
+  white-space: pre-wrap;
+  tab-size: 4;
+}
+.docx-preserved-object {
+  margin: 8pt 0;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, CanvasText 24%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, CanvasText 3%, white);
+  color: #222;
+  white-space: pre-wrap;
+}
+.docx-preserved-object::before {
+  content: "Preserved DOCX object";
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  opacity: .52;
+}
+.docx-preserved-label {
+  font: inherit;
+}
 .docx-editor .docx-imported-list {
   list-style: none;
   margin: 0;
