@@ -152,6 +152,15 @@
       </label>
 
       <div class="storage-setting">
+        <div><strong>Default snapshot folder</strong><small>Choose this once. Take Snapshot will save there automatically until you change or clear it.</small></div>
+        <div id="snapshot-folder-status" class="archive-status">Not set. Take Snapshot will ask where to save.</div>
+        <div class="toolbar-actions">
+          <button id="snapshot-folder-choose" type="button">Choose folder…</button>
+          <button id="snapshot-folder-clear" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="storage-setting">
         <div><strong>Flashframe data folder</strong><small>Recommended: <code>~/flashframe</code>. Saved sessions live here independently of the extension code.</small></div>
         <div id="archive-status" class="archive-status">Not connected</div>
         <button id="archive-connect" type="button">Choose ~/flashframe</button>
