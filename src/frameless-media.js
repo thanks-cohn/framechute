@@ -322,11 +322,13 @@ function attachFramelessResizeHandle(block) {
     const startWidth = rect.width;
     const startHeight = rect.height;
     const aspect = startWidth / Math.max(1, startHeight);
+    let resized = false;
     handle.setPointerCapture(event.pointerId);
     block.classList.add("is-frameless-resizing");
     if (resizeHandleMode() === "fade") handle.classList.add("is-resize-handle-visible");
 
     const move = (moveEvent) => {
+      resized = true;
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
       let width = Math.max(32, startWidth + dx);
@@ -342,6 +344,11 @@ function attachFramelessResizeHandle(block) {
     };
 
     const finish = () => {
+      const image = block.querySelector(".image-frame, .gallery-image");
+      if (resized && image) {
+        block.dataset.userResizedContentWidth = String(Math.max(1, Math.round(image.clientWidth)));
+        block.dataset.userResizedContentHeight = String(Math.max(1, Math.round(image.clientHeight)));
+      }
       block.classList.remove("is-frameless-resizing");
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);

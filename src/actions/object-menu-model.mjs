@@ -6,11 +6,14 @@ export function showWorkspaceActionsForTarget(hasObjectTarget) {
 
 export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false } = {}) {
   return [
+    { id: "center", label: "Bring to Center" },
+    { id: "save-as", label: "Save As…" },
+    { id: "duplicate", label: "Clone" },
+    { separator: true },
     { id: "quick-actions-global", label: `Quick Actions  [ ${quickActionsEnabled ? "ON" : "OFF"} ]` },
     { id: "open-file", label: "Open File…" },
     { id: "minimize", label: "Minimize" },
     { id: "expand", label: "Expand / Restore Size" },
-    { id: "center", label: "Bring to Center" },
     { id: "grab", label: "Grab / Move Object" },
     { id: "remove", label: "Close Object", danger: true }, { separator: true },
     { id: "quick-actions", label: `${quickActionsHidden ? "Show" : "Hide"} Quick Actions for This Object` },
@@ -20,8 +23,7 @@ export function objectMenuItems({ quickActionsHidden = false, quickActionsEnable
     { id: "fit-height", label: "Fit Height" },
     { id: "actual-size", label: "Actual Size" },
     { id: "shrink-all", label: "Shrink all images to fit" },
-    { id: "edit", label: imageEditing ? "Finish Editing" : "Edit Image" }, { id: "duplicate", label: "Duplicate" },
-    { id: "save-as", label: "Save As" }
+    { id: "edit", label: imageEditing ? "Finish Editing" : "Edit Image" }
   ];
 }
 

@@ -7,7 +7,7 @@ import { compositeRgba, floodFill } from "../src/image-edit/paint-layer.mjs";
 test("object menu reflects per-object Quick Actions visibility",()=>{
   assert.equal(objectMenuItems({quickActionsHidden:true}).find(item=>item.id==="quick-actions").label,"Show Quick Actions for This Object");
   assert.equal(objectMenuItems({quickActionsHidden:false}).find(item=>item.id==="quick-actions").label,"Hide Quick Actions for This Object");
-  assert.deepEqual(objectMenuItems().filter(item=>item.id).map(item=>item.id),["quick-actions-global","open-file","minimize","expand","center","grab","remove","quick-actions","shrink-fit","fit-workspace","fit-width","fit-height","actual-size","shrink-all","edit","duplicate","save-as"]);
+  assert.deepEqual(objectMenuItems().slice(0,4),[{id:"center",label:"Bring to Center"},{id:"save-as",label:"Save As…"},{id:"duplicate",label:"Clone"},{separator:true}]);
   assert.equal(objectMenuItems().find(item=>item.id==="remove").label,"Close Object");
 });
 
@@ -62,7 +62,7 @@ test("global Quick Actions preference is persistent and independent",()=>{
   assert.equal(readQuickActionsEnabled(storage),true);
   writeQuickActionsEnabled(false,storage);
   assert.equal(readQuickActionsEnabled(storage),false);
-  assert.equal(objectMenuItems({quickActionsEnabled:false})[0].label,"Quick Actions  [ OFF ]");
+  assert.equal(objectMenuItems({quickActionsEnabled:false}).find(item=>item.id==="quick-actions-global").label,"Quick Actions  [ OFF ]");
 });
 
 test("Canvas export adapters preserve vectors and describe raster formats",()=>{
