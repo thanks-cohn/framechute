@@ -135,8 +135,12 @@ style.textContent = `
 
   .framechute-mode-toggle:active { transform: translateY(1px); }
 
-  /* The top toolbar is deliberately split into protected sections.
-     The command pager must never be sacrificed to later fixed actions. */
+  /* Structural sections stay protected without looking like boxed widgets. */
+  .toolbar {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
   .toolbar > .toolbar-primary,
   .toolbar > .classic-toolbar-primary {
     align-items: center;
@@ -153,17 +157,16 @@ style.textContent = `
 
   .framechute-toolbar-pager {
     display: grid;
-    grid-template-columns: 30px minmax(86px, 1fr) 30px;
+    grid-template-columns: 30px minmax(72px, 1fr) 30px;
     align-items: center;
     gap: 3px;
-    width: clamp(150px, 18vw, 220px);
-    min-width: 150px;
-    max-width: 220px;
+    width: clamp(136px, 14vw, 190px);
+    min-width: 136px;
+    max-width: 190px;
     flex: 0 0 auto;
-    padding: 2px;
-    border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
-    border-radius: 10px;
-    background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+    padding: 0;
+    border: 0;
+    background: transparent;
     white-space: nowrap;
     overflow: hidden;
   }
@@ -175,15 +178,17 @@ style.textContent = `
     min-width: 0;
     flex: 1 1 auto;
     margin-left: 0;
-    padding: 2px 4px;
-    border: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
-    border-radius: 10px;
-    background: color-mix(in srgb, Canvas 98%, CanvasText 2%);
+    padding: 0 0 0 7px;
+    border: 0;
+    border-left: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+    background: transparent;
     white-space: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
+    overflow: hidden;
+    scrollbar-width: none;
+  }
+
+  .framechute-toolbar-fixed::-webkit-scrollbar {
+    display: none;
   }
 
   .framechute-toolbar-fixed > button {
@@ -202,7 +207,7 @@ style.textContent = `
     line-height: 1;
   }
 
-  @media (max-width: 980px) {
+  @media (max-width: 1100px) {
     .framechute-toolbar-fixed > button[data-toolbar-icon] {
       width: 36px;
       min-width: 36px;
@@ -218,19 +223,42 @@ style.textContent = `
   @media (max-width: 760px) {
     .framechute-mode-toggle > span:nth-child(2) { display: none; }
     .framechute-mode-toggle { gap: 4px; padding-right: 6px; }
-    .framechute-toolbar-fixed { gap: 2px; }
+    .framechute-toolbar-fixed { gap: 2px; padding-left: 5px; }
     .toolbar .status { display: none; }
+  }
+
+  @media (max-width: 600px) {
+    .framechute-toolbar-pager {
+      grid-template-columns: 28px minmax(38px, 1fr) 28px;
+      width: 110px;
+      min-width: 110px;
+      max-width: 110px;
+      gap: 2px;
+    }
+
+    .framechute-toolbar-pager-window > button[data-toolbar-icon] {
+      width: 36px;
+      min-width: 36px;
+      padding: 0;
+      overflow: hidden;
+      font-size: 0;
+    }
+
+    .framechute-toolbar-pager-window > button[data-toolbar-icon]::before {
+      content: attr(data-toolbar-icon);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .framechute-toolbar-pager-window > select {
+      width: 44px;
+      max-width: 44px;
+      padding-inline: 3px;
+    }
   }
 
   @media (max-width: 520px) {
     .brand { display: none; }
-    .framechute-toolbar-pager {
-      grid-template-columns: 28px minmax(74px, 1fr) 28px;
-      width: 138px;
-      min-width: 138px;
-      max-width: 138px;
-      gap: 2px;
-    }
     .framechute-mode-toggle .framechute-mode-state { display: none; }
     .framechute-mode-toggle {
       width: 36px;
@@ -303,6 +331,12 @@ style.textContent = `
   }
 
   .classic-toolbar-primary select { max-width: min(220px, 36vw); }
+
+  .toolbar .status {
+    flex: 1 1 9rem;
+    min-width: 0;
+    max-width: 24rem;
+  }
 
   body.framechute-classic .toolbar-primary { display: none !important; }
   body.framechute-classic .classic-toolbar-primary { display: flex; }
