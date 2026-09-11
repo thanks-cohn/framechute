@@ -45,6 +45,82 @@ Unknown does not mean disposable. On open/edit/save, preserve unrelated structur
 
 Prefer edit-minimizing serialization: mutate what changed, preserve untouched XML/parts, preserve unknown attributes/elements when safe, and avoid rebuilding the whole package from a simplified model if doing so destroys source fidelity.
 
+## 1A. Display-first compatibility target: show almost everything, even when not editable
+
+For DOCX, **display breadth outranks edit breadth**. The desired baseline is not “only show what FrameChute can edit.” The desired baseline is:
+
+> **If Word/LibreOffice can visibly display a common DOCX construct, FrameChute should attempt to display a faithful or clearly recognizable representation of it, even when FrameChute cannot edit that construct yet.**
+
+Editing may be partial. Visibility and preservation should be much broader.
+
+Use a rendering fallback ladder:
+
+1. **Native editable rendering** when FrameChute understands the structure and can serialize it safely.
+2. **Native read-only rendering** when FrameChute can interpret/display the structure but cannot safely edit it.
+3. **Preserved visual fallback** using an existing OOXML alternate/fallback representation, preview image, embedded image, or other safe source representation when available.
+4. **Explicit preserved placeholder** only as a last resort, showing that an unsupported object exists and preserving its underlying OOXML/relationship parts for Save/Save As.
+
+Never silently omit a visible source object.
+
+Target display coverage should include, where technically possible in the current browser architecture:
+
+- ordinary paragraphs, runs, styles, themes, fonts, colors, highlights, borders, shading;
+- headings, section breaks, page breaks, columns, page size/orientation/margins;
+- numbering, bullets, multilevel lists, generated labels, field-generated numbering;
+- headers, footers, page numbers, first/even/odd variants;
+- tables including merged cells, nested tables, borders, shading, widths and alignment;
+- inline images and floating/anchored images;
+- DrawingML shapes, text boxes, callouts, lines/arrows, grouped drawings;
+- legacy VML objects when present;
+- charts and chart fallback imagery/data where available;
+- SmartArt and diagrams through native/fallback representation where available;
+- WordArt/text effects through the closest faithful display or preserved fallback;
+- OMML equations and mathematical symbols;
+- hyperlinks, bookmarks, cross-references and visible field results;
+- TOC/TOA/index and other field-result text;
+- footnotes and endnotes;
+- comments/annotations with a visible, non-destructive read-only representation if editing is not ready;
+- tracked insertions/deletions and revision-marked content, without silently accepting/rejecting changes;
+- content controls / structured document tags;
+- symbols, tabs, leaders, soft hyphens, nonbreaking spaces and special characters;
+- embedded/linked objects, OLE/package objects, and unknown object types via safe preserved fallback rather than execution;
+- captions, text frames, drawing canvases, alternate content blocks and compatibility fallbacks;
+- embedded fonts only where browser/runtime and licensing permit safe display;
+- metadata-driven visible features where their visual result is part of the document.
+
+For fields such as PAGE, NUMPAGES, DATE, REF, SEQ, TOC, INDEX, captions, and similar constructs:
+
+- prefer preserving the field structure;
+- display the stored/cached field result when present;
+- recalculate only fields FrameChute can do correctly;
+- never replace a field permanently with plain text merely because recalculation is unsupported.
+
+For tracked changes:
+
+- preserve revision XML exactly when not explicitly editing revision state;
+- render both insertion/deletion/revision semantics in a recognizable way;
+- never auto-accept or auto-reject revisions during unrelated edits.
+
+For comments/notes:
+
+- preserve anchors, comment parts and relationships;
+- show a readable indicator/panel/popover if full editing is unavailable;
+- unrelated edits must not strip comments.
+
+For charts/SmartArt/OLE/unsupported drawings:
+
+- do not execute embedded code/macros;
+- prefer a safe visual fallback or existing preview;
+- preserve source package parts and relationships so opening/saving in Word does not destroy them.
+
+This is a **viewer-fidelity requirement**, not a promise that every object becomes editable in the same run.
+
+Add a capability distinction in code/state where useful, for example:
+
+`editable` / `readOnlyRenderable` / `preservedFallback` / `unsupportedPreserved`
+
+so the UI can display content without pretending it is safely editable.
+
 ## 2. Proper Word numbering resolver
 A known failure is that Word shows generated labels such as `[0001]`, `[0015]`, `[0016] [Math. 1]`, `[0017] [Math. 2]`, `[0019] [Table 1]`, `[Claim 1]`, `[Claim 2]`, while FrameChute can retain adjacent text but lose the generated number.
 
