@@ -333,9 +333,9 @@ style.textContent = `
   .classic-toolbar-primary select { max-width: min(220px, 36vw); }
 
   .toolbar .status {
-    flex: 1 1 9rem;
+    flex: 1 1 8rem;
     min-width: 0;
-    max-width: 24rem;
+    max-width: 18rem;
   }
 
   body.framechute-classic .toolbar-primary { display: none !important; }
