@@ -54,9 +54,11 @@ if actual_hosts != allowed_hosts:
 if {"http://*/*", "https://*/*", "<all_urls>"} & actual_hosts:
     raise SystemExit("Broad host access is forbidden in the Chrome Web Store candidate")
 
-background = manifest.get("background", {})
-if background.get("service_worker") != "src/service-worker.js" or background.get("type") != "module":
-    raise SystemExit("Manifest background must use packaged module service worker src/service-worker.js")
+action = manifest.get("action", {})
+if action.get("default_popup") != "src/launcher.html":
+    raise SystemExit("Manifest action must use src/launcher.html for reliable clean-install launch")
+if "background" in manifest:
+    raise SystemExit("Clean-install launcher must not depend on a background service worker")
 
 required_icons = {
     "16": "icons/icon16.png",
@@ -132,7 +134,8 @@ with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
 required_package_files = {
     "manifest.json",
     "LICENSE",
-    "src/service-worker.js",
+    "src/launcher.html",
+    "src/launcher.js",
     "src/workspace.html",
     "src/workspace-extras.js",
     "src/picker-guard.js",
