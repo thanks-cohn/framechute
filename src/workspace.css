@@ -646,8 +646,74 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-edit-controls:not([hidden]) { display: inline-flex; }
 .pdf-edit-controls label { display: inline-flex; align-items: center; gap: 3px; }
 .pdf-font-size { width: 55px; }
-.docx-block { min-width: 420px; min-height: 360px; }
-.docx-toolbar { overflow: visible; flex-wrap: wrap; align-content: center; row-gap: 4px; }
+.docx-block {
+  min-width: 420px;
+  min-height: 360px;
+}
+
+/* DOCX owns three explicit vertical bands:
+   1) object identity/header, 2) formatting controls, 3) document surface.
+   Never allow late polish or responsive rules to collapse these into each other. */
+.docx-block > .block-header {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  order: 0 !important;
+  flex: 0 0 auto !important;
+  width: 100%;
+  min-height: 46px;
+  margin: 0 !important;
+  transform: none !important;
+  z-index: 6;
+  overflow: visible;
+  background: var(--ff-block-header-bg, Canvas);
+}
+
+.docx-block > .block-header .block-name {
+  display: block;
+  min-width: 90px;
+  flex: 1 1 auto;
+}
+
+.docx-block > .block-header .block-actions,
+.docx-block > .block-header .document-dirty {
+  flex: 0 0 auto;
+}
+
+.docx-block > .docx-toolbar {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  order: 1 !important;
+  flex: 0 0 auto !important;
+  width: 100%;
+  margin: 0 !important;
+  transform: none !important;
+  z-index: 5;
+  overflow: visible;
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 4px;
+  border-top: 0;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+}
+
+.docx-block > .source-message {
+  order: 2;
+  flex: 0 0 auto;
+}
+
+.docx-block > .docx-editor {
+  order: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .docx-size-label { display: inline-flex; align-items: center; gap: 2px; }
 .docx-font-size { width: 58px; }
 .docx-toolbar button[aria-pressed="true"] { color: #fff; background: #245fbd; }
