@@ -1,4 +1,5 @@
 import { unzipSync, zipSync, strFromU8, strToU8 } from "../vendor/fflate.mjs";
+import { readPartRelationships } from "./docx/relationships.js";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -269,7 +270,24 @@ function parseRun(run, relationships, parts, inherited = {}, styles = null) {
   return { text, images, bold:false, italic:false, underline:false, strike:false, color:"", highlight:"", fontFamily:"", fontSize:null, ...format };
 }
 
-function parseParagraph(paragraph, relationships, parts, numbering=new Map(), styles=null) {
+const ARTIFACT_LABELS = Object.freeze({
+  chart:"Chart", diagram:"SmartArt diagram", oleObject:"Embedded object", object:"Embedded object",
+  txbxContent:"Text box", pict:"Drawing", drawing:"Drawing", AlternateContent:"Compatibility content",
+  customXml:"Custom XML content"
+});
+function artifactKind(node) {
+  if (allDescendants(node,"chart").length) return "chart";
+  if (allDescendants(node,"relIds").length || allDescendants(node,"dgm").length) return "diagram";
+  if (allDescendants(node,"OLEObject").length || allDescendants(node,"object").length) return "oleObject";
+  if (allDescendants(node,"txbxContent").length) return "textBox";
+  return local(node) || "unknown";
+}
+function preservedRun(node, capability="unsupportedPreserved") {
+  const kind=artifactKind(node), preview=String(node.textContent||"").replace(/\s+/g," ").trim();
+  return { text:"", artifact:{ kind, capability, label:preview || `${ARTIFACT_LABELS[kind]||"Unsupported DOCX artifact"} — preserved` } };
+}
+
+function parseParagraph(paragraph, relationships, parts, numbering=new Map(), styles=null, artifactSink=[]) {
   const pPr=children(paragraph,"pPr")[0];
   const style=wVal(descendant(pPr,"pStyle")[0]);
   const resolved=styles?.resolve(style)||{p:{},r:{}};
@@ -278,23 +296,49 @@ function parseParagraph(paragraph, relationships, parts, numbering=new Map(), st
   const numId=Number(wVal(descendant(numPr,"numId")[0])||0),level=Number(wVal(descendant(numPr,"ilvl")[0])||0);
   const numberInfo=num ? (numbering.get(`${numId}:${level}`)||numbering.get(`${numId}:0`)||{list:"number",format:"decimal",text:"%1.",start:1}) : null;
   const runs=[];
-  const walk=(node,hyperlink="")=>{
+  const walk=(node,hyperlink="",revision=null)=>{
     for(const child of node.children||[]) {
       if(local(child)==="r") {
         const parsed=parseRun(child,relationships,parts,resolved.r,styles);
+        for(const image of parsed.images||[]) artifactSink.push({kind:"image",capability:image.unsupported?"unsupportedPreserved":"editable",part:image.part||""});
+        for(const drawing of [...child.children].filter(item=>["drawing","pict","object"].includes(local(item)))) {
+          const hasImage=allDescendants(drawing,"blip").length||allDescendants(drawing,"imagedata").length;
+          if(!hasImage) {
+            const artifact=preservedRun(drawing,allDescendants(drawing,"Fallback").length?"preservedFallback":"unsupportedPreserved");
+            parsed.artifact=artifact.artifact; artifactSink.push(artifact.artifact);
+          }
+        }
+        if(revision) parsed.revision=revision;
         if(hyperlink) { parsed.hyperlink=hyperlink; parsed.hyperlinkId=attribute(node,R,"id")||""; }
         runs.push(parsed);
       } else if(local(child)==="hyperlink") {
         const id=attribute(child,R,"id"),rel=relationships.get(id);
         walk(child,rel?.target||"");
       } else if(["oMath","oMathPara"].includes(local(child))) {
-        runs.push({
+        const mathRun={
           text:"",
           math:parseMathAst(child),
           mathXml:serializeMathNode(child),
           mathDisplay:local(child)==="oMathPara"
-        });
-      } else if(["fldSimple","smartTag","sdt","sdtContent","ins","del"].includes(local(child))) walk(child,hyperlink);
+        }; runs.push(mathRun); artifactSink.push({kind:"equation",capability:"readOnlyRenderable"});
+      } else if(local(child)==="fldSimple") {
+        artifactSink.push({kind:"field",capability:"readOnlyRenderable",instruction:wVal(child,"instr")}); walk(child,hyperlink);
+      } else if(["smartTag","sdt","sdtContent"].includes(local(child))) {
+        if(local(child)==="sdt") artifactSink.push({kind:"contentControl",capability:"readOnlyRenderable"}); walk(child,hyperlink,revision);
+      } else if(["ins","del","moveFrom","moveTo"].includes(local(child))) {
+        const change={type:local(child),author:wVal(child,"author"),date:wVal(child,"date")};
+        artifactSink.push({kind:"revision",capability:"readOnlyRenderable",revisionType:change.type}); walk(child,hyperlink,change);
+      } else if(local(child)==="AlternateContent") {
+        const fallback=allDescendants(child,"Fallback")[0], choice=allDescendants(child,"Choice")[0];
+        artifactSink.push({kind:"alternateContent",capability:fallback?"preservedFallback":"unsupportedPreserved"});
+        const selected=fallback||choice; if(selected) walk(selected,hyperlink,revision); else runs.push(preservedRun(child));
+      } else if(["bookmarkStart","bookmarkEnd","commentRangeStart","commentRangeEnd","commentReference","fldChar","instrText"].includes(local(child))) {
+        const kind=local(child).startsWith("comment")?"comment":local(child).startsWith("bookmark")?"bookmark":"field";
+        artifactSink.push({kind,capability:"readOnlyRenderable"});
+        if(kind==="comment"&&local(child)==="commentReference") runs.push({text:"",artifact:{kind:"comment",capability:"readOnlyRenderable",label:"Comment"}});
+      } else {
+        const artifact=preservedRun(child); runs.push(artifact); artifactSink.push(artifact.artifact);
+      }
     }
   };
   walk(paragraph);
@@ -318,16 +362,11 @@ export function parseDocx(bytes) {
   if (doc.querySelector("parsererror")) throw new Error("The DOCX document XML is malformed.");
   const body = descendant(doc, "body")[0];
   if (!body) throw new Error("The DOCX document has no body.");
-  const relationships = new Map();
-  const relationshipsSource = parts["word/_rels/document.xml.rels"];
-  if (relationshipsSource) {
-    const relationshipsDoc = new DOMParser().parseFromString(strFromU8(relationshipsSource), "application/xml");
-    for (const relationship of allDescendants(relationshipsDoc, "Relationship")) {
-      const type=relationship.getAttribute("Type"), id=relationship.getAttribute("Id"), target=relationship.getAttribute("Target");
-      if (type === IMAGE_REL) relationships.set(id, normalizePart(target));
-      if (type === HYPERLINK_REL) relationships.set(id, { target, external: relationship.getAttribute("TargetMode") === "External" });
-    }
-  }
+  const parseXml=value=>new DOMParser().parseFromString(value,"application/xml");
+  const partRelationships=new Map();
+  const documentRelationships=readPartRelationships(parts,"word/document.xml",parseXml,strFromU8);
+  partRelationships.set("word/document.xml",documentRelationships);
+  const relationships = new Map([...documentRelationships].map(([id,rel])=>[id,rel.external?{target:rel.target,external:true}:rel.part]));
   const styles=parseStyles(parts);
   const numbering=new Map(),numberingSource=parts["word/numbering.xml"];
   if(numberingSource){
@@ -346,7 +385,7 @@ export function parseDocx(bytes) {
       for(const [level,info] of abstracts.get(abstractId)||[]) numbering.set(`${id}:${level}`,{...info});
     }
   }
-  const blocks = [];
+  const blocks = [], artifacts=[];
   const originalBodyChildren = [];
   [...body.children].forEach((child, sourceIndex) => {
     const kind=local(child);
@@ -354,28 +393,49 @@ export function parseDocx(bytes) {
     originalBodyChildren.push({ sourceIndex, kind, raw });
 
     if (kind === "p") {
-      const block=parseParagraph(child, relationships, parts,numbering,styles);
+      const block=parseParagraph(child, relationships, parts,numbering,styles,artifacts);
+      artifacts.push({kind:"paragraph",capability:"editable",sourceIndex});
       block.sourceIndex=sourceIndex;
       blocks.push(block);
       return;
     }
 
     if (kind === "tbl") {
+      const rows=children(child,"tr").map((row) => children(row,"tc").map((cell) => {
+        const content=descendant(cell,"p").map((p) => parseParagraph(p, relationships, parts,numbering,styles,artifacts));
+        const tcPr=children(cell,"tcPr")[0], span=Number(wVal(descendant(tcPr,"gridSpan")[0])||1), merge=descendant(tcPr,"vMerge")[0];
+        content.gridSpan=Math.max(1,span); content.vMerge=merge?(wVal(merge)||"continue"):"";
+        return content;
+      }));
       blocks.push({
         type: "table",
         sourceIndex,
-        rows: children(child, "tr").map((row) => children(row, "tc").map((cell) => descendant(cell, "p").map((p) => parseParagraph(p, relationships, parts,numbering,styles))))
+        rows
       });
+      artifacts.push({kind:"table",capability:"editable",sourceIndex});
       return;
     }
 
     if (kind !== "sectPr") {
       const previewText=String(child.textContent||"").replace(/\s+/g," ").trim();
-      blocks.push({ type:"preserved", sourceIndex, preservedTag:kind||"object", previewText });
+      const artifact=preservedRun(child).artifact;
+      blocks.push({ type:"preserved", sourceIndex, preservedTag:artifact.kind, previewText:previewText||artifact.label, capability:artifact.capability });
+      artifacts.push({...artifact,sourceIndex});
     }
   });
   const pageLayout=parsePageLayout(body);
-  return { blocks, originalBlocks: structuredClone(blocks), originalBodyChildren, parts, originalXml: xml, relationships, styles, numbering, pageLayout };
+  const supplemental=[];
+  for(const [id,rel] of documentRelationships) {
+    const relationKind=rel.type.split("/").at(-1);
+    if(!["header","footer","footnotes","endnotes","comments"].includes(relationKind)||!parts[rel.part]) continue;
+    const relatedDoc=parseXml(strFromU8(parts[rel.part]));
+    const relatedRels=readPartRelationships(parts,rel.part,parseXml,strFromU8); partRelationships.set(rel.part,relatedRels);
+    const compatible=new Map([...relatedRels].map(([key,value])=>[key,value.external?{target:value.target,external:true}:value.part]));
+    const relatedBlocks=allDescendants(relatedDoc,"p").map(p=>parseParagraph(p,compatible,parts,numbering,styles,artifacts));
+    supplemental.push({type:relationKind,id,part:rel.part,blocks:relatedBlocks});
+    artifacts.push({kind:relationKind.replace(/s$/, ""),capability:"readOnlyRenderable",part:rel.part});
+  }
+  return { blocks, supplemental, artifacts, originalBlocks: structuredClone(blocks), originalBodyChildren, parts, originalXml: xml, relationships, partRelationships, styles, numbering, pageLayout };
 }
 
 function runXml(run, drawingIds) {

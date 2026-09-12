@@ -1014,6 +1014,15 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
         element.append(renderDocxMath(run));
       }
 
+      if(run.artifact) {
+        const artifact=document.createElement("span");
+        artifact.className=`docx-artifact docx-artifact-${run.artifact.kind}`;
+        artifact.contentEditable="false";
+        artifact.dataset.docxCapability=run.artifact.capability;
+        artifact.textContent=`[${run.artifact.label}]`;
+        element.append(artifact);
+      }
+
       if (run.text) {
         const span = run.hyperlink ? document.createElement("a") : document.createElement("span");
         span.textContent = run.text;
@@ -1025,6 +1034,12 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
         if(run.highlight) span.style.backgroundColor=run.highlight;
         if(run.fontFamily) span.style.fontFamily=run.fontFamily;
         if(run.fontSize) span.style.fontSize=`${run.fontSize}pt`;
+        if(run.revision) {
+          span.classList.add("docx-revision",`docx-revision-${run.revision.type}`);
+          span.dataset.docxRevisionAuthor=run.revision.author||"";
+          span.title=`Tracked ${run.revision.type}${run.revision.author?` by ${run.revision.author}`:""}`;
+          span.contentEditable="false";
+        }
         element.append(span);
       }
 
@@ -1086,11 +1101,18 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
       activeList=null; activeListKey="";
       const table = document.createElement("table");
       if(item.sourceIndex!=null) table.dataset.docxSourceIndex=String(item.sourceIndex);
+      const verticalMerges=[];
       for (const row of item.rows) {
         const tr = table.insertRow();
+        let column=0;
         for (const cell of row) {
+          const span=cell.gridSpan||1;
+          if(cell.vMerge==="continue"&&verticalMerges[column]) { verticalMerges[column].rowSpan+=1; column+=span; continue; }
           const td = tr.insertCell();
+          if(span>1) td.colSpan=span;
+          if(cell.vMerge==="restart") verticalMerges[column]=td;
           for (const p of cell) addParagraph(p, td);
+          column+=span;
         }
       }
       editor.append(table);
@@ -1113,6 +1135,17 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     activeList=null;
     activeListKey="";
     addParagraph(item);
+  }
+
+  for(const section of model?.supplemental||[]) {
+    const aside=document.createElement("section");
+    aside.className=`docx-supplemental docx-${section.type}`;
+    aside.contentEditable="false";
+    aside.dataset.docxPart=section.part;
+    const heading=document.createElement("div"); heading.className="docx-supplemental-label";
+    heading.textContent=section.type.replace(/^./,letter=>letter.toUpperCase()); aside.append(heading);
+    for(const paragraph of section.blocks) addParagraph(paragraph,aside);
+    editor.append(aside);
   }
 
   return urls;
