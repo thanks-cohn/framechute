@@ -139,6 +139,7 @@ if (!workspace || !bar || !actions?.selection) {
   async function runMenuAction(id) {
     const block=menuBlock; if(!block)return;
     try {
+      if(id==="show-header")window.dispatchEvent(new CustomEvent("framechute:object-command",{detail:{block,command:"show-header"}}));
       if(id==="quick-actions-global"){quickActionsEnabled=writeQuickActionsEnabled(!quickActionsEnabled);applyBarVisibility();if(status)status.textContent=`Quick Actions are now ${quickActionsEnabled?"on":"off"} everywhere.`;}
       if(id==="quick-actions"){const show=isHiddenFor(block);setHiddenFor(block,!show);selection.replace(block);applyBarVisibility();if(status)status.textContent=`Quick Actions ${show?"shown":"hidden"} for this object.`;}
       if(id==="shrink-fit")resizeDisplay(block,"shrink");
