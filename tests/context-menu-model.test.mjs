@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { commandsForEditorContext, genericAdvancedVisibility, supportsMediaSync } from "../src/actions/context-menu-model.mjs";
+import { objectMenuItems } from "../src/actions/object-menu-model.mjs";
 import { readFile } from "node:fs/promises";
 
 const block = (type, media=false) => ({dataset:{blockType:type},classList:{contains:()=>false},querySelector:selector=>media&&selector==="video"?{}:null});
@@ -11,6 +12,19 @@ test("media synchronization is capability-gated to playable video",()=>{
   assert.equal(supportsMediaSync(block("video",true)),true);assert.equal(supportsMediaSync(block("video",false)),false);assert.equal(supportsMediaSync(block("pdf",true)),false);
   assert.equal(genericAdvancedVisibility({advanced:true,block:block("video",true)}).supportsMediaSync,true);
 });
+test("every object-facing menu leads with Show Header",()=>{
+  assert.equal(objectMenuItems()[0]?.id,"show-header");
+  for(const context of [
+    {editorKind:"pdf",selectionKind:"page"},
+    {editorKind:"pdf",selectionKind:"edit"},
+    {editorKind:"pdf",selectionKind:"source-text"},
+    {editorKind:"docx",selectionKind:"text"}
+  ]) {
+    assert.equal(commandsForEditorContext(context)[0]?.id,"show-header");
+    assert.equal(commandsForEditorContext(context)[0]?.label,"Show Header");
+  }
+});
+
 test("document editor command registries stay document-specific",()=>{
   const pdf=commandsForEditorContext({editorKind:"pdf",selectionKind:"page"}),docx=commandsForEditorContext({editorKind:"docx",selectionKind:"page"});
   assert.ok(pdf.some(item=>item.id==="add-text"));assert.ok(docx.some(item=>item.id==="bold"));
