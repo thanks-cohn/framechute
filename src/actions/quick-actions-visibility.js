@@ -11,7 +11,6 @@ if (!workspace || !bar || !actions?.selection) {
 } else {
   const selection = actions.selection;
   let quickActionsEnabled = readQuickActionsEnabled();
-  let panelDismissed = false;
   const style = document.createElement("style");
   style.textContent = `
     .quick-actions-close {
@@ -68,13 +67,21 @@ if (!workspace || !bar || !actions?.selection) {
     return block instanceof HTMLElement && (block.dataset.customKind === "image" || Boolean(block.querySelector(".image-frame")));
   }
 
+  function isObjectBlock(block) {
+    return block instanceof HTMLElement && block.classList.contains("block");
+  }
+
   function isHiddenFor(block) {
-    return isImageBlock(block) && isQuickActionsHidden(block);
+    return isObjectBlock(block) && isQuickActionsHidden(block);
   }
 
   function setHiddenFor(block, hidden) {
-    if (!isImageBlock(block)) return;
+    if (!isObjectBlock(block)) return;
     setQuickActionsHidden(block, hidden);
+  }
+
+  function selectedObjects() {
+    return selection.items.filter(isObjectBlock);
   }
 
   function selectedImagesOnly() {
@@ -83,17 +90,17 @@ if (!workspace || !bar || !actions?.selection) {
   }
 
   function shouldHideBar() {
-    if (!quickActionsEnabled || panelDismissed) return true;
-    const items = selection.items;
+    if (!quickActionsEnabled) return true;
+    const items = selectedObjects();
     if (!items.length) return true;
-    return items.every(isImageBlock) && items.every(isHiddenFor);
+    return items.every(isHiddenFor);
   }
 
   function applyBarVisibility() {
     const desiredHidden = shouldHideBar();
     if (bar.hidden !== desiredHidden) bar.hidden = desiredHidden;
     const close = bar.querySelector(".quick-actions-close");
-    if (close) close.hidden = selectedImagesOnly().length === 0;
+    if (close) close.hidden = selectedObjects().length === 0;
   }
 
   const closeButton = bar.querySelector(".quick-actions-close") || document.createElement("button");
@@ -104,9 +111,13 @@ if (!workspace || !bar || !actions?.selection) {
   closeButton.setAttribute("aria-label", "Close Quick Actions");
   closeButton.addEventListener("click", (event) => {
     event.stopPropagation();
-    panelDismissed = true;
+    const items = selectedObjects();
+    for (const block of items) setHiddenFor(block, true);
     applyBarVisibility();
-    if (status) status.textContent = "Quick Actions closed. Your selection and preferences were preserved.";
+    if (status) {
+      const noun = items.length === 1 ? "this object" : `${items.length} selected objects`;
+      status.textContent = `Quick Actions hidden for ${noun}. Use the object menu to show them again.`;
+    }
   });
   if (!closeButton.isConnected) bar.querySelector(".quick-actions-heading")?.append(closeButton);
 
@@ -166,7 +177,7 @@ if (!workspace || !bar || !actions?.selection) {
     next=Math.max(0,Math.min(controls.length-1,next));controls[next]?.focus();controls[next]?.scrollIntoView({block:"nearest"});
   });
 
-  selection.addEventListener("change", () => { panelDismissed = false; applyBarVisibility(); });
+  selection.addEventListener("change", applyBarVisibility);
   window.addEventListener("storage", event => {
     if (event.key !== "framechute.quick-actions-enabled.v1") return;
     quickActionsEnabled = readQuickActionsEnabled();
@@ -178,7 +189,8 @@ if (!workspace || !bar || !actions?.selection) {
 
   window.addEventListener("framechute:block-captured", (event) => {
     const { block, record } = event.detail;
-    if (!isImageBlock(block) || !isHiddenFor(block)) return;
+    if (!isObjectBlock(block) || !isHiddenFor(block)) return;
+    record.state ||= {};
     record.state.quickActionsHidden = true;
     if (typeof record.state.text === "string" && record.state.text.startsWith("__FLASHFRAME_CUSTOM_BLOCK_V1__")) {
       const marker = "__FLASHFRAME_CUSTOM_BLOCK_V1__";
@@ -189,7 +201,7 @@ if (!workspace || !bar || !actions?.selection) {
   });
 
   function restoreVisibility(block, hidden) {
-    if (!isImageBlock(block)) return;
+    if (!isObjectBlock(block)) return;
     setHiddenFor(block, hidden === true);
     applyBarVisibility();
   }
