@@ -370,13 +370,14 @@ function scheduleDocxToolsHide(block) {
     docxToolsTimers.delete(block);
     if (!settings.autoHideDocxTools) return;
 
-    // Do not spin another idle timer while the user is actually inside the
-    // formatting controls. pointerleave/focusout/toggle will start the next
-    // countdown when that interaction really ends.
-    if (toolbar.matches(":hover") || toolbar.querySelector("details[open]")) return;
+    // Physical hover is the only thing allowed to postpone hiding. An open
+    // menu, old keyboard focus, document scrolling, or body hover cannot pin
+    // the Word controls open forever.
+    if (toolbar.matches(":hover")) return;
 
+    for (const details of toolbar.querySelectorAll("details[open]")) details.open = false;
     block.classList.add("docx-tools-collapsed");
-    toolbar.style.display = "none";
+    toolbar.hidden = true;
   }, DOCX_TOOLS_IDLE_MS);
 
   docxToolsTimers.set(block, timer);
@@ -385,7 +386,10 @@ function scheduleDocxToolsHide(block) {
 function revealDocxTools(block, { hold = false } = {}) {
   if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
   const toolbar = block.querySelector(":scope > .docx-toolbar");
-  if (toolbar) toolbar.style.removeProperty("display");
+  if (toolbar) {
+    toolbar.hidden = false;
+    toolbar.style.removeProperty("display");
+  }
   block.classList.remove("docx-tools-collapsed");
   clearDocxToolsTimer(block);
   if (settings.autoHideDocxTools && !hold) scheduleDocxToolsHide(block);
@@ -399,7 +403,10 @@ function applyDocxToolsSetting(block) {
     clearDocxToolsTimer(block);
     block.classList.remove("docx-tools-collapsed");
     const toolbar = block.querySelector(":scope > .docx-toolbar");
-    if (toolbar) toolbar.style.removeProperty("display");
+    if (toolbar) {
+      toolbar.hidden = false;
+      toolbar.style.removeProperty("display");
+    }
     return;
   }
 
@@ -461,8 +468,7 @@ function prepareDocxToolsAutoHide(block) {
     });
     toolbar.addEventListener("toggle", () => {
       if (!settings.autoHideDocxTools) return;
-      if (toolbar.querySelector("details[open]")) revealDocxTools(block, { hold: true });
-      else scheduleDocxToolsHide(block);
+      revealDocxTools(block);
     }, true);
   }
 
