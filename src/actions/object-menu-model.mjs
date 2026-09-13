@@ -6,6 +6,7 @@ export function showWorkspaceActionsForTarget(hasObjectTarget) {
 
 export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false } = {}) {
   return [
+    { id: "show-header", label: "Show Header" },
     { id: "center", label: "Bring to Center" },
     { id: "save-as", label: "Save As…" },
     { id: "duplicate", label: "Clone" },
