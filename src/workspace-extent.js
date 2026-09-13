@@ -19,7 +19,8 @@ export function edgePanDelta({
   scrollX = 0,
   scrollY = 0,
   edge = WORKSPACE_PAN_EDGE,
-  speed = WORKSPACE_PAN_SPEED
+  speed = WORKSPACE_PAN_SPEED,
+  allowPastOrigin = false
 }) {
   const axis = (position, extent) => {
     if (position < edge) return -Math.max(1, Math.ceil(speed * (edge - position) / edge));
@@ -28,8 +29,8 @@ export function edgePanDelta({
   };
   let dx = axis(clientX, viewportWidth);
   let dy = axis(clientY, viewportHeight);
-  if (scrollX <= 0 && dx < 0) dx = 0;
-  if (scrollY <= 0 && dy < 0) dy = 0;
+  if (!allowPastOrigin && scrollX <= 0 && dx < 0) dx = 0;
+  if (!allowPastOrigin && scrollY <= 0 && dy < 0) dy = 0;
   return { dx, dy };
 }
 
