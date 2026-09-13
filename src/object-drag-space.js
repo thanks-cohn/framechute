@@ -1,6 +1,6 @@
 import { edgePanDelta, WORKSPACE_EXPANSION_STEP, WORKSPACE_EDGE_MARGIN } from "./workspace-extent.js";
 
-const NEGATIVE_RUNWAY = 4096;
+const NEGATIVE_RUNWAY = 8192;
 
 function number(value, fallback = 0) {
   const parsed = Number.parseFloat(value);
