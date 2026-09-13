@@ -58,27 +58,26 @@ function setWorkspaceSize(width, height) {
   workspace.style.height = `${Math.max(1, Math.ceil(height))}px`;
 }
 
-function shiftAllBlocks(dx, dy) {
-  if (!dx && !dy) return;
-  for (const block of workspace.querySelectorAll(":scope > .block")) {
-    const left = numericStyle(block, "left", block.offsetLeft);
-    const top = numericStyle(block, "top", block.offsetTop);
-    if (dx) block.style.left = `${left + dx}px`;
-    if (dy) block.style.top = `${top + dy}px`;
-  }
+function workspaceOrigin(axis) {
+  const property = axis === "x" ? "marginLeft" : "marginTop";
+  return Math.max(0, numericStyle(workspace, property, 0));
 }
 
 function expandNegativeEdge(axis) {
-  const size = workspaceSize();
+  // Grow empty canvas BEFORE the logical workspace origin. Do not rewrite any
+  // block coordinates. Scrolling by the same amount keeps every object visually
+  // stationary while giving the user new reachable space to the left/up.
   if (axis === "x") {
-    shiftAllBlocks(WORKSPACE_EXPANSION_STEP, 0);
-    setWorkspaceSize(size.width + WORKSPACE_EXPANSION_STEP, size.height);
+    const next = workspaceOrigin("x") + WORKSPACE_EXPANSION_STEP;
+    workspace.style.marginLeft = `${next}px`;
     window.scrollBy(WORKSPACE_EXPANSION_STEP, 0);
-  } else {
-    shiftAllBlocks(0, WORKSPACE_EXPANSION_STEP);
-    setWorkspaceSize(size.width, size.height + WORKSPACE_EXPANSION_STEP);
-    window.scrollBy(0, WORKSPACE_EXPANSION_STEP);
+    return WORKSPACE_EXPANSION_STEP;
   }
+
+  const next = workspaceOrigin("y") + WORKSPACE_EXPANSION_STEP;
+  workspace.style.marginTop = `${next}px`;
+  window.scrollBy(0, WORKSPACE_EXPANSION_STEP);
+  return WORKSPACE_EXPANSION_STEP;
 }
 
 function bringForward(block) {
@@ -101,6 +100,8 @@ function beginMeasuredBlockDrag(event, block, handle) {
   const startScrollY = window.scrollY;
   const startLeft = numericStyle(block, "left", block.offsetLeft);
   const startTop = numericStyle(block, "top", block.offsetTop);
+  let originGrowthX = 0;
+  let originGrowthY = 0;
   const rect = block.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
@@ -113,20 +114,19 @@ function beginMeasuredBlockDrag(event, block, handle) {
   handle.setPointerCapture?.(event.pointerId);
 
   const placeBlock = () => {
-    let left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX);
-    let top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY);
+    // Browser scroll created by origin growth is compensation, not user motion.
+    // Subtract it so the logical object coordinate never jumps when more canvas
+    // is created to the left/top.
+    let left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX) - originGrowthX;
+    let top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY) - originGrowthY;
 
-    // The canvas grows around the user's drag in every UI mode. Crossing the
-    // negative edge creates new reachable space on that side while preserving
-    // the visual position under the pointer by shifting the workspace origin
-    // and compensating with scroll. Crossing the positive edge grows the desk.
-    while (left < 0) {
-      expandNegativeEdge("x");
-      left += WORKSPACE_EXPANSION_STEP;
+    // Allow genuine negative logical coordinates. Only add physical gutter when
+    // the object would otherwise cross beyond the browser's scrollable origin.
+    while (workspaceOrigin("x") + left < WORKSPACE_EDGE_MARGIN) {
+      originGrowthX += expandNegativeEdge("x");
     }
-    while (top < 0) {
-      expandNegativeEdge("y");
-      top += WORKSPACE_EXPANSION_STEP;
+    while (workspaceOrigin("y") + top < WORKSPACE_EDGE_MARGIN) {
+      originGrowthY += expandNegativeEdge("y");
     }
 
     const size = workspaceSize();
