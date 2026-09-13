@@ -999,11 +999,17 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
   const layout=model?.pageLayout;
   if(layout) {
     editor.style.width=`${layout.widthIn}in`;
-    editor.style.maxWidth="calc(100% - 28px)";
+    editor.style.minWidth=`${layout.widthIn}in`;
+    editor.style.maxWidth="none";
     editor.style.minHeight=`${layout.heightIn}in`;
     editor.style.padding=`${layout.marginTopIn}in ${layout.marginRightIn}in ${layout.marginBottomIn}in ${layout.marginLeftIn}in`;
     editor.dataset.docxPageWidth=String(layout.widthIn);
     editor.dataset.docxPageHeight=String(layout.heightIn);
+  } else {
+    editor.style.width="8.5in";
+    editor.style.minWidth="8.5in";
+    editor.style.maxWidth="none";
+    editor.style.minHeight="11in";
   }
 
   const urls = [];
@@ -1268,7 +1274,11 @@ async function loadDocxHandle(block, handle, state = {}) {
     editor.dataset.pageSetup=state.pageSetup;
     const [,orientation="portrait",top=1,right=1,bottom=1,left=1]=state.pageSetup.split(",");
     editor.style.padding=`${top}in ${right}in ${bottom}in ${left}in`;
-    if(orientation==="landscape"&&model.pageLayout){editor.style.width=`${model.pageLayout.heightIn}in`;editor.style.minHeight=`${model.pageLayout.widthIn}in`;}
+    if(orientation==="landscape"&&model.pageLayout){
+      editor.style.width=`${model.pageLayout.heightIn}in`;
+      editor.style.minWidth=`${model.pageLayout.heightIn}in`;
+      editor.style.minHeight=`${model.pageLayout.widthIn}in`;
+    }
   }
 
   runtime.serialize = () => {
@@ -1279,7 +1289,12 @@ async function loadDocxHandle(block, handle, state = {}) {
   };
 
   clearSourceUnavailable(block); setDocumentDirty(block, Boolean(state.dirty));
-  requestAnimationFrame(() => { block.querySelector(".docx-editor").scrollTop = Number(state.scrollTop) || 0; });
+  requestAnimationFrame(() => {
+    const viewport=block.querySelector(".docx-viewport");
+    if(!viewport) return;
+    viewport.scrollTop=Number(state.scrollTop)||0;
+    viewport.scrollLeft=Number(state.scrollLeft)||0;
+  });
 }
 
 registerBlockType("docx", {
@@ -1349,7 +1364,7 @@ registerBlockType("docx", {
     const updateToolbar=()=>{if(document.activeElement!==editor&&!editor.contains(document.activeElement))return;for(const [selector,name] of [[".docx-bold","bold"],[".docx-italic","italic"],[".docx-underline","underline"],[".docx-strike","strikeThrough"]])block.querySelector(selector).setAttribute("aria-pressed",String(document.queryCommandState(name)));};document.addEventListener("selectionchange",updateToolbar);block.addEventListener("framechute:release-resources",()=>document.removeEventListener("selectionchange",updateToolbar),{once:true});
     block.querySelector(".reconnect-source").addEventListener("click", async () => { try { await reconnectSource(block, pickDocxFile, (handle) => loadDocxHandle(block, handle, this.capture(block))); } catch (error) { console.error(error); setStatus("Could not reconnect that DOCX."); } });
   },
-  capture(block) { const runtime=runtimeSources.get(block),editor=block.querySelector(".docx-editor");return { blocks: docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop: editor.scrollTop, dirty: block.dataset.documentDirty === "true", embeddedBlob:getSourceRecord(block)?null:runtime?.serialize?.()||null }; },
+  capture(block) { const runtime=runtimeSources.get(block),editor=block.querySelector(".docx-editor"),viewport=block.querySelector(".docx-viewport");return { blocks: docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop: viewport?.scrollTop||0, scrollLeft: viewport?.scrollLeft||0, dirty: block.dataset.documentDirty === "true", embeddedBlob:getSourceRecord(block)?null:runtime?.serialize?.()||null }; },
   async restore(block, state = {}, source = null) { if (state.blocks) renderDocxEditor(block, state.blocks); setDocumentDirty(block, Boolean(state.dirty)); const handle = await storedReadableHandle(source); if(state.embeddedBlob instanceof Blob){const file=new File([state.embeddedBlob],block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);}else if (handle) await loadDocxHandle(block, handle, state); else setSourceUnavailable(block, `Reconnect ${source?.displayName ?? "this DOCX"} to continue editing and save it.`); }
 });
 
