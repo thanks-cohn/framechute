@@ -863,9 +863,10 @@ body.hide-block-headers .compact-drag-handle {
 .docx-artifact-comment { color: #765900; background: #fff8cf; border-color: #c7a62d; }
 .docx-revision-ins, .docx-revision-moveTo { text-decoration: underline; background: #e8f7e8; }
 .docx-revision-del, .docx-revision-moveFrom { text-decoration: line-through; color: #8b3030; background: #fff0f0; }
-.docx-supplemental { margin: 14px 0; padding: 8px 12px; border-block: 1px solid #bbb; background: #fafafa; color: #444; }
-.docx-header { order: -1; }
-.docx-supplemental-label { margin-bottom: 4px; color: #666; font: 9px/1.2 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+/* Header/footer OOXML is preserved separately. Never render legacy
+   supplemental nodes as visible body bands. */
+.docx-supplemental,
+.docx-supplemental-label { display: none !important; }
 .docx-drawing { display: inline-block; overflow: visible; max-width: 100%; vertical-align: middle; transform-origin: center; }
 .docx-drawing text { fill: #222; font: 12px Arial, sans-serif; }
 .docx-field-result { background: #eef5ff; border-bottom: 1px dotted #587aa3; }
