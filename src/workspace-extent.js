@@ -21,9 +21,10 @@ export function requiredPositiveExpansion({ left, top, width, height, workspaceW
 }
 
 /**
- * Viewport edge-panning is navigation, not canvas growth. It is therefore
- * available in both workspace modes. Expansion remains a separate policy that
- * is applied only when the top toolbar is hidden.
+ * Viewport edge-panning is navigation. The workspace itself is unbounded from
+ * the user's point of view: dragging to any edge may grow reachable canvas,
+ * regardless of toolbar visibility. Objects are never clamped back toward the
+ * center merely to keep their headers visible.
  */
 export function edgePanDelta({
   clientX,
@@ -122,30 +123,22 @@ function beginMeasuredBlockDrag(event, block, handle) {
     let left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX);
     let top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY);
 
-    if (!document.body.classList.contains("toolbar-hidden")) {
-      // Toolbar visible = bounded desk. Edge-panning may navigate all of the
-      // existing desk, but carrying an object can never create more desk.
-      const size = workspaceSize();
-      const point = clampBlockToExtent({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
-      left = point.left;
-      top = point.top;
-    } else {
-      // Toolbar hidden = measured expandable canvas. It has the same edge-pan
-      // navigation, plus measured growth when the carried object crosses the
-      // existing workspace boundary.
-      while (left < 0) {
-        expandNegativeEdge("x");
-        left += WORKSPACE_EXPANSION_STEP;
-      }
-      while (top < 0) {
-        expandNegativeEdge("y");
-        top += WORKSPACE_EXPANSION_STEP;
-      }
-
-      const size = workspaceSize();
-      const growth = requiredPositiveExpansion({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
-      if (growth.addWidth || growth.addHeight) setWorkspaceSize(size.width + growth.addWidth, size.height + growth.addHeight);
+    // The canvas grows around the user's drag in every UI mode. Crossing the
+    // negative edge creates new reachable space on that side while preserving
+    // the visual position under the pointer by shifting the workspace origin
+    // and compensating with scroll. Crossing the positive edge grows the desk.
+    while (left < 0) {
+      expandNegativeEdge("x");
+      left += WORKSPACE_EXPANSION_STEP;
     }
+    while (top < 0) {
+      expandNegativeEdge("y");
+      top += WORKSPACE_EXPANSION_STEP;
+    }
+
+    const size = workspaceSize();
+    const growth = requiredPositiveExpansion({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
+    if (growth.addWidth || growth.addHeight) setWorkspaceSize(size.width + growth.addWidth, size.height + growth.addHeight);
 
     block.style.left = `${left}px`;
     block.style.top = `${top}px`;
@@ -196,9 +189,8 @@ function beginMeasuredBlockDrag(event, block, handle) {
 }
 
 // This capture-phase owner intentionally replaces the older block-drag handlers
-// for the two visible drag surfaces. It enforces the product rule:
-// toolbar visible = fixed but drag-navigable extent;
-// toolbar hidden = drag-navigable extent plus measured expansion.
+// for the two visible drag surfaces. Dragging is spatially free in every mode:
+// edge panning navigates and measured expansion keeps every placed object reachable.
 if (typeof document !== "undefined") {
   document.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !workspace) return;
