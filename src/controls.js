@@ -277,8 +277,9 @@ function attachResizeHandle(block) {
     bringBlockForward(block);
     const startX = event.clientX;
     const startY = event.clientY;
-    const startWidth = block.getBoundingClientRect().width;
-    const startHeight = block.getBoundingClientRect().height;
+    const startRect = block.getBoundingClientRect();
+    const startWidth = startRect.width;
+    const startHeight = startRect.height;
     let resized = false;
     const minimum = getComputedStyle(block);
     const minWidth = Number.parseFloat(minimum.minWidth) || 280;
@@ -287,8 +288,14 @@ function attachResizeHandle(block) {
     handle.classList.add("is-resizing");
     const move = (moveEvent) => {
       resized = true;
-      block.style.width = `${Math.max(minWidth, startWidth + moveEvent.clientX - startX)}px`;
-      block.style.height = `${Math.max(minHeight, startHeight + moveEvent.clientY - startY)}px`;
+      let width = Math.max(minWidth, startWidth + moveEvent.clientX - startX);
+      let height = Math.max(minHeight, startHeight + moveEvent.clientY - startY);
+      if (block.dataset.viewportFixed === "true") {
+        width = Math.min(width, Math.max(minWidth, window.innerWidth - startRect.left - 8));
+        height = Math.min(height, Math.max(minHeight, window.innerHeight - startRect.top - 8));
+      }
+      block.style.width = `${width}px`;
+      block.style.height = `${height}px`;
     };
     const finish = () => {
       const image = block.querySelector(".image-frame, .gallery-image");
