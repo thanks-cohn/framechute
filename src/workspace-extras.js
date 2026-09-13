@@ -84,10 +84,17 @@ await import("./media-dock-grab-pin.js");
 // viewport instead of clipping transformed corners against the object frame.
 await import("./straighten-fit.js");
 
-// Document-selection fidelity and canvas extent policy are deliberately loaded
-// after the legacy interaction modules so their capture-phase owners can enforce
-// the final product rules without duplicating the document model itself.
+// Document-selection fidelity is loaded after the legacy interaction modules.
+// Block dragging intentionally remains owned by the original direct drag
+// handlers in workspace.js / controls.js. No secondary extent module may
+// rewrite workspace geometry while an object is being dragged.
 await import("./docx-selection-fidelity.js");
-await import("./workspace-extent.js");
+
+const workspaceElement=document.querySelector("#workspace");
+if(workspaceElement){
+  workspaceElement.style.marginLeft="";
+  workspaceElement.style.marginTop="";
+  delete workspaceElement.dataset.spatialRunwayInitialized;
+}
 
 if (advancedMode) await import("./gallery-ui-polish.js");
