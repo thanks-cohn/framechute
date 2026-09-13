@@ -1,4 +1,5 @@
 import { connectArchiveDirectory, getArchiveStatus } from "./archive.js";
+import { createObjectDragSession } from "./object-drag-space.js";
 
 const SETTINGS_KEY = "flashframe.settings.v1";
 const VIDEO_LOOP_OVERRIDES_KEY = "flashframe.video-loop-overrides.v1";
@@ -232,20 +233,19 @@ function attachCompactBlockDrag(block) {
     event.stopPropagation();
     bringBlockForward(block);
 
-    const startX = event.clientX;
-    const startY = event.clientY;
     const startLeft = Number.parseFloat(block.style.left) || block.offsetLeft;
     const startTop = Number.parseFloat(block.style.top) || block.offsetTop;
+    const dragSession = createObjectDragSession({ workspace, block, event, startLeft, startTop });
 
     handle.classList.add("is-dragging");
     handle.setPointerCapture(event.pointerId);
 
     const move = (moveEvent) => {
-      block.style.left = `${startLeft + moveEvent.clientX - startX}px`;
-      block.style.top = `${startTop + moveEvent.clientY - startY}px`;
+      dragSession.move(moveEvent);
     };
 
     const finish = () => {
+      dragSession.finish();
       handle.classList.remove("is-dragging");
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);
