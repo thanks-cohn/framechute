@@ -2,19 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   WORKSPACE_EXPANSION_STEP,
-  clampBlockToExtent,
   edgePanDelta,
   requiredPositiveExpansion
 } from "../src/workspace-extent.js";
 
-test("visible-toolbar bounded canvas clamps blocks inside the frozen extent", () => {
+test("workspace growth keeps far-right and far-bottom placements reachable", () => {
   assert.deepEqual(
-    clampBlockToExtent({ left: -80, top: 1700, width: 300, height: 200, workspaceWidth: 2400, workspaceHeight: 1600 }),
-    { left: 0, top: 1400 }
-  );
-  assert.deepEqual(
-    clampBlockToExtent({ left: 2350, top: -20, width: 300, height: 200, workspaceWidth: 2400, workspaceHeight: 1600 }),
-    { left: 2100, top: 0 }
+    requiredPositiveExpansion({ left: 2350, top: 1500, width: 500, height: 300, workspaceWidth: 2400, workspaceHeight: 1600 }),
+    { addWidth: WORKSPACE_EXPANSION_STEP, addHeight: WORKSPACE_EXPANSION_STEP }
   );
 });
 
