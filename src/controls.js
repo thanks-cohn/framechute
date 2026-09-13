@@ -359,14 +359,19 @@ function scheduleDocxToolsHide(block) {
   const toolbar = block.querySelector(":scope > .docx-toolbar");
   if (!toolbar) return;
 
-  docxToolsTimers.set(block, setTimeout(() => {
+  const timer=setTimeout(() => {
+    docxToolsTimers.delete(block);
     if (!settings.autoHideDocxTools) return;
-    if (toolbar.matches(":hover, :focus-within") || toolbar.querySelector("details[open]")) {
-      scheduleDocxToolsHide(block);
-      return;
-    }
+
+    // Do not spin another idle timer while the user is actually inside the
+    // formatting controls. pointerleave/focusout/toggle will start the next
+    // countdown when that interaction really ends.
+    if (toolbar.matches(":hover, :focus-within") || toolbar.querySelector("details[open]")) return;
+
     block.classList.add("docx-tools-collapsed");
-  }, DOCX_TOOLS_IDLE_MS));
+  }, DOCX_TOOLS_IDLE_MS);
+
+  docxToolsTimers.set(block, timer);
 }
 
 function revealDocxTools(block, { hold = false } = {}) {
@@ -398,12 +403,27 @@ function prepareDocxToolsAutoHide(block) {
   if (block.dataset.docxToolsAutoHideBound !== "true") {
     block.dataset.docxToolsAutoHideBound = "true";
 
+    // Header hover is the primary wake gesture. Merely moving around or
+    // scrolling inside the document body must never wake the Word tools.
+    header.addEventListener("pointerenter", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+    });
+    header.addEventListener("pointerleave", () => {
+      if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
+    });
+
+    // Provide only a tiny 10px wake strip directly beneath the title bar.
+    // This makes the hidden toolbar discoverable without treating the whole
+    // DOCX frame as a hover target.
     block.addEventListener("pointermove", (event) => {
       if (!settings.autoHideDocxTools) return;
-      const rect = block.getBoundingClientRect();
-      const headerHeight = Math.max(46, header.getBoundingClientRect().height || 0);
-      const revealZoneBottom = rect.top + headerHeight + 56;
-      if (event.clientY <= revealZoneBottom) revealDocxTools(block);
+      const headerRect = header.getBoundingClientRect();
+      const inWakeStrip =
+        event.clientY >= headerRect.bottom &&
+        event.clientY <= headerRect.bottom + 10 &&
+        event.clientX >= headerRect.left &&
+        event.clientX <= headerRect.right;
+      if (inWakeStrip) revealDocxTools(block);
     });
 
     toolbar.addEventListener("pointerenter", () => {
@@ -422,10 +442,10 @@ function prepareDocxToolsAutoHide(block) {
       if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
     });
     toolbar.addEventListener("click", () => {
-      if (settings.autoHideDocxTools) revealDocxTools(block);
+      if (settings.autoHideDocxTools && !toolbar.matches(":hover, :focus-within")) scheduleDocxToolsHide(block);
     });
     toolbar.addEventListener("change", () => {
-      if (settings.autoHideDocxTools) revealDocxTools(block);
+      if (settings.autoHideDocxTools && !toolbar.matches(":hover, :focus-within")) scheduleDocxToolsHide(block);
     });
     toolbar.addEventListener("toggle", () => {
       if (!settings.autoHideDocxTools) return;
