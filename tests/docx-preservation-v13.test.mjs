@@ -39,10 +39,12 @@ test("unrelated text edits preserve revisions, fields, AlternateContent, comment
   const xml = `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>before</w:t></w:r></w:p><w:p><w:ins w:author="Ada"><w:r><w:t>inserted</w:t></w:r></w:ins><w:fldSimple w:instr="PAGE"><w:r><w:t>7</w:t></w:r></w:fldSimple><mc:AlternateContent><mc:Fallback><w:r><w:t>fallback</w:t></w:r></mc:Fallback></mc:AlternateContent></w:p></w:body></w:document>`;
   const comments = strToU8('<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="0"><w:p><w:r><w:t>Keep me</w:t></w:r></w:p></w:comment></w:comments>');
   const embedded = new Uint8Array([0, 1, 2, 253, 254, 255]);
+  const header = strToU8('<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Header content</w:t></w:r></w:p></w:hdr>');
+  const footer = strToU8('<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Footer content</w:t></w:r></w:p></w:ftr>');
   const model = {
     originalXml: xml,
     originalBlocks: [{ type:"paragraph", sourceIndex:0, style:"", alignment:"left", list:"", level:0, lineSpacing:null, spaceBefore:0, spaceAfter:null, indentLeft:0, indentRight:0, firstLine:0, pageBreak:false }, { type:"paragraph", sourceIndex:1, style:"", alignment:"left", list:"", level:0, lineSpacing:null, spaceBefore:0, spaceAfter:null, indentLeft:0, indentRight:0, firstLine:0, pageBreak:false }],
-    parts: { "word/document.xml":strToU8(xml), "word/comments.xml":comments, "word/embeddings/object1.bin":embedded },
+    parts: { "word/document.xml":strToU8(xml), "word/comments.xml":comments, "word/embeddings/object1.bin":embedded, "word/header1.xml":header, "word/footer1.xml":footer },
     blocks: [
       { type:"paragraph", sourceIndex:0, style:"", alignment:"left", list:"", level:0, lineSpacing:null, spaceBefore:0, spaceAfter:null, indentLeft:0, indentRight:0, firstLine:0, pageBreak:false, runs:[{text:"after"}] },
       { type:"paragraph", sourceIndex:1, style:"", alignment:"left", list:"", level:0, lineSpacing:null, spaceBefore:0, spaceAfter:null, indentLeft:0, indentRight:0, firstLine:0, pageBreak:false, runs:[{text:"inserted"},{text:"7"},{text:"fallback"}] }
@@ -56,4 +58,6 @@ test("unrelated text edits preserve revisions, fields, AlternateContent, comment
   assert.match(savedXml, /<mc:AlternateContent>/);
   assert.deepEqual(saved["word/comments.xml"],comments);
   assert.deepEqual(saved["word/embeddings/object1.bin"],embedded);
+  assert.deepEqual(saved["word/header1.xml"],header);
+  assert.deepEqual(saved["word/footer1.xml"],footer);
 });
