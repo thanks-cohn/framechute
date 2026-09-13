@@ -1,3 +1,4 @@
+import { isViewportFixed, toggleViewportFixed } from "../viewport-fix.js";
 import { isQuickActionsHidden, objectMenuItems, readQuickActionsEnabled, setQuickActionsHidden, writeQuickActionsEnabled } from "./object-menu-model.mjs";
 import { fittedImageSize } from "./image-display-size.mjs";
 import { isPaintEditing } from "../image-edit/paint-runtime.js";
@@ -154,12 +155,13 @@ if (!workspace || !bar || !actions?.selection) {
       if(id==="open-file")window.dispatchEvent(new CustomEvent("framechute:open-file"));
       if(id==="minimize"||id==="expand"||id==="center"||id==="grab")window.dispatchEvent(new CustomEvent("framechute:object-command",{detail:{block,command:id}}));
       if(id==="remove")block.querySelector(":scope > .block-header .remove-block")?.click();
+      if(id==="fix-viewport")toggleViewportFixed(block);
     } catch(error) {
       console.error(error);
       if(status)status.textContent=error?.message || "That object action could not be completed.";
     } finally { closeMenu(); }
   }
-  function openMenu(block,clientX,clientY){if(!isImageBlock(block))return;menuBlock=block;menu.replaceChildren();for(const item of objectMenuItems({quickActionsHidden:isHiddenFor(block),quickActionsEnabled,imageEditing:isPaintEditing(block)})){if(item.separator){const rule=document.createElement("hr");rule.setAttribute("role","separator");menu.append(rule);continue;}const control=document.createElement("button");control.type="button";control.setAttribute("role","menuitem");control.textContent=item.label;if(item.danger)control.className="danger";control.onclick=()=>void runMenuAction(item.id);menu.append(control);}positionMenu(clientX,clientY);}
+  function openMenu(block,clientX,clientY){if(!isImageBlock(block))return;menuBlock=block;menu.replaceChildren();for(const item of objectMenuItems({quickActionsHidden:isHiddenFor(block),quickActionsEnabled,imageEditing:isPaintEditing(block),viewportFixed:isViewportFixed(block)})){if(item.separator){const rule=document.createElement("hr");rule.setAttribute("role","separator");menu.append(rule);continue;}const control=document.createElement("button");control.type="button";control.setAttribute("role","menuitem");control.textContent=item.label;if(item.danger)control.className="danger";control.onclick=()=>void runMenuAction(item.id);menu.append(control);}positionMenu(clientX,clientY);}
   window.addEventListener("framechute:open-object-menu",event=>openMenu(event.detail?.block,event.detail?.clientX||0,event.detail?.clientY||0));
   workspace.addEventListener("contextmenu", event => { const block=event.target.closest(".block");if(!isImageBlock(block)){closeMenu();return;}event.preventDefault();if(!selection.has(block))selection.replace(block);openMenu(block,event.clientX,event.clientY); });
 
