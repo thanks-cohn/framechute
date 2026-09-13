@@ -1,4 +1,5 @@
 await import("./advanced-mode.js");
+await import("./viewport-fix.js");
 await import("./editor-context-menu.js");
 await import("./legacy-workspace-save.js");
 
