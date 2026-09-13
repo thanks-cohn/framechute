@@ -11,6 +11,7 @@ const VIDEO_STEP_KEY = "flashframe.video-step-seconds.v1";
 const defaults = {
   showBlockHeaders: true,
   showToolbar: true,
+  autoHideDocxTools: false,
   loopVideosByDefault: false
 };
 
@@ -29,6 +30,7 @@ const playButton = document.querySelector("#video-play-all");
 const forwardButton = document.querySelector("#video-forward-all");
 const stepInput = document.querySelector("#video-rewind-seconds");
 const showBlockHeadersInput = document.querySelector("#setting-block-headers");
+const autoHideDocxToolsInput = document.querySelector("#setting-docx-tools-auto-hide");
 const showToolbarInput = document.querySelector("#setting-toolbar");
 const loopVideosInput = document.querySelector("#setting-loop-videos");
 const archiveStatus = document.querySelector("#archive-status");
@@ -38,6 +40,8 @@ let settings = { ...defaults, ...readJson(SETTINGS_KEY, {}) };
 let videoLoopOverrides = readJson(VIDEO_LOOP_OVERRIDES_KEY, {});
 let toolbarTemporaryVisible = null;
 let suppressToolbarClick = false;
+const DOCX_TOOLS_IDLE_MS = 4000;
+const docxToolsTimers = new WeakMap();
 
 function readJson(key, fallback) {
   try {
@@ -342,15 +346,108 @@ function prepareVideoBlock(block) {
   });
 }
 
+function clearDocxToolsTimer(block) {
+  const timer = docxToolsTimers.get(block);
+  if (timer) clearTimeout(timer);
+  docxToolsTimers.delete(block);
+}
+
+function scheduleDocxToolsHide(block) {
+  clearDocxToolsTimer(block);
+  if (!settings.autoHideDocxTools || block.dataset.blockType !== "docx") return;
+
+  const toolbar = block.querySelector(":scope > .docx-toolbar");
+  if (!toolbar) return;
+
+  docxToolsTimers.set(block, setTimeout(() => {
+    if (!settings.autoHideDocxTools) return;
+    if (toolbar.matches(":hover, :focus-within") || toolbar.querySelector("details[open]")) {
+      scheduleDocxToolsHide(block);
+      return;
+    }
+    block.classList.add("docx-tools-collapsed");
+  }, DOCX_TOOLS_IDLE_MS));
+}
+
+function revealDocxTools(block, { hold = false } = {}) {
+  if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
+  block.classList.remove("docx-tools-collapsed");
+  clearDocxToolsTimer(block);
+  if (settings.autoHideDocxTools && !hold) scheduleDocxToolsHide(block);
+}
+
+function applyDocxToolsSetting(block) {
+  if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
+  block.classList.toggle("docx-tools-auto-hide", Boolean(settings.autoHideDocxTools));
+
+  if (!settings.autoHideDocxTools) {
+    clearDocxToolsTimer(block);
+    block.classList.remove("docx-tools-collapsed");
+    return;
+  }
+
+  revealDocxTools(block);
+}
+
+function prepareDocxToolsAutoHide(block) {
+  if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
+  const toolbar = block.querySelector(":scope > .docx-toolbar");
+  const header = block.querySelector(":scope > .block-header");
+  if (!toolbar || !header) return;
+
+  if (block.dataset.docxToolsAutoHideBound !== "true") {
+    block.dataset.docxToolsAutoHideBound = "true";
+
+    block.addEventListener("pointermove", (event) => {
+      if (!settings.autoHideDocxTools) return;
+      const rect = block.getBoundingClientRect();
+      const headerHeight = Math.max(46, header.getBoundingClientRect().height || 0);
+      const revealZoneBottom = rect.top + headerHeight + 56;
+      if (event.clientY <= revealZoneBottom) revealDocxTools(block);
+    });
+
+    toolbar.addEventListener("pointerenter", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+    });
+    toolbar.addEventListener("pointerleave", () => {
+      if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
+    });
+    toolbar.addEventListener("focusin", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+    });
+    toolbar.addEventListener("focusout", () => {
+      if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
+    });
+    toolbar.addEventListener("pointerdown", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+    });
+    toolbar.addEventListener("click", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block);
+    });
+    toolbar.addEventListener("change", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block);
+    });
+    toolbar.addEventListener("toggle", () => {
+      if (!settings.autoHideDocxTools) return;
+      if (toolbar.querySelector("details[open]")) revealDocxTools(block, { hold: true });
+      else scheduleDocxToolsHide(block);
+    }, true);
+  }
+
+  applyDocxToolsSetting(block);
+}
+
 function prepareBlock(block) {
   if (!(block instanceof HTMLElement) || !block.classList.contains("block")) return;
   attachCompactBlockDrag(block);
   attachResizeHandle(block);
+  if (block.dataset.blockType === "docx") prepareDocxToolsAutoHide(block);
   if (block.dataset.blockType === "video") prepareVideoBlock(block);
 }
 
 function applySettings() {
   showBlockHeadersInput.checked = Boolean(settings.showBlockHeaders);
+  autoHideDocxToolsInput.checked = Boolean(settings.autoHideDocxTools);
   showToolbarInput.checked = Boolean(settings.showToolbar);
   loopVideosInput.checked = Boolean(settings.loopVideosByDefault);
   document.body.classList.toggle("hide-block-headers", !settings.showBlockHeaders);
@@ -486,6 +583,14 @@ showBlockHeadersInput.addEventListener("change", () => {
   settings.showBlockHeaders = showBlockHeadersInput.checked;
   saveSettings();
   applySettings();
+});
+
+autoHideDocxToolsInput.addEventListener("change", () => {
+  settings.autoHideDocxTools = autoHideDocxToolsInput.checked;
+  saveSettings();
+  for (const block of workspace.querySelectorAll('.block[data-block-type="docx"]')) {
+    prepareDocxToolsAutoHide(block);
+  }
 });
 
 showToolbarInput.addEventListener("change", () => {
