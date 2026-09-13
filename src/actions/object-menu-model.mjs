@@ -4,7 +4,7 @@ export function showWorkspaceActionsForTarget(hasObjectTarget) {
   return !hasObjectTarget;
 }
 
-export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false } = {}) {
+export function objectMenuItems({ quickActionsHidden = false, quickActionsEnabled = true, imageEditing = false, viewportFixed = false } = {}) {
   return [
     { id: "show-header", label: "Show Header" },
     { id: "center", label: "Bring to Center" },
@@ -24,7 +24,9 @@ export function objectMenuItems({ quickActionsHidden = false, quickActionsEnable
     { id: "fit-height", label: "Fit Height" },
     { id: "actual-size", label: "Actual Size" },
     { id: "shrink-all", label: "Shrink all images to fit" },
-    { id: "edit", label: imageEditing ? "Finish Editing" : "Edit Image" }
+    { id: "edit", label: imageEditing ? "Finish Editing" : "Edit Image" },
+    { separator: true },
+    { id: "fix-viewport", label: `Fix to Viewport  [ ${viewportFixed ? "ON" : "OFF"} ]` }
   ];
 }
 
