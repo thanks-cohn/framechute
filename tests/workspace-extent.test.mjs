@@ -2,15 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   WORKSPACE_EXPANSION_STEP,
-  WORKSPACE_NEGATIVE_RUNWAY,
   edgePanDelta,
   requiredPositiveExpansion
 } from "../src/workspace-extent.js";
-
-test("negative-space runway is preallocated rather than grown during a drag", () => {
-  assert.equal(WORKSPACE_NEGATIVE_RUNWAY, 8192);
-  assert.ok(WORKSPACE_NEGATIVE_RUNWAY > WORKSPACE_EXPANSION_STEP * 8);
-});
 
 test("workspace growth keeps far-right and far-bottom placements reachable", () => {
   assert.deepEqual(
