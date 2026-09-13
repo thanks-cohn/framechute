@@ -18,17 +18,29 @@ function footerControls(block) {
 function forceFooterVisible(block) {
   if (!(block instanceof HTMLElement)) return;
 
+  const footers = [...footerControls(block)];
+
+  // DOCX/PDF formatting bars are editing toolbars, not object footers.
+  // Never apply generic show-object-footer chrome to document frames because
+  // its late CSS uses display:flex!important and defeats DOCX auto-hide.
+  const isDocumentFrame = block.matches(".docx-block, .pdf-block, .document-block");
+  if (isDocumentFrame) {
+    block.classList.remove("show-object-footer");
+    delete block.dataset.footerVisibility;
+    return;
+  }
+
+  if (!footers.length) return;
+
   block.classList.remove("hide-object-footer", "is-object-chrome-faded");
   block.classList.add("show-object-footer");
   block.dataset.footerVisibility = "show";
 
-  // Media/gallery chrome owns its own persistence. This event is deliberately
-  // harmless for block types that do not implement footer chrome.
   window.dispatchEvent(new CustomEvent("flashframe:set-object-chrome", {
     detail: { block, part: "footer", hidden: false }
   }));
 
-  for (const footer of footerControls(block)) {
+  for (const footer of footers) {
     footer.hidden = false;
     footer.style.removeProperty("display");
     footer.style.removeProperty("opacity");
@@ -142,3 +154,9 @@ window.addEventListener("framechute:block-restored", (event) => {
     });
   });
 });
+
+
+for (const block of workspace?.querySelectorAll?.(".docx-block.show-object-footer, .pdf-block.show-object-footer, .document-block.show-object-footer") || []) {
+  block.classList.remove("show-object-footer");
+  delete block.dataset.footerVisibility;
+}
