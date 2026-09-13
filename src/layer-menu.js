@@ -51,6 +51,7 @@ menu.className = "flashframe-layer-menu";
 menu.hidden = true;
 menu.setAttribute("role", "menu");
 menu.innerHTML = `
+  <button type="button" data-layer-action="show-header" role="menuitem">Show Header</button>
   <button class="workspace-menu-action" type="button" data-layer-action="export-workspace" role="menuitem">Export Workspace…</button>
   <button class="workspace-menu-action" type="button" data-layer-action="take-snapshot" role="menuitem">Take Snapshot…</button>
   <div class="flashframe-layer-menu-separator workspace-menu-action" role="separator"></div>
@@ -221,6 +222,7 @@ function showMenu(block, x, y) {
   advancedTimingNodes.forEach(node=>menu.append(node));
   const visibility = genericAdvancedVisibility({ advanced, block });
   menu.querySelectorAll(".workspace-menu-action").forEach(item => { item.hidden = !showWorkspaceActionsForTarget(Boolean(block)); });
+  menu.querySelector('[data-layer-action="show-header"]').hidden = !block;
   menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
   menu.querySelector('[data-layer-action="expand"]').textContent = block?.classList.contains("is-maximized") ? "Restore Size" : "Expand";
   menu.querySelector('[data-layer-action="front"]').hidden = !block;
@@ -325,7 +327,7 @@ menu.addEventListener("click", (event) => {
     hideMenu();
     return;
   }
-  if (["minimize", "expand", "center"].includes(button.dataset.layerAction)) {
+  if (["show-header", "minimize", "expand", "center"].includes(button.dataset.layerAction)) {
     const block = targetBlock;
     const command = button.dataset.layerAction;
     hideMenu();
