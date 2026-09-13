@@ -5,13 +5,6 @@ export const WORKSPACE_EDGE_MARGIN = 96;
 export const WORKSPACE_PAN_EDGE = 44;
 export const WORKSPACE_PAN_SPEED = 24;
 
-export function clampBlockToExtent({ left, top, width, height, workspaceWidth, workspaceHeight }) {
-  return {
-    left: Math.max(0, Math.min(left, Math.max(0, workspaceWidth - width))),
-    top: Math.max(0, Math.min(top, Math.max(0, workspaceHeight - height)))
-  };
-}
-
 export function requiredPositiveExpansion({ left, top, width, height, workspaceWidth, workspaceHeight, margin = WORKSPACE_EDGE_MARGIN, step = WORKSPACE_EXPANSION_STEP }) {
   let addWidth = 0;
   let addHeight = 0;
