@@ -1,3 +1,4 @@
+import { isViewportFixed, toggleViewportFixed } from "./viewport-fix.js";
 import { readQuickActionsEnabled, showWorkspaceActionsForTarget, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
 import { genericAdvancedVisibility } from "./actions/context-menu-model.mjs";
 import { positionSubmenu } from "./submenu-position.mjs";
@@ -88,9 +89,12 @@ menu.innerHTML = `
   <button type="button" data-layer-action="timed-clear" role="menuitem">Remove timed move</button>
   <button type="button" data-layer-action="layer-rule" role="menuitem">Layer timing…</button>
   <div class="flashframe-layer-menu-separator timed-motion-separator" role="separator"></div>
+  <div class="flashframe-layer-menu-separator viewport-fix-separator" role="separator"></div>
+  <button type="button" data-layer-action="fix-viewport" role="menuitem">Fix to Viewport  [ OFF ]</button>
 `;
 document.body.append(menu);
 const advancedTimingNodes=[...menu.querySelectorAll('[data-layer-action^="timed-"], [data-layer-action="layer-rule"], .timed-motion-separator')];
+const viewportFixNodes=[...menu.querySelectorAll('.viewport-fix-separator, [data-layer-action="fix-viewport"]')];
 
 const style = document.createElement("style");
 style.textContent = `
@@ -220,9 +224,14 @@ function showMenu(block, x, y) {
   menu.hidden = false;
   const advanced = window.frameChuteAdvancedMode === true;
   advancedTimingNodes.forEach(node=>menu.append(node));
+  viewportFixNodes.forEach(node=>menu.append(node));
   const visibility = genericAdvancedVisibility({ advanced, block });
   menu.querySelectorAll(".workspace-menu-action").forEach(item => { item.hidden = !showWorkspaceActionsForTarget(Boolean(block)); });
   menu.querySelector('[data-layer-action="show-header"]').hidden = !block;
+  const viewportFixButton = menu.querySelector('[data-layer-action="fix-viewport"]');
+  viewportFixButton.hidden = !block;
+  menu.querySelector(".viewport-fix-separator").hidden = !block;
+  viewportFixButton.textContent = `Fix to Viewport  [ ${isViewportFixed(block) ? "ON" : "OFF"} ]`;
   menu.querySelector('[data-layer-action="quick-actions"]').textContent = `Quick Actions  [ ${readQuickActionsEnabled() ? "ON" : "OFF"} ]`;
   menu.querySelector('[data-layer-action="expand"]').textContent = block?.classList.contains("is-maximized") ? "Restore Size" : "Expand";
   menu.querySelector('[data-layer-action="front"]').hidden = !block;
@@ -332,6 +341,13 @@ menu.addEventListener("click", (event) => {
     const command = button.dataset.layerAction;
     hideMenu();
     if (block) window.dispatchEvent(new CustomEvent("framechute:object-command", { detail: { block, command } }));
+    return;
+  }
+
+  if (button.dataset.layerAction === "fix-viewport") {
+    const block = targetBlock;
+    hideMenu();
+    if (block) toggleViewportFixed(block);
     return;
   }
 
@@ -445,8 +461,19 @@ document.addEventListener("pointermove", (event) => {
   if (!menuGrab?.block?.isConnected) return;
   const dx = event.clientX - menuGrab.pointerX;
   const dy = event.clientY - menuGrab.pointerY;
-  menuGrab.block.style.left = `${menuGrab.startLeft + dx}px`;
-  menuGrab.block.style.top = `${menuGrab.startTop + dy}px`;
+  if (isViewportFixed(menuGrab.block)) {
+    const rect = menuGrab.block.getBoundingClientRect();
+    const margin = 8;
+    const width = rect.width;
+    const height = rect.height;
+    const left = Math.min(Math.max(menuGrab.startLeft + dx, margin), Math.max(margin, innerWidth - width - margin));
+    const top = Math.min(Math.max(menuGrab.startTop + dy, margin), Math.max(margin, innerHeight - height - margin));
+    menuGrab.block.style.left = `${left}px`;
+    menuGrab.block.style.top = `${top}px`;
+  } else {
+    menuGrab.block.style.left = `${menuGrab.startLeft + dx}px`;
+    menuGrab.block.style.top = `${menuGrab.startTop + dy}px`;
+  }
 }, true);
 
 document.addEventListener("pointerdown", (event) => {
