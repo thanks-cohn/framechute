@@ -77,6 +77,11 @@ function parseParagraphProps(pPr) {
     if(Number.isFinite(first)||Number.isFinite(hanging)) out.firstLine=((Number.isFinite(first)?first:0)-(Number.isFinite(hanging)?hanging:0))/1440;
   }
   if(descendant(pPr,"pageBreakBefore")[0]) out.pageBreak=true;
+  const numPr=descendant(pPr,"numPr")[0];
+  if(numPr) {
+    const numId=Number(wVal(descendant(numPr,"numId")[0])),level=Number(wVal(descendant(numPr,"ilvl")[0])||0);
+    if(Number.isFinite(numId)) { out.numId=numId; out.level=level; }
+  }
   return out;
 }
 function parseStyles(parts) {
@@ -260,14 +265,28 @@ function imageFromNode(node, relationships, parts) {
   return { kind: "image", relationshipId, part, mime: imageMime(part), width: widthEmu ? widthEmu / 9525 : null, height: heightEmu ? heightEmu / 9525 : null, unsupported: !parts[part] };
 }
 
+function drawingFromNode(node) {
+  const geometry=allDescendants(node,"prstGeom")[0]?.getAttribute("prst")||"";
+  if(!geometry&&!allDescendants(node,"txbxContent").length) return null;
+  const extent=allDescendants(node,"extent")[0]||allDescendants(node,"ext")[0];
+  const width=Math.max(24,(Number(extent?.getAttribute("cx"))||914400)/9525),height=Math.max(24,(Number(extent?.getAttribute("cy"))||457200)/9525);
+  const fill=allDescendants(allDescendants(node,"solidFill")[0],"srgbClr")[0]?.getAttribute("val")||"D9EAF7";
+  const line=allDescendants(node,"ln")[0],stroke=allDescendants(line,"srgbClr")[0]?.getAttribute("val")||"555555";
+  const xfrm=allDescendants(node,"xfrm")[0],rotation=(Number(xfrm?.getAttribute("rot"))||0)/60000;
+  const text=allDescendants(allDescendants(node,"txbxContent")[0],"t").map(item=>item.textContent||"").join(" ");
+  return { geometry,width,height,fill:`#${fill}`,stroke:`#${stroke}`,rotation,text };
+}
+
 function parseRun(run, relationships, parts, inherited = {}, styles = null) {
   const props=children(run,"rPr")[0];
   const charStyle=wVal(descendant(props,"rStyle")[0]);
   const styled=charStyle&&styles ? styles.resolve(charStyle).r : {};
   const format=mergeDefined(inherited,styled,parseRunProps(props));
   const text=[...run.childNodes].map(node=>local(node)==="t"?(node.textContent||""):local(node)==="tab"?"\t":local(node)==="br"?"\n":"").join("");
-  const images=[...run.children].filter(node=>["drawing","pict"].includes(local(node))).map(node=>imageFromNode(node,relationships,parts));
-  return { text, images, bold:false, italic:false, underline:false, strike:false, color:"", highlight:"", fontFamily:"", fontSize:null, ...format };
+  const drawingNodes=[...run.children].filter(node=>["drawing","pict","object"].includes(local(node)));
+  const images=drawingNodes.filter(node=>allDescendants(node,"blip").length||allDescendants(node,"imagedata").length).map(node=>imageFromNode(node,relationships,parts));
+  const drawings=drawingNodes.map(drawingFromNode).filter(Boolean);
+  return { text, images, drawings, bold:false, italic:false, underline:false, strike:false, color:"", highlight:"", fontFamily:"", fontSize:null, ...format };
 }
 
 const ARTIFACT_LABELS = Object.freeze({
@@ -292,25 +311,33 @@ function parseParagraph(paragraph, relationships, parts, numbering=new Map(), st
   const style=wVal(descendant(pPr,"pStyle")[0]);
   const resolved=styles?.resolve(style)||{p:{},r:{}};
   const pFormat=mergeDefined(resolved.p,parseParagraphProps(pPr));
-  const numPr=descendant(pPr,"numPr")[0],num=Boolean(numPr);
-  const numId=Number(wVal(descendant(numPr,"numId")[0])||0),level=Number(wVal(descendant(numPr,"ilvl")[0])||0);
+  const numPr=descendant(pPr,"numPr")[0],num=Boolean(numPr)||Number.isFinite(pFormat.numId);
+  const numId=Number(numPr?wVal(descendant(numPr,"numId")[0]):pFormat.numId)||0,level=Number(numPr?wVal(descendant(numPr,"ilvl")[0]):pFormat.level)||0;
   const numberInfo=num ? (numbering.get(`${numId}:${level}`)||numbering.get(`${numId}:0`)||{list:"number",format:"decimal",text:"%1.",start:1}) : null;
-  const runs=[];
+  const runs=[],fieldStack=[];
   const walk=(node,hyperlink="",revision=null)=>{
     for(const child of node.children||[]) {
       if(local(child)==="r") {
+        const fieldChar=allDescendants(child,"fldChar")[0],fieldType=wVal(fieldChar,"fldCharType");
+        if(fieldType==="begin") { fieldStack.push({instruction:"",phase:"instruction"}); artifactSink.push({kind:"field",capability:"readOnlyRenderable"}); }
+        const activeField=fieldStack.at(-1);
+        if(activeField) activeField.instruction+=allDescendants(child,"instrText").map(item=>item.textContent||"").join("");
+        if(fieldType==="separate"&&activeField) activeField.phase="result";
         const parsed=parseRun(child,relationships,parts,resolved.r,styles);
         for(const image of parsed.images||[]) artifactSink.push({kind:"image",capability:image.unsupported?"unsupportedPreserved":"editable",part:image.part||""});
         for(const drawing of [...child.children].filter(item=>["drawing","pict","object"].includes(local(item)))) {
           const hasImage=allDescendants(drawing,"blip").length||allDescendants(drawing,"imagedata").length;
-          if(!hasImage) {
+          if(!hasImage&&!parsed.drawings.length) {
             const artifact=preservedRun(drawing,allDescendants(drawing,"Fallback").length?"preservedFallback":"unsupportedPreserved");
             parsed.artifact=artifact.artifact; artifactSink.push(artifact.artifact);
           }
         }
         if(revision) parsed.revision=revision;
+        if(activeField?.phase==="instruction"&&!fieldType) continue;
+        if(activeField?.phase==="result") { parsed.field={instruction:activeField.instruction.trim(),cached:true}; parsed.readOnly=true; }
         if(hyperlink) { parsed.hyperlink=hyperlink; parsed.hyperlinkId=attribute(node,R,"id")||""; }
-        runs.push(parsed);
+        if(parsed.text||parsed.images.length||parsed.drawings.length||parsed.artifact) runs.push(parsed);
+        if(fieldType==="end") fieldStack.pop();
       } else if(local(child)==="hyperlink") {
         const id=attribute(child,R,"id"),rel=relationships.get(id);
         walk(child,rel?.target||"");
@@ -383,6 +410,12 @@ export function parseDocx(bytes) {
     for(const num of allDescendants(numberingDoc,"num")){
       const id=Number(wVal(num,"numId")||num.getAttribute("w:numId")),abstractId=Number(wVal(descendant(num,"abstractNumId")[0]));
       for(const [level,info] of abstracts.get(abstractId)||[]) numbering.set(`${id}:${level}`,{...info});
+      for(const override of children(num,"lvlOverride")) {
+        const level=Number(wVal(override,"ilvl")||0),base=numbering.get(`${id}:${level}`)||{};
+        const overrideLevel=children(override,"lvl")[0],startOverride=Number(wVal(descendant(override,"startOverride")[0]));
+        const format=wVal(descendant(overrideLevel,"numFmt")[0]),text=wVal(descendant(overrideLevel,"lvlText")[0]),start=Number(wVal(descendant(overrideLevel,"start")[0]));
+        numbering.set(`${id}:${level}`,{...base,...(format?{format,list:format==="bullet"?"bullet":"number"}:{}),...(text?{text}:{}),...(Number.isFinite(startOverride)&&startOverride>0?{start:startOverride}:Number.isFinite(start)&&start>0?{start}:{})});
+      }
     }
   }
   const blocks = [], artifacts=[];
@@ -401,16 +434,27 @@ export function parseDocx(bytes) {
     }
 
     if (kind === "tbl") {
-      const rows=children(child,"tr").map((row) => children(row,"tc").map((cell) => {
+      const gridWidths=children(children(child,"tblGrid")[0],"gridCol").map(column=>Number(wVal(column,"w"))||0);
+      const tblPr=children(child,"tblPr")[0];
+      const rows=children(child,"tr").map((row) => {
+        const trPr=children(row,"trPr")[0],heightNode=descendant(trPr,"trHeight")[0];
+        const cells=children(row,"tc").map((cell) => {
         const content=descendant(cell,"p").map((p) => parseParagraph(p, relationships, parts,numbering,styles,artifacts));
         const tcPr=children(cell,"tcPr")[0], span=Number(wVal(descendant(tcPr,"gridSpan")[0])||1), merge=descendant(tcPr,"vMerge")[0];
         content.gridSpan=Math.max(1,span); content.vMerge=merge?(wVal(merge)||"continue"):"";
+        content.widthTwips=Number(wVal(descendant(tcPr,"tcW")[0])||0);
+        content.verticalAlign=wVal(descendant(tcPr,"vAlign")[0]);
+        const shade=wVal(descendant(tcPr,"shd")[0],"fill"); if(shade&&!/auto|nil/i.test(shade))content.shading=`#${shade}`;
+        const margins=descendant(tcPr,"tcMar")[0]; content.margins={}; for(const edge of ["top","right","bottom","left"]) { const value=Number(wVal(children(margins,edge)[0],"w")); if(Number.isFinite(value))content.margins[edge]=value; }
         return content;
-      }));
+        });
+        cells.heightTwips=Number(wVal(heightNode,"val")||0); return cells;
+      });
       blocks.push({
         type: "table",
         sourceIndex,
-        rows
+        rows,gridWidths,
+        alignment:wVal(descendant(tblPr,"jc")[0]),indentTwips:Number(wVal(descendant(tblPr,"tblInd")[0],"w")||0)
       });
       artifacts.push({kind:"table",capability:"editable",sourceIndex});
       return;

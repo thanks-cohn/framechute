@@ -822,6 +822,9 @@ body.hide-block-headers .compact-drag-handle {
 .docx-supplemental { margin: 14px 0; padding: 8px 12px; border-block: 1px solid #bbb; background: #fafafa; color: #444; }
 .docx-header { order: -1; }
 .docx-supplemental-label { margin-bottom: 4px; color: #666; font: 9px/1.2 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+.docx-drawing { display: inline-block; overflow: visible; max-width: 100%; vertical-align: middle; transform-origin: center; }
+.docx-drawing text { fill: #222; font: 12px Arial, sans-serif; }
+.docx-field-result { background: #eef5ff; border-bottom: 1px dotted #587aa3; }
 
 .gallery-block {
   min-width: 360px;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { strFromU8, strToU8, unzipSync } from "../src/vendor/fflate.mjs";
 import { normalizeDocxPart, relationshipsPath } from "../src/documents/docx/relationships.js";
 import { serializeDocx } from "../src/documents/docx-document.js";
+import { DocxNumberingState } from "../src/documents/docx/numbering.js";
 
 test("relationships resolve relative to every owning OOXML part", () => {
   assert.equal(relationshipsPath("word/document.xml"), "word/_rels/document.xml.rels");
@@ -10,6 +11,28 @@ test("relationships resolve relative to every owning OOXML part", () => {
   assert.equal(normalizeDocxPart("word/header1.xml", "media/header.png"), "word/media/header.png");
   assert.equal(normalizeDocxPart("word/charts/chart1.xml", "../embeddings/data.xlsx"), "word/embeddings/data.xlsx");
   assert.equal(normalizeDocxPart("word/document.xml", "/word/comments.xml"), "word/comments.xml");
+});
+
+test("generic numbering expands padded, custom, multilevel Roman/letter labels and restarts", () => {
+  const definitions=new Map([
+    ["1:0",{format:"decimalZero",text:"[%1]",start:1}],
+    ["2:0",{format:"decimal",text:"[Claim %1]",start:1}],
+    ["3:0",{format:"decimal",text:"%1.",start:1}],
+    ["3:1",{format:"lowerRoman",text:"%1.%2.",start:1}],
+    ["3:2",{format:"lowerLetter",text:"%1.%2.%3.",start:1}],
+    ["4:0",{format:"decimalZero",text:"[%1]",start:16}]
+  ]);
+  const state=new DocxNumberingState(definitions),p=(numId,level=0)=>({list:"number",numId,level,...definitions.get(`${numId}:${level}`)});
+  assert.equal(state.label(p(1)),"[0001]");
+  assert.equal(state.label(p(4)),"[0016]");
+  assert.equal(state.label(p(2)),"[Claim 1]");
+  assert.equal(state.label(p(2)),"[Claim 2]");
+  assert.equal(state.label(p(3,0)),"1.");
+  assert.equal(state.label(p(3,1)),"1.i.");
+  assert.equal(state.label(p(3,1)),"1.ii.");
+  assert.equal(state.label(p(3,2)),"1.ii.a.");
+  assert.equal(state.label(p(3,0)),"2.");
+  assert.equal(state.label(p(3,1)),"2.i.","returning to an outer level restarts subordinate counters");
 });
 
 test("unrelated text edits preserve revisions, fields, AlternateContent, comments, and unknown parts", async () => {

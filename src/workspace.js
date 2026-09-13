@@ -16,6 +16,7 @@ import {
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage } from "./documents/pdf-document.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
+import { DocxNumberingState } from "./documents/docx/numbering.js";
 import { editorNodeToRuns, replaceTextNodes } from "./documents/rich-text-runs.js";
 import { duplicateBlockRecord } from "./actions/block-records.js";
 import { saveBlobAs } from "./actions/native-save.js";
@@ -948,38 +949,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
   }
 
   const urls = [];
-  const counters=new Map();
-
-  const roman=(value,upper=true)=>{
-    const map=[[1000,"m"],[900,"cm"],[500,"d"],[400,"cd"],[100,"c"],[90,"xc"],[50,"l"],[40,"xl"],[10,"x"],[9,"ix"],[5,"v"],[4,"iv"],[1,"i"]];
-    let n=Math.max(1,Math.floor(value)),out="";
-    for(const [amount,glyph] of map)while(n>=amount){out+=glyph;n-=amount;}
-    return upper?out.toUpperCase():out;
-  };
-  const alpha=(value,upper=true)=>{
-    let n=Math.max(1,Math.floor(value)),out="";
-    while(n){n-=1;out=String.fromCharCode(97+n%26)+out;n=Math.floor(n/26);}
-    return upper?out.toUpperCase():out;
-  };
-  const formatNumber=(value,format)=>{
-    switch(String(format||"decimal").toLowerCase()){
-      case "decimalzero": return String(value).padStart(4,"0");
-      case "upperroman": return roman(value,true);
-      case "lowerroman": return roman(value,false);
-      case "upperletter": return alpha(value,true);
-      case "lowerletter": return alpha(value,false);
-      default: return String(value);
-    }
-  };
-  const markerFor=(p)=>{
-    if(!p.list) return "";
-    if(p.list==="bullet") return p.numberText && !/%\d+/.test(p.numberText) ? p.numberText : "•";
-    const key=`${p.numId ?? "list"}:${p.level ?? 0}`;
-    const current=(counters.get(key) ?? ((Number(p.numberStart)||1)-1))+1;
-    counters.set(key,current);
-    const token=formatNumber(current,p.numberFormat);
-    return String(p.numberText||"%1.").replace(/%1/g,token);
-  };
+  const numberingState=new DocxNumberingState(model?.numbering);
 
   const addParagraph = (p, parent = editor, { listItem = false } = {}) => {
     const heading = /^Heading([1-6])$/i.exec(p.style || "");
@@ -1005,7 +975,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     if(p.pageBreak) element.dataset.pageBreak="true";
 
     if(listItem) {
-      element.dataset.docxNumberLabel=markerFor(p);
+      element.dataset.docxNumberLabel=numberingState.label(p);
       element.classList.add("docx-list-item");
     }
 
@@ -1023,6 +993,20 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
         element.append(artifact);
       }
 
+      for(const drawing of run.drawings||[]) {
+        const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");
+        svg.classList.add("docx-drawing"); svg.contentEditable="false"; svg.dataset.docxCapability="readOnlyRenderable";
+        svg.setAttribute("viewBox",`0 0 ${drawing.width} ${drawing.height}`); svg.style.width=`${drawing.width}px`; svg.style.height=`${drawing.height}px`;
+        const shape=document.createElementNS(ns,["ellipse","oval"].includes(drawing.geometry)?"ellipse":drawing.geometry.includes("line")?"line":"rect");
+        if(shape.localName==="ellipse") { shape.setAttribute("cx",drawing.width/2);shape.setAttribute("cy",drawing.height/2);shape.setAttribute("rx",drawing.width/2-2);shape.setAttribute("ry",drawing.height/2-2); }
+        else if(shape.localName==="line") { shape.setAttribute("x1","2");shape.setAttribute("y1",String(drawing.height-2));shape.setAttribute("x2",String(drawing.width-2));shape.setAttribute("y2","2"); }
+        else { shape.setAttribute("x","2");shape.setAttribute("y","2");shape.setAttribute("width",String(drawing.width-4));shape.setAttribute("height",String(drawing.height-4));if(drawing.geometry==="roundRect")shape.setAttribute("rx","8"); }
+        shape.setAttribute("fill",shape.localName==="line"?"none":drawing.fill);shape.setAttribute("stroke",drawing.stroke);shape.setAttribute("stroke-width","2");svg.append(shape);
+        if(drawing.text){const text=document.createElementNS(ns,"text");text.setAttribute("x",String(drawing.width/2));text.setAttribute("y",String(drawing.height/2));text.setAttribute("text-anchor","middle");text.textContent=drawing.text;svg.append(text);}
+        if(drawing.rotation)svg.style.transform=`rotate(${drawing.rotation}deg)`;
+        element.append(svg);
+      }
+
       if (run.text) {
         const span = run.hyperlink ? document.createElement("a") : document.createElement("span");
         span.textContent = run.text;
@@ -1034,6 +1018,7 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
         if(run.highlight) span.style.backgroundColor=run.highlight;
         if(run.fontFamily) span.style.fontFamily=run.fontFamily;
         if(run.fontSize) span.style.fontSize=`${run.fontSize}pt`;
+        if(run.field) { span.classList.add("docx-field-result");span.dataset.docxFieldInstruction=run.field.instruction||"";span.title=`Cached field result: ${run.field.instruction||"field"}`;span.contentEditable="false"; }
         if(run.revision) {
           span.classList.add("docx-revision",`docx-revision-${run.revision.type}`);
           span.dataset.docxRevisionAuthor=run.revision.author||"";
@@ -1101,9 +1086,13 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
       activeList=null; activeListKey="";
       const table = document.createElement("table");
       if(item.sourceIndex!=null) table.dataset.docxSourceIndex=String(item.sourceIndex);
+      if(item.indentTwips)table.style.marginLeft=`${item.indentTwips/1440}in`;
+      if(item.alignment==="center")table.style.marginInline="auto"; else if(item.alignment==="right")table.style.marginLeft="auto";
+      if(item.gridWidths?.length){const group=document.createElement("colgroup");for(const width of item.gridWidths){const col=document.createElement("col");if(width)col.style.width=`${width/1440}in`;group.append(col);}table.append(group);}
       const verticalMerges=[];
       for (const row of item.rows) {
         const tr = table.insertRow();
+        if(row.heightTwips)tr.style.height=`${row.heightTwips/20}pt`;
         let column=0;
         for (const cell of row) {
           const span=cell.gridSpan||1;
@@ -1111,6 +1100,10 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
           const td = tr.insertCell();
           if(span>1) td.colSpan=span;
           if(cell.vMerge==="restart") verticalMerges[column]=td;
+          if(cell.widthTwips)td.style.width=`${cell.widthTwips/1440}in`;
+          if(cell.shading)td.style.backgroundColor=cell.shading;
+          if(cell.verticalAlign)td.style.verticalAlign=cell.verticalAlign==="center"?"middle":cell.verticalAlign;
+          if(cell.margins)td.style.padding=`${(cell.margins.top||0)/20}pt ${(cell.margins.right||0)/20}pt ${(cell.margins.bottom||0)/20}pt ${(cell.margins.left||0)/20}pt`;
           for (const p of cell) addParagraph(p, td);
           column+=span;
         }
