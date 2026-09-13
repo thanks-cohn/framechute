@@ -2,6 +2,7 @@ const workspace = typeof document !== "undefined" ? document.querySelector("#wor
 
 export const WORKSPACE_EXPANSION_STEP = 640;
 export const WORKSPACE_EDGE_MARGIN = 96;
+export const WORKSPACE_NEGATIVE_RUNWAY = 8192;
 export const WORKSPACE_PAN_EDGE = 44;
 export const WORKSPACE_PAN_SPEED = 24;
 
@@ -11,12 +12,6 @@ export function requiredPositiveExpansion({ left, top, width, height, workspaceW
   while (left + width > workspaceWidth + addWidth - margin) addWidth += step;
   while (top + height > workspaceHeight + addHeight - margin) addHeight += step;
   return { addWidth, addHeight };
-}
-
-export function requiredNegativeOriginGrowth({ position, origin = 0, margin = WORKSPACE_EDGE_MARGIN, step = WORKSPACE_EXPANSION_STEP }) {
-  let growth = 0;
-  while (origin + growth + position < margin) growth += step;
-  return growth;
 }
 
 /**
@@ -64,29 +59,6 @@ function setWorkspaceSize(width, height) {
   workspace.style.height = `${Math.max(1, Math.ceil(height))}px`;
 }
 
-function workspaceOrigin(axis) {
-  const property = axis === "x" ? "marginLeft" : "marginTop";
-  return Math.max(0, numericStyle(workspace, property, 0));
-}
-
-function expandNegativeEdge(axis, amount) {
-  const growth = Math.max(0, Number(amount) || 0);
-  if (!growth) return 0;
-
-  // Grow empty canvas BEFORE the logical workspace origin. Do not rewrite any
-  // block coordinates. Scrolling by the same amount keeps every object visually
-  // stationary while giving the user new reachable space to the left/up.
-  if (axis === "x") {
-    workspace.style.marginLeft = `${workspaceOrigin("x") + growth}px`;
-    window.scrollBy(growth, 0);
-    return growth;
-  }
-
-  workspace.style.marginTop = `${workspaceOrigin("y") + growth}px`;
-  window.scrollBy(0, growth);
-  return growth;
-}
-
 function bringForward(block) {
   let max = 1;
   for (const item of workspace.querySelectorAll(":scope > .block")) {
@@ -107,8 +79,6 @@ function beginMeasuredBlockDrag(event, block, handle) {
   const startScrollY = window.scrollY;
   const startLeft = numericStyle(block, "left", block.offsetLeft);
   const startTop = numericStyle(block, "top", block.offsetTop);
-  let originGrowthX = 0;
-  let originGrowthY = 0;
   const rect = block.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
@@ -121,20 +91,10 @@ function beginMeasuredBlockDrag(event, block, handle) {
   handle.setPointerCapture?.(event.pointerId);
 
   const placeBlock = () => {
-    // Browser scroll created by origin growth is compensation, not user motion.
-    // Subtract it so the logical object coordinate never jumps when more canvas
-    // is created to the left/top.
-    let left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX) - originGrowthX;
-    let top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY) - originGrowthY;
-
-    // Allow genuine negative logical coordinates. Only add physical gutter when
-    // the object would otherwise cross beyond the browser's scrollable origin.
-    // Calculate the entire needed gutter once so there is no repeated rebase
-    // loop that can look like the object is being thrown toward the center.
-    const growLeft = requiredNegativeOriginGrowth({ position:left, origin:workspaceOrigin("x") });
-    const growTop = requiredNegativeOriginGrowth({ position:top, origin:workspaceOrigin("y") });
-    if (growLeft) originGrowthX += expandNegativeEdge("x", growLeft);
-    if (growTop) originGrowthY += expandNegativeEdge("y", growTop);
+    // One continuous coordinate system: pointer delta + viewport pan delta.
+    // No clamping, rebasing, margin changes, rescue offsets, or object shifts.
+    const left = startLeft + (clientX - startClientX) + (window.scrollX - startScrollX);
+    const top = startTop + (clientY - startClientY) + (window.scrollY - startScrollY);
 
     const size = workspaceSize();
     const growth = requiredPositiveExpansion({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
@@ -187,6 +147,22 @@ function beginMeasuredBlockDrag(event, block, handle) {
   handle.addEventListener("pointercancel", finish);
   panFrame = requestAnimationFrame(pan);
 }
+
+function initializeSpatialRunway() {
+  if (!workspace || workspace.dataset.spatialRunwayInitialized === "true") return;
+  workspace.dataset.spatialRunwayInitialized = "true";
+
+  // Preallocate room before the logical origin ONCE. Because this never changes
+  // during a drag, moving left/up cannot trigger a layout jump or rebase.
+  workspace.style.marginLeft = `${WORKSPACE_NEGATIVE_RUNWAY}px`;
+  workspace.style.marginTop = `${WORKSPACE_NEGATIVE_RUNWAY}px`;
+
+  requestAnimationFrame(() => {
+    window.scrollBy(WORKSPACE_NEGATIVE_RUNWAY, WORKSPACE_NEGATIVE_RUNWAY);
+  });
+}
+
+initializeSpatialRunway();
 
 // This capture-phase owner intentionally replaces the older block-drag handlers
 // for the two visible drag surfaces. Dragging is spatially free in every mode:
