@@ -706,6 +706,10 @@ body.hide-block-headers .compact-drag-handle {
   width: 100%;
   min-height: 46px;
   margin: 0 !important;
+  /* Reserve a real control lane for the menu + Grab pill. Those controls are
+     absolutely positioned, so generic flex spacing cannot protect the title. */
+  padding: 6px 8px 6px 132px !important;
+  gap: 8px;
   transform: none !important;
   z-index: 6;
   overflow: visible;
@@ -714,13 +718,26 @@ body.hide-block-headers .compact-drag-handle {
 
 .docx-block > .block-header .block-name {
   display: block;
-  min-width: 90px;
-  flex: 1 1 auto;
+  width: 0;
+  min-width: 0 !important;
+  max-width: 100%;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.docx-block > .block-header .block-actions,
-.docx-block > .block-header .document-dirty {
+.docx-block > .block-header .block-actions {
   flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.docx-block > .block-header .document-dirty {
+  flex: 0 1 auto;
+  max-width: 86px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .docx-block > .docx-toolbar {
