@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import {
   WORKSPACE_EXPANSION_STEP,
   edgePanDelta,
+  requiredNegativeOriginGrowth,
   requiredPositiveExpansion
 } from "../src/workspace-extent.js";
+
+test("negative logical coordinates grow left/top gutter without clamping the object", () => {
+  assert.equal(requiredNegativeOriginGrowth({ position: -80, origin: 0 }), WORKSPACE_EXPANSION_STEP);
+  assert.equal(requiredNegativeOriginGrowth({ position: -700, origin: 0 }), WORKSPACE_EXPANSION_STEP * 2);
+  assert.equal(requiredNegativeOriginGrowth({ position: -700, origin: WORKSPACE_EXPANSION_STEP }), WORKSPACE_EXPANSION_STEP);
+  assert.equal(requiredNegativeOriginGrowth({ position: 120, origin: 0 }), 0);
+});
 
 test("workspace growth keeps far-right and far-bottom placements reachable", () => {
   assert.deepEqual(
