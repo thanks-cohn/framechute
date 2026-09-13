@@ -158,7 +158,16 @@
 
 body #workspace .block.show-object-header > .block-header {
   display: flex !important;
-  padding-left: 91px !important;
+  /* The current menu + Grab controls occupy roughly 116px. The old 91px
+     rescue padding belonged to an earlier compact control and caused restored
+     headers to overlap their title fields. */
+  padding-left: 124px !important;
+}
+
+/* DOCX keeps a slightly roomier identity lane. Show Header / restore must not
+   overwrite the document-specific geometry established in workspace.css. */
+body #workspace .docx-block.show-object-header > .block-header {
+  padding-left: 132px !important;
 }
 
 body #workspace .block.show-object-header > .compact-drag-handle {
