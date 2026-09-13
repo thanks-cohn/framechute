@@ -12,9 +12,12 @@ if (workspace) {
     html[data-framechute-offscreen="true"] body {
       overflow: auto !important;
       overscroll-behavior: auto;
+      scroll-behavior: auto !important;
+      overflow-anchor: none;
     }
 
     #workspace.framechute-scroll-reachable {
+      overflow-anchor: none;
       overflow: visible !important;
     }
   `;
