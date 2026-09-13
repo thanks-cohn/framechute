@@ -758,8 +758,15 @@ registerBlockType("pdf", {
 
 function docxBlocksFromEditor(editor) {
   const imageRun = (node) => {
-    if (node.matches?.("img[data-docx-relationship]")) {
-      return { kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width, height: Number(node.dataset.docxHeight) || node.height };
+    if (node.matches?.("img[data-docx-relationship], .docx-image-preserved[data-docx-relationship]")) {
+      return { kind: "image", relationshipId: node.dataset.docxRelationship, part: node.dataset.docxPart, mime: node.dataset.docxMime, width: Number(node.dataset.docxWidth) || node.width || null, height: Number(node.dataset.docxHeight) || node.height || null, unsupported: node.dataset.docxUnsupported === "true" };
+    }
+    if (node.matches?.(".docx-artifact-preserved[data-docx-artifact]")) {
+      try {
+        return { kind:"artifact", artifact:JSON.parse(base64ToText(node.dataset.docxArtifact)) };
+      } catch {
+        return null;
+      }
     }
     if (node.matches?.(".docx-math[data-docx-math-xml]")) {
       let math=null;
@@ -987,10 +994,11 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
 
       if(run.artifact) {
         const artifact=document.createElement("span");
-        artifact.className=`docx-artifact docx-artifact-${run.artifact.kind}`;
+        artifact.className="docx-artifact-preserved";
+        artifact.hidden=true;
         artifact.contentEditable="false";
-        artifact.dataset.docxCapability=run.artifact.capability;
-        artifact.textContent=`[${run.artifact.label}]`;
+        artifact.dataset.docxArtifact=textToBase64(JSON.stringify(run.artifact));
+        artifact.dataset.docxCapability=run.artifact.capability||"unsupportedPreserved";
         element.append(artifact);
       }
 
@@ -1031,11 +1039,17 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
 
       for (const image of run.images || []) {
         if (image.unsupported || !model?.parts?.[image.part]) {
-          const placeholder=document.createElement("span");
-          placeholder.className="docx-image-unavailable";
-          placeholder.textContent=`[Image unavailable${image.part ? `: ${image.part}` : ""}]`;
-          placeholder.contentEditable="false";
-          element.append(placeholder);
+          const preservedImage=document.createElement("span");
+          preservedImage.className="docx-image-preserved";
+          preservedImage.hidden=true;
+          preservedImage.contentEditable="false";
+          preservedImage.dataset.docxRelationship=image.relationshipId||"";
+          preservedImage.dataset.docxPart=image.part||"";
+          preservedImage.dataset.docxMime=image.mime||"";
+          preservedImage.dataset.docxWidth=String(image.width||"");
+          preservedImage.dataset.docxHeight=String(image.height||"");
+          preservedImage.dataset.docxUnsupported="true";
+          element.append(preservedImage);
           continue;
         }
 
@@ -1070,15 +1084,11 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
       activeList=null; activeListKey="";
       const preserved=document.createElement("div");
       preserved.className="docx-preserved-object";
+      preserved.hidden=true;
       preserved.contentEditable="false";
       preserved.dataset.docxSourceIndex=String(item.sourceIndex ?? "");
       preserved.dataset.docxPreservedTag=item.preservedTag||"object";
       preserved.dataset.docxPreviewText=item.previewText||"";
-      preserved.title="Preserved DOCX content. FrameChute will keep this original OOXML when you save.";
-      const label=document.createElement("span");
-      label.className="docx-preserved-label";
-      label.textContent=item.previewText || `Preserved ${item.preservedTag||"DOCX object"}`;
-      preserved.append(label);
       editor.append(preserved);
       continue;
     }
@@ -1151,22 +1161,9 @@ function renderDocxRecoveryView(block, model, error) {
   editor.contentEditable="false";
   editor.dataset.docxRecoveryView="true";
 
-  const notice=document.createElement("div");
-  notice.className="docx-preserved-object";
-  notice.textContent="FrameChute opened this DOCX in compatibility view because one advanced object could not be rendered. The original DOCX package is preserved.";
-  editor.append(notice);
-
   const appendParagraph=(paragraph,parent=editor)=>{
     const p=document.createElement("p");
-    const fragments=[];
-    for(const run of paragraph?.runs||[]) {
-      if(run.text) fragments.push(run.text);
-      if(run.mathXml||run.math) fragments.push("[Equation]");
-      if(run.images?.length) fragments.push(...run.images.map(()=>"[Image]"));
-      if(run.drawings?.length) fragments.push(...run.drawings.map(()=>"[Drawing]"));
-      if(run.artifact?.label) fragments.push(`[${run.artifact.label}]`);
-    }
-    p.textContent=fragments.join("");
+    p.textContent=(paragraph?.runs||[]).map(run=>run.text||"").join("");
     parent.append(p);
   };
 
@@ -1183,10 +1180,7 @@ function renderDocxRecoveryView(block, model, error) {
       }
       editor.append(table);
     } else if(item.type==="preserved") {
-      const preserved=document.createElement("div");
-      preserved.className="docx-preserved-object";
-      preserved.textContent=item.previewText||`Preserved ${item.preservedTag||"DOCX content"}`;
-      editor.append(preserved);
+      continue;
     }
   }
 
