@@ -339,6 +339,18 @@ function attachFramelessResizeHandle(block) {
         width = Math.max(32, startWidth + delta);
         height = width / aspect;
       }
+      if (block.dataset.viewportFixed === "true") {
+        const maxWidth = Math.max(32, window.innerWidth - rect.left - 8);
+        const maxHeight = Math.max(32, window.innerHeight - rect.top - 8);
+        if (preserveAspectRatio()) {
+          const scale = Math.min(1, maxWidth / width, maxHeight / height);
+          width *= scale;
+          height *= scale;
+        } else {
+          width = Math.min(width, maxWidth);
+          height = Math.min(height, maxHeight);
+        }
+      }
       block.style.width = `${width}px`;
       block.style.height = `${height}px`;
     };
