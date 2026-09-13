@@ -1,3 +1,4 @@
+import { createObjectDragSession } from "./object-drag-space.js";
 const MARKER = "__FLASHFRAME_CUSTOM_BLOCK_V1__";
 const workspace = document.querySelector("#workspace");
 const restoreAllButton = document.querySelector("#restore-image-frames");
@@ -265,19 +266,18 @@ function dragVisualObject(block, event) {
   }
   block.style.zIndex = String(maxZ + 1);
 
-  const startX = event.clientX;
-  const startY = event.clientY;
   const startLeft = Number.parseFloat(block.style.left) || block.offsetLeft;
   const startTop = Number.parseFloat(block.style.top) || block.offsetTop;
+  const dragSession = createObjectDragSession({ workspace, block, event, startLeft, startTop });
   surface.setPointerCapture(event.pointerId);
   block.classList.add("is-frameless-dragging");
 
   const move = (moveEvent) => {
-    block.style.left = `${startLeft + moveEvent.clientX - startX}px`;
-    block.style.top = `${startTop + moveEvent.clientY - startY}px`;
+    dragSession.move(moveEvent);
   };
 
   const finish = () => {
+    dragSession.finish();
     block.classList.remove("is-frameless-dragging");
     surface.removeEventListener("pointermove", move);
     surface.removeEventListener("pointerup", finish);
