@@ -27,6 +27,7 @@ import { activeInternalDrag, beginInternalDrag, claimDocumentDrop, endInternalDr
 import { customImageSourceBlob } from "./custom-image-source.mjs";
 import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from "./document-image-drag.mjs";
 import { createObjectDragSession } from "./object-drag-space.js";
+import { isViewportFixed } from "./viewport-fix.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -385,6 +386,40 @@ function showHeaderInReach(block) {
   if (!(header instanceof HTMLElement)) return;
 
   bringToFront(block);
+
+  if (isViewportFixed(block)) {
+    // Fixed objects must remain wholly inside the browser viewport. Show Header
+    // therefore fits the frame instead of pushing its bottom beyond the screen.
+    const margin = 10;
+    const toolbarBottom = toolbar?.getBoundingClientRect().bottom || 0;
+    const visibleTop = Math.max(margin, toolbarBottom + margin);
+    const visibleBottom = innerHeight - margin;
+    const availableHeight = Math.max(120, visibleBottom - visibleTop);
+    const availableWidth = Math.max(120, innerWidth - margin * 2);
+
+    let rect = block.getBoundingClientRect();
+    const targetLeft = Math.min(
+      Math.max(rect.left, margin),
+      Math.max(margin, innerWidth - Math.min(rect.width, availableWidth) - margin)
+    );
+    const targetTop = Math.min(
+      Math.max(rect.top, visibleTop),
+      Math.max(visibleTop, visibleBottom - Math.min(rect.height, availableHeight))
+    );
+
+    if (rect.width > availableWidth) block.style.width = `${availableWidth}px`;
+    if (rect.height > availableHeight || targetTop + rect.height > visibleBottom) {
+      block.style.height = `${Math.max(120, visibleBottom - targetTop)}px`;
+    }
+
+    // Re-read after shrinking because DOCX/PDF flex content can affect geometry.
+    rect = block.getBoundingClientRect();
+    block.style.left = `${Math.min(Math.max(targetLeft, margin), Math.max(margin, innerWidth - rect.width - margin))}px`;
+    block.style.top = `${Math.min(Math.max(targetTop, visibleTop), Math.max(visibleTop, visibleBottom - rect.height))}px`;
+
+    workspace.dispatchEvent(new CustomEvent("flashframe:workspace-changed", { bubbles: true }));
+    return;
+  }
 
   const workspaceRect = workspace.getBoundingClientRect();
   const toolbarBottom = toolbar?.getBoundingClientRect().bottom || 0;
