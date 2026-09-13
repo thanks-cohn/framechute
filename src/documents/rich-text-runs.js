@@ -31,7 +31,7 @@ function sameStyle(left, right) {
 export function editorNodeToRuns(root, imageReader) {
   const runs = [];
   const append = (run) => {
-    if (!run.text && !run.images?.length && !run.mathXml) return;
+    if (!run.text && !run.images?.length && !run.mathXml && !run.artifact) return;
     const previous = runs.at(-1);
     if (run.text && previous?.text && !previous.images?.length && sameStyle(previous, run)) previous.text += run.text;
     else runs.push(run);
@@ -42,6 +42,10 @@ export function editorNodeToRuns(root, imageReader) {
     const embedded = imageReader?.(node);
     if (embedded?.kind === "math") {
       append({ text: "", mathXml: embedded.mathXml || "", math: embedded.math || null, mathDisplay: Boolean(embedded.mathDisplay), ...inherited });
+      return;
+    }
+    if (embedded?.kind === "artifact") {
+      append({ text:"", artifact:embedded.artifact, ...inherited });
       return;
     }
     if (embedded) { append({ text: "", images: [embedded], ...inherited }); return; }
