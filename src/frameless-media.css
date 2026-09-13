@@ -174,7 +174,7 @@ body #workspace .block.show-object-header > .compact-drag-handle {
   display: inline-flex !important;
 }
 
-body #workspace .block.show-object-footer > .block-toolbar {
+body #workspace .block.show-object-footer > .block-toolbar:not(.docx-toolbar):not(.pdf-toolbar) {
   display: flex !important;
 }
 
