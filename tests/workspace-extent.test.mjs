@@ -2,16 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   WORKSPACE_EXPANSION_STEP,
+  WORKSPACE_NEGATIVE_RUNWAY,
   edgePanDelta,
-  requiredNegativeOriginGrowth,
   requiredPositiveExpansion
 } from "../src/workspace-extent.js";
 
-test("negative logical coordinates grow left/top gutter without clamping the object", () => {
-  assert.equal(requiredNegativeOriginGrowth({ position: -80, origin: 0 }), WORKSPACE_EXPANSION_STEP);
-  assert.equal(requiredNegativeOriginGrowth({ position: -700, origin: 0 }), WORKSPACE_EXPANSION_STEP * 2);
-  assert.equal(requiredNegativeOriginGrowth({ position: -700, origin: WORKSPACE_EXPANSION_STEP }), WORKSPACE_EXPANSION_STEP);
-  assert.equal(requiredNegativeOriginGrowth({ position: 120, origin: 0 }), 0);
+test("negative-space runway is preallocated rather than grown during a drag", () => {
+  assert.equal(WORKSPACE_NEGATIVE_RUNWAY, 8192);
+  assert.ok(WORKSPACE_NEGATIVE_RUNWAY > WORKSPACE_EXPANSION_STEP * 8);
 });
 
 test("workspace growth keeps far-right and far-bottom placements reachable", () => {
