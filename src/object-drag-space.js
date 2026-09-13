@@ -1,3 +1,4 @@
+import { isViewportFixed } from "./viewport-fix.js";
 import { edgePanDelta, WORKSPACE_EXPANSION_STEP, WORKSPACE_EDGE_MARGIN } from "./workspace-extent.js";
 
 const NEGATIVE_RUNWAY = 8192;
@@ -85,7 +86,8 @@ function growForEdgePan(workspace, dx, dy) {
 }
 
 export function createObjectDragSession({ workspace, block, event, startLeft, startTop }) {
-  const expandable = document.body.classList.contains("toolbar-hidden");
+  const viewportFixed = isViewportFixed(block);
+  const expandable = !viewportFixed && document.body.classList.contains("toolbar-hidden");
 
   if (expandable) ensureNegativeRunway(workspace);
 
@@ -103,6 +105,17 @@ export function createObjectDragSession({ workspace, block, event, startLeft, st
   let panFrame = 0;
 
   const place = () => {
+    if (viewportFixed) {
+      const margin = 8;
+      const rawLeft = startLeft + clientX - startX;
+      const rawTop = startTop + clientY - startY;
+      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - height - margin);
+      block.style.left = `${Math.min(Math.max(rawLeft, margin), maxLeft)}px`;
+      block.style.top = `${Math.min(Math.max(rawTop, margin), maxTop)}px`;
+      return;
+    }
+
     const scrollDx = expandable ? window.scrollX - startScrollX : 0;
     const scrollDy = expandable ? window.scrollY - startScrollY : 0;
     const left = startLeft + clientX - startX + scrollDx;
