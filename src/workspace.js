@@ -370,9 +370,59 @@ function attachBlockInteractions(block) {
   });
 }
 
+function showHeaderInReach(block) {
+  if (!(block instanceof HTMLElement) || !block.isConnected) return;
+
+  // A rescue command must override both per-object and global header hiding.
+  block.classList.remove("hide-object-header");
+  block.classList.add("show-object-header");
+  window.dispatchEvent(new CustomEvent("flashframe:set-object-chrome", {
+    detail: { block, part: "header", hidden: false }
+  }));
+
+  const header = block.querySelector(":scope > .block-header")
+    || block.querySelector(":scope > .compact-drag-handle");
+  if (!(header instanceof HTMLElement)) return;
+
+  bringToFront(block);
+
+  const workspaceRect = workspace.getBoundingClientRect();
+  const toolbarBottom = toolbar?.getBoundingClientRect().bottom || 0;
+  const margin = 10;
+  const visibleLeft = Math.max(margin, workspaceRect.left + margin);
+  const visibleRight = Math.min(innerWidth - margin, workspaceRect.right - margin);
+  const visibleTop = Math.max(toolbarBottom + margin, workspaceRect.top + margin);
+  const visibleBottom = Math.min(innerHeight - margin, workspaceRect.bottom - margin);
+
+  const headerRect = header.getBoundingClientRect();
+  const availableWidth = Math.max(1, visibleRight - visibleLeft);
+  let dx = 0;
+  let dy = 0;
+
+  if (headerRect.width <= availableWidth) {
+    if (headerRect.left < visibleLeft) dx = visibleLeft - headerRect.left;
+    else if (headerRect.right > visibleRight) dx = visibleRight - headerRect.right;
+  } else {
+    // Oversized frames cannot expose both ends at once. Favor the right edge so
+    // close/maximize remain available while leaving visible header surface to drag.
+    dx = visibleRight - headerRect.right;
+  }
+
+  if (headerRect.top < visibleTop) dy = visibleTop - headerRect.top;
+  else if (headerRect.bottom > visibleBottom) dy = visibleBottom - headerRect.bottom;
+
+  if (dx || dy) {
+    block.style.left = `${numberFromStyle(block.style.left, block.offsetLeft) + dx}px`;
+    block.style.top = `${numberFromStyle(block.style.top, block.offsetTop) + dy}px`;
+  }
+
+  workspace.dispatchEvent(new CustomEvent("flashframe:workspace-changed", { bubbles: true }));
+}
+
 window.addEventListener("framechute:object-command", event => {
   const { block, command } = event.detail || {};
   if (!(block instanceof HTMLElement) || !block.isConnected) return;
+  if (command === "show-header") { showHeaderInReach(block); return; }
   if (command === "expand") { block.querySelector(":scope > .block-header .maximize-block")?.click(); return; }
   if (command === "grab") return;
   if (block.classList.contains("is-maximized")) block.querySelector(":scope > .block-header .maximize-block")?.click();
