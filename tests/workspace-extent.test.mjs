@@ -41,3 +41,17 @@ test("edge panning never asks to scroll past the canvas origin", () => {
     { dx: 0, dy: 0 }
   );
 });
+
+test("hidden-toolbar edge panning can request left/top canvas growth at browser origin", () => {
+  const delta=edgePanDelta({
+    clientX:0,
+    clientY:0,
+    viewportWidth:1200,
+    viewportHeight:800,
+    scrollX:0,
+    scrollY:0,
+    allowPastOrigin:true
+  });
+  assert.ok(delta.dx<0);
+  assert.ok(delta.dy<0);
+});
