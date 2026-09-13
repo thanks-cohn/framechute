@@ -554,7 +554,25 @@ initializeDock(settingsDock, settingsExpand, SETTINGS_DOCK_KEY);
 initializeDock(videoDock, videoExpand, VIDEO_DOCK_KEY);
 settingsHide?.addEventListener("click", () => setDockHidden(settingsDock, SETTINGS_DOCK_KEY, true));
 
-initializeFloatingPosition(toolbarSummon, TOOLBAR_BUTTON_KEY);
+function placeToolbarSummonAtHome() {
+  const margin=16;
+  const width=toolbarSummon.offsetWidth||36;
+  const height=toolbarSummon.offsetHeight||36;
+  placeFloating(toolbarSummon,TOOLBAR_BUTTON_KEY,window.innerWidth-width-margin,window.innerHeight-height-margin,false);
+}
+
+function initializeToolbarSummonPosition() {
+  const saved=readJson(TOOLBAR_BUTTON_KEY,{});
+  requestAnimationFrame(()=>{
+    if(saved.custom===true&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)) {
+      placeFloating(toolbarSummon,TOOLBAR_BUTTON_KEY,saved.x,saved.y,false);
+    } else {
+      placeToolbarSummonAtHome();
+    }
+  });
+}
+
+initializeToolbarSummonPosition();
 toolbarSummon.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
 
@@ -580,7 +598,16 @@ toolbarSummon.addEventListener("pointerdown", (event) => {
     toolbarSummon.removeEventListener("pointerup", finish);
     toolbarSummon.removeEventListener("pointercancel", finish);
     const finalRect = toolbarSummon.getBoundingClientRect();
-    placeFloating(toolbarSummon, TOOLBAR_BUTTON_KEY, finalRect.left, finalRect.top, true);
+    if(moved) {
+      const point=clampPosition(toolbarSummon,finalRect.left,finalRect.top);
+      toolbarSummon.style.right="auto";
+      toolbarSummon.style.left=`${point.x}px`;
+      toolbarSummon.style.top=`${point.y}px`;
+      writeJson(TOOLBAR_BUTTON_KEY,{x:point.x,y:point.y,custom:true});
+    } else {
+      const saved=readJson(TOOLBAR_BUTTON_KEY,{});
+      if(saved.custom!==true) placeToolbarSummonAtHome();
+    }
 
     if (moved) {
       suppressToolbarClick = true;
@@ -618,8 +645,16 @@ for (const eventName of ["play", "pause", "ended"]) {
 }
 
 window.addEventListener("resize", () => {
+  const toolbarPosition=readJson(TOOLBAR_BUTTON_KEY,{});
+  if(toolbarPosition.custom===true) {
+    const rect=toolbarSummon.getBoundingClientRect();
+    placeFloating(toolbarSummon,TOOLBAR_BUTTON_KEY,rect.left,rect.top,true);
+    writeJson(TOOLBAR_BUTTON_KEY,{...readJson(TOOLBAR_BUTTON_KEY,{}),custom:true});
+  } else {
+    placeToolbarSummonAtHome();
+  }
+
   for (const [element, key] of [
-    [toolbarSummon, TOOLBAR_BUTTON_KEY],
     [settingsDock, SETTINGS_DOCK_KEY],
     [videoDock, VIDEO_DOCK_KEY]
   ]) {
