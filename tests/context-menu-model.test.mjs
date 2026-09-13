@@ -25,6 +25,23 @@ test("every object-facing menu leads with Show Header",()=>{
   }
 });
 
+test("every object-facing menu ends with Fix to Viewport state",()=>{
+  assert.equal(objectMenuItems({viewportFixed:false}).at(-1)?.id,"fix-viewport");
+  assert.match(objectMenuItems({viewportFixed:false}).at(-1)?.label,/OFF/);
+  assert.match(objectMenuItems({viewportFixed:true}).at(-1)?.label,/ON/);
+
+  for(const context of [
+    {editorKind:"pdf",selectionKind:"page",block:{dataset:{viewportFixed:"false"}}},
+    {editorKind:"pdf",selectionKind:"edit",block:{dataset:{viewportFixed:"true"}}},
+    {editorKind:"pdf",selectionKind:"source-text",block:{dataset:{viewportFixed:"false"}}},
+    {editorKind:"docx",selectionKind:"text",block:{dataset:{viewportFixed:"true"}}}
+  ]) {
+    const items=commandsForEditorContext(context);
+    assert.equal(items.at(-1)?.id,"fix-viewport");
+    assert.match(items.at(-1)?.label,context.block.dataset.viewportFixed==="true"?/ON/:/OFF/);
+  }
+});
+
 test("document editor command registries stay document-specific",()=>{
   const pdf=commandsForEditorContext({editorKind:"pdf",selectionKind:"page"}),docx=commandsForEditorContext({editorKind:"docx",selectionKind:"page"});
   assert.ok(pdf.some(item=>item.id==="add-text"));assert.ok(docx.some(item=>item.id==="bold"));
