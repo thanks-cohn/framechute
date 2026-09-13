@@ -93,9 +93,10 @@ await import("./docx-selection-fidelity.js");
 
 const workspaceElement=document.querySelector("#workspace");
 if(workspaceElement){
-  workspaceElement.style.marginLeft="";
-  workspaceElement.style.marginTop="";
+  // Clear only state left by the removed giant-runway implementation.
+  // New left/top expansion is created incrementally during hidden-toolbar drag.
   delete workspaceElement.dataset.spatialRunwayInitialized;
+  delete workspaceElement.dataset.hiddenToolbarRunway;
 }
 
 if (advancedMode) await import("./gallery-ui-polish.js");
