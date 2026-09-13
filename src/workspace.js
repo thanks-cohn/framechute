@@ -795,6 +795,7 @@ function docxBlocksFromEditor(editor) {
   });
   const blocks = [];
   for (const node of editor.children) {
+    if (node.matches?.(".docx-supplemental")) continue;
     if (node.matches?.(".docx-preserved-object")) {
       blocks.push({
         type: "preserved",
@@ -1144,12 +1145,80 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
   return urls;
 }
 
+function renderDocxRecoveryView(block, model, error) {
+  const editor=block.querySelector(".docx-editor");
+  editor.replaceChildren();
+  editor.contentEditable="false";
+  editor.dataset.docxRecoveryView="true";
+
+  const notice=document.createElement("div");
+  notice.className="docx-preserved-object";
+  notice.textContent="FrameChute opened this DOCX in compatibility view because one advanced object could not be rendered. The original DOCX package is preserved.";
+  editor.append(notice);
+
+  const appendParagraph=(paragraph,parent=editor)=>{
+    const p=document.createElement("p");
+    const fragments=[];
+    for(const run of paragraph?.runs||[]) {
+      if(run.text) fragments.push(run.text);
+      if(run.mathXml||run.math) fragments.push("[Equation]");
+      if(run.images?.length) fragments.push(...run.images.map(()=>"[Image]"));
+      if(run.drawings?.length) fragments.push(...run.drawings.map(()=>"[Drawing]"));
+      if(run.artifact?.label) fragments.push(`[${run.artifact.label}]`);
+    }
+    p.textContent=fragments.join("");
+    parent.append(p);
+  };
+
+  for(const item of model?.blocks||[]) {
+    if(item.type==="paragraph") appendParagraph(item);
+    else if(item.type==="table") {
+      const table=document.createElement("table");
+      for(const row of item.rows||[]) {
+        const tr=table.insertRow();
+        for(const cell of row||[]) {
+          const td=tr.insertCell();
+          for(const paragraph of cell||[]) appendParagraph(paragraph,td);
+        }
+      }
+      editor.append(table);
+    } else if(item.type==="preserved") {
+      const preserved=document.createElement("div");
+      preserved.className="docx-preserved-object";
+      preserved.textContent=item.previewText||`Preserved ${item.preservedTag||"DOCX content"}`;
+      editor.append(preserved);
+    }
+  }
+
+  for(const section of model?.supplemental||[]) {
+    const aside=document.createElement("section");
+    aside.className=`docx-supplemental docx-${section.type}`;
+    const label=document.createElement("div");
+    label.className="docx-supplemental-label";
+    label.textContent=section.type.replace(/^./,letter=>letter.toUpperCase());
+    aside.append(label);
+    for(const paragraph of section.blocks||[]) appendParagraph(paragraph,aside);
+    editor.append(aside);
+  }
+
+  console.error("FrameChute DOCX rich rendering failed; compatibility view used instead.",error);
+  return [];
+}
+
 async function loadDocxHandle(block, handle, state = {}) {
   const file = await fileFromHandle(handle); if (!file) throw new Error("DOCX could not be read");
   const model = parseDocx(new Uint8Array(await file.arrayBuffer()));
   if (Array.isArray(state.blocks)) model.blocks = structuredClone(state.blocks);
-  const runtime = { handle, model, objectUrls: [] }; runtimeSources.set(block, runtime);
-  runtime.objectUrls = renderDocxEditor(block, model.blocks, model);
+  const runtime = { handle, model, objectUrls: [], compatibilityView:false }; runtimeSources.set(block, runtime);
+
+  try {
+    runtime.objectUrls = renderDocxEditor(block, model.blocks, model);
+  } catch(error) {
+    runtime.compatibilityView=true;
+    runtime.objectUrls=renderDocxRecoveryView(block,model,error);
+    setStatus(`${file.name} opened in DOCX compatibility view. Advanced content was preserved.`);
+  }
+
   if(state.pageSetup){
     const editor=block.querySelector(".docx-editor");
     editor.dataset.pageSetup=state.pageSetup;
@@ -1157,7 +1226,14 @@ async function loadDocxHandle(block, handle, state = {}) {
     editor.style.padding=`${top}in ${right}in ${bottom}in ${left}in`;
     if(orientation==="landscape"&&model.pageLayout){editor.style.width=`${model.pageLayout.heightIn}in`;editor.style.minHeight=`${model.pageLayout.widthIn}in`;}
   }
-  runtime.serialize = () => { const editor=block.querySelector(".docx-editor");model.blocks = docxBlocksFromEditor(editor);model.pageSetup=editor.dataset.pageSetup||"";return serializeDocx(model); };
+
+  runtime.serialize = () => {
+    const editor=block.querySelector(".docx-editor");
+    if(!runtime.compatibilityView) model.blocks = docxBlocksFromEditor(editor);
+    model.pageSetup=editor.dataset.pageSetup||"";
+    return serializeDocx(model);
+  };
+
   clearSourceUnavailable(block); setDocumentDirty(block, Boolean(state.dirty));
   requestAnimationFrame(() => { block.querySelector(".docx-editor").scrollTop = Number(state.scrollTop) || 0; });
 }
