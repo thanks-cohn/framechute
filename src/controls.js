@@ -366,7 +366,7 @@ function scheduleDocxToolsHide(block) {
     // Do not spin another idle timer while the user is actually inside the
     // formatting controls. pointerleave/focusout/toggle will start the next
     // countdown when that interaction really ends.
-    if (toolbar.matches(":hover, :focus-within") || toolbar.querySelector("details[open]")) return;
+    if (toolbar.matches(":hover") || toolbar.querySelector("details[open]")) return;
 
     block.classList.add("docx-tools-collapsed");
   }, DOCX_TOOLS_IDLE_MS);
@@ -406,7 +406,7 @@ function prepareDocxToolsAutoHide(block) {
     // Header hover is the primary wake gesture. Merely moving around or
     // scrolling inside the document body must never wake the Word tools.
     header.addEventListener("pointerenter", () => {
-      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+      if (settings.autoHideDocxTools) revealDocxTools(block);
     });
     header.addEventListener("pointerleave", () => {
       if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
@@ -433,7 +433,7 @@ function prepareDocxToolsAutoHide(block) {
       if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
     });
     toolbar.addEventListener("focusin", () => {
-      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+      if (settings.autoHideDocxTools) revealDocxTools(block);
     });
     toolbar.addEventListener("focusout", () => {
       if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
@@ -442,10 +442,10 @@ function prepareDocxToolsAutoHide(block) {
       if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
     });
     toolbar.addEventListener("click", () => {
-      if (settings.autoHideDocxTools && !toolbar.matches(":hover, :focus-within")) scheduleDocxToolsHide(block);
+      if (settings.autoHideDocxTools && !toolbar.matches(":hover")) scheduleDocxToolsHide(block);
     });
     toolbar.addEventListener("change", () => {
-      if (settings.autoHideDocxTools && !toolbar.matches(":hover, :focus-within")) scheduleDocxToolsHide(block);
+      if (settings.autoHideDocxTools && !toolbar.matches(":hover")) scheduleDocxToolsHide(block);
     });
     toolbar.addEventListener("toggle", () => {
       if (!settings.autoHideDocxTools) return;
