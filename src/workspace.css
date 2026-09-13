@@ -734,6 +734,34 @@ body.hide-block-headers .compact-drag-handle {
   border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
 }
 
+.docx-block.docx-tools-auto-hide > .docx-toolbar {
+  max-height: 480px;
+  opacity: 1;
+  transition:
+    max-height 180ms ease,
+    opacity 140ms ease,
+    padding-block 180ms ease,
+    border-color 180ms ease;
+}
+
+.docx-block.docx-tools-auto-hide.docx-tools-collapsed > .docx-toolbar {
+  max-height: 0;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The object header stays available while DOCX formatting controls sleep. */
+.docx-block.docx-tools-auto-hide > .block-header,
+.docx-block.docx-tools-auto-hide > .compact-drag-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .docx-block > .source-message {
   order: 2;
   flex: 0 0 auto;
