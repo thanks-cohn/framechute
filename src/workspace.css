@@ -413,6 +413,14 @@ body.toolbar-hidden .toolbar-summon {
 
 body.toolbar-hidden .workspace {
   min-height: 100vh;
+  overflow: visible;
+}
+
+/* If hidden-toolbar dragging has created left/top runway, keep objects placed in
+   that expanded space visible after the toolbar is restored. Restoring the
+   toolbar stops further expansion; it does not move existing objects. */
+.workspace[data-hidden-toolbar-runway="true"] {
+  overflow: visible;
 }
 
 .block {
