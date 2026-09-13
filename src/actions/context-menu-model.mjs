@@ -19,6 +19,8 @@ export function resolveEditorContext(target) {
 
 export function commandsForEditorContext(context) {
   const showHeader = { id: "show-header", label: "Show Header" };
+  const fixViewport = { id: "fix-viewport", label: `Fix to Viewport  [ ${context.block?.dataset?.viewportFixed === "true" ? "ON" : "OFF"} ]` };
+  const viewportTail = [{ type: "separator" }, fixViewport];
   if (context.editorKind === "docx") {
     const edit = [{id:"undo",label:"Undo"},{id:"redo",label:"Redo"},{type:"separator"},{id:"cut",label:"Cut"},{id:"copy",label:"Copy"},{id:"paste",label:"Paste"},{id:"paste-plain",label:"Paste as Plain Text"},{id:"select-all",label:"Select All"}];
     const format = [
@@ -28,7 +30,7 @@ export function commandsForEditorContext(context) {
     ];
     const insert = [{id:"link",label:"Insert Link…"},{id:"find",label:"Find / Replace…"}];
     const contextual = context.selectionKind === "hyperlink" ? [{id:"open-link",label:"Open Link"},{id:"edit-link",label:"Edit Link…"},{id:"remove-link",label:"Remove Link"}] : context.selectionKind === "image" ? [{id:"replace-image",label:"Replace Image…"},{id:"resize-image",label:"Resize Image…"},{id:"remove-image",label:"Remove Image"}] : context.selectionKind === "cell" ? [{id:"row-above",label:"Insert Row Above"},{id:"row-below",label:"Insert Row Below"},{id:"column-left",label:"Insert Column Left"},{id:"column-right",label:"Insert Column Right"},{id:"delete-row",label:"Delete Row"},{id:"delete-column",label:"Delete Column"},{id:"delete-table",label:"Delete Table"}] : [];
-    return [showHeader,{type:"separator"},{id:"bold",label:"Bold"},{id:"italic",label:"Italic"},{id:"underline",label:"Underline"},{id:"highlight",label:"Highlight Selection"},{type:"separator"},{id:"editing",label:"Edit",submenu:edit},{id:"formatting",label:"Font & Paragraph",submenu:format},{id:"insert",label:"Document",submenu:insert},...(contextual.length?[{id:"context",label:context.selectionKind[0].toUpperCase()+context.selectionKind.slice(1),submenu:contextual}]:[]),{type:"separator"},{id:"save",label:"Save"},{id:"save-as",label:"Save As…"}];
+    return [showHeader,{type:"separator"},{id:"bold",label:"Bold"},{id:"italic",label:"Italic"},{id:"underline",label:"Underline"},{id:"highlight",label:"Highlight Selection"},{type:"separator"},{id:"editing",label:"Edit",submenu:edit},{id:"formatting",label:"Font & Paragraph",submenu:format},{id:"insert",label:"Document",submenu:insert},...(contextual.length?[{id:"context",label:context.selectionKind[0].toUpperCase()+context.selectionKind.slice(1),submenu:contextual}]:[]),{type:"separator"},{id:"save",label:"Save"},{id:"save-as",label:"Save As…"},...viewportTail];
   }
   if (context.selectionKind === "edit") return [
     showHeader, { type: "separator" },
@@ -36,14 +38,14 @@ export function commandsForEditorContext(context) {
     { id: "font", label: "Font", submenu: ["Helvetica","Helvetica Bold","Helvetica Oblique","Times Roman","Times Bold","Times Italic","Courier","Courier Bold","Courier Oblique"].map(label => ({ id: "font", label, value: label })) },
     { id: "text-size", label: "Text Size…" }, { id: "duplicate", label: "Duplicate" }, { id: "delete", label: "Delete Field" },
     { type: "separator" }, { id: "front", label: "Bring Forward" }, { id: "back", label: "Send Back" },
-    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }
+    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
   if (context.selectionKind === "source-text") return [
     showHeader, { type: "separator" },
     { id: "edit-text", label: "Edit / Replace Text" }, { id: "delete", label: "Delete Text" },
-    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }
+    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
-  return [showHeader,{ type: "separator" },{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }];
+  return [showHeader,{ type: "separator" },{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail];
 }
 
 // CODEX DEBUG V10: this implementation is too video-specific and must become a
