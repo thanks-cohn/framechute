@@ -369,6 +369,7 @@ function scheduleDocxToolsHide(block) {
     if (toolbar.matches(":hover") || toolbar.querySelector("details[open]")) return;
 
     block.classList.add("docx-tools-collapsed");
+    toolbar.style.display = "none";
   }, DOCX_TOOLS_IDLE_MS);
 
   docxToolsTimers.set(block, timer);
@@ -376,6 +377,8 @@ function scheduleDocxToolsHide(block) {
 
 function revealDocxTools(block, { hold = false } = {}) {
   if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
+  const toolbar = block.querySelector(":scope > .docx-toolbar");
+  if (toolbar) toolbar.style.removeProperty("display");
   block.classList.remove("docx-tools-collapsed");
   clearDocxToolsTimer(block);
   if (settings.autoHideDocxTools && !hold) scheduleDocxToolsHide(block);
@@ -388,6 +391,8 @@ function applyDocxToolsSetting(block) {
   if (!settings.autoHideDocxTools) {
     clearDocxToolsTimer(block);
     block.classList.remove("docx-tools-collapsed");
+    const toolbar = block.querySelector(":scope > .docx-toolbar");
+    if (toolbar) toolbar.style.removeProperty("display");
     return;
   }
 
