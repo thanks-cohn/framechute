@@ -266,15 +266,40 @@ function imageFromNode(node, relationships, parts) {
 }
 
 function drawingFromNode(node) {
+  // Picture objects often contain a rectangular shape geometry as part of the
+  // image container. The image renderer already handles these. Rendering that
+  // geometry again creates a fake colored box beside/on top of the picture.
+  if (allDescendants(node,"blip").length || allDescendants(node,"imagedata").length) return null;
+
   const geometry=allDescendants(node,"prstGeom")[0]?.getAttribute("prst")||"";
   if(!geometry&&!allDescendants(node,"txbxContent").length) return null;
+
   const extent=allDescendants(node,"extent")[0]||allDescendants(node,"ext")[0];
-  const width=Math.max(24,(Number(extent?.getAttribute("cx"))||914400)/9525),height=Math.max(24,(Number(extent?.getAttribute("cy"))||457200)/9525);
-  const fill=allDescendants(allDescendants(node,"solidFill")[0],"srgbClr")[0]?.getAttribute("val")||"D9EAF7";
-  const line=allDescendants(node,"ln")[0],stroke=allDescendants(line,"srgbClr")[0]?.getAttribute("val")||"555555";
-  const xfrm=allDescendants(node,"xfrm")[0],rotation=(Number(xfrm?.getAttribute("rot"))||0)/60000;
+  const width=Math.max(24,(Number(extent?.getAttribute("cx"))||914400)/9525);
+  const height=Math.max(24,(Number(extent?.getAttribute("cy"))||457200)/9525);
+
+  // Never invent visible styling that the DOCX did not explicitly specify.
+  // Unknown/theme-driven styling is better preserved silently than represented
+  // by a fake FrameChute-colored rectangle.
+  const solidFill=allDescendants(node,"solidFill")[0];
+  const fillValue=allDescendants(solidFill,"srgbClr")[0]?.getAttribute("val")||"";
+  const noFill=allDescendants(node,"noFill").length>0;
+  const fill=noFill||!fillValue ? "none" : `#${fillValue}`;
+
+  const line=allDescendants(node,"ln")[0];
+  const strokeValue=allDescendants(line,"srgbClr")[0]?.getAttribute("val")||"";
+  const lineNoFill=Boolean(line&&allDescendants(line,"noFill").length);
+  const stroke=!line||lineNoFill||!strokeValue ? "none" : `#${strokeValue}`;
+
+  const xfrm=allDescendants(node,"xfrm")[0];
+  const rotation=(Number(xfrm?.getAttribute("rot"))||0)/60000;
   const text=allDescendants(allDescendants(node,"txbxContent")[0],"t").map(item=>item.textContent||"").join(" ");
-  return { geometry,width,height,fill:`#${fill}`,stroke:`#${stroke}`,rotation,text };
+
+  // If there is neither safely reproducible styling nor text, showing an empty
+  // geometry adds visual junk. Preserve it in OOXML rather than displaying it.
+  if(fill==="none"&&stroke==="none"&&!text) return null;
+
+  return { geometry,width,height,fill,stroke,rotation,text };
 }
 
 function parseRun(run, relationships, parts, inherited = {}, styles = null) {
