@@ -60,8 +60,11 @@ if ($ActualHosts -contains "http://*/*" -or $ActualHosts -contains "https://*/*"
     throw "Broad host access is forbidden in the Chrome Web Store candidate"
 }
 
-if ([string]$Manifest.background.service_worker -ne "src/service-worker.js" -or [string]$Manifest.background.type -ne "module") {
-    throw "Manifest background must use packaged module service worker src/service-worker.js"
+if ([string]$Manifest.action.default_popup -ne "src/launcher.html") {
+    throw "Manifest action must use src/launcher.html for reliable clean-install launch"
+}
+if ($null -ne $Manifest.PSObject.Properties["background"]) {
+    throw "Clean-install launcher must not depend on a background service worker"
 }
 
 $RequiredIcons = @{
@@ -131,6 +134,12 @@ foreach ($File in $FilesToShip) {
     }
 }
 
+$DocxModulePath = Join-Path $Root "src/documents/docx-document.js"
+$DocxModuleText = Get-Content $DocxModulePath -Raw
+if ($DocxModuleText.Contains('\`') -or $DocxModuleText.Contains('\${')) {
+    throw "Release gate failed: malformed escaped JavaScript template syntax found in src/documents/docx-document.js"
+}
+
 if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Path $Stage -Force | Out-Null
 
@@ -158,7 +167,8 @@ Expand-Archive -Path $Output -DestinationPath $TestUnpacked -Force
 $RequiredPackageFiles = @(
     "manifest.json",
     "LICENSE",
-    "src/service-worker.js",
+    "src/launcher.html",
+    "src/launcher.js",
     "src/workspace.html",
     "src/workspace-extras.js",
     "src/picker-guard.js",
