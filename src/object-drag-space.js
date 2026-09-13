@@ -32,19 +32,56 @@ function ensureNegativeRunway(workspace) {
 
   const marginLeft = number(workspace.style.marginLeft, 0);
   const marginTop = number(workspace.style.marginTop, 0);
-  const width = Math.max(workspace.offsetWidth, number(workspace.style.width, 2400));
-  const height = Math.max(workspace.offsetHeight, number(workspace.style.height, 1600));
 
-  // Hidden-toolbar mode gets scrollable room before the normal origin.
-  // This happens only once, at the beginning of a drag. The matching scroll
-  // cancels the margin shift, so existing objects do not move on screen.
+  // Hidden-toolbar mode gets real scrollable room before the normal origin.
+  // Keep the logical workspace size unchanged here; the matching scroll cancels
+  // the margin shift so existing objects remain visually stationary.
   workspace.style.marginLeft = `${marginLeft + NEGATIVE_RUNWAY}px`;
   workspace.style.marginTop = `${marginTop + NEGATIVE_RUNWAY}px`;
-  workspace.style.width = `${width + NEGATIVE_RUNWAY}px`;
-  workspace.style.height = `${height + NEGATIVE_RUNWAY}px`;
 
+  // Force layout before compensating the newly-created left/top extent.
+  void workspace.offsetWidth;
   window.scrollBy(NEGATIVE_RUNWAY, NEGATIVE_RUNWAY);
+
   workspace.dataset.hiddenToolbarRunway = "true";
+  document.body.dataset.framechuteExpandableCanvas = "true";
+}
+
+function atRightScrollLimit() {
+  const root=document.documentElement;
+  return window.scrollX + window.innerWidth >= root.scrollWidth - 2;
+}
+
+function atBottomScrollLimit() {
+  const root=document.documentElement;
+  return window.scrollY + window.innerHeight >= root.scrollHeight - 2;
+}
+
+function growForEdgePan(workspace, dx, dy) {
+  let width=Math.max(workspace.offsetWidth, number(workspace.style.width, 2400));
+  let height=Math.max(workspace.offsetHeight, number(workspace.style.height, 1600));
+  let changed=false;
+
+  // When the pointer is parked at an edge, pointermove may stop firing. Grow
+  // the canvas from the animation loop itself once browser scrolling reaches
+  // the current document limit, then scrolling can continue.
+  if(dx>0 && atRightScrollLimit()) {
+    width += WORKSPACE_EXPANSION_STEP;
+    changed=true;
+  }
+  if(dy>0 && atBottomScrollLimit()) {
+    height += WORKSPACE_EXPANSION_STEP;
+    changed=true;
+  }
+
+  if(changed) {
+    workspace.style.width=`${width}px`;
+    workspace.style.height=`${height}px`;
+    // Ensure the new scroll extent is committed before the next scrollBy.
+    void workspace.offsetWidth;
+  }
+
+  return changed;
 }
 
 export function createObjectDragSession({ workspace, block, event, startLeft, startTop }) {
@@ -93,10 +130,23 @@ export function createObjectDragSession({ workspace, block, event, startLeft, st
       });
 
       if (dx || dy) {
+        // If scrolling has reached the current right/bottom edge, create more
+        // canvas first. This is what lets holding an object at the viewport edge
+        // continuously extend the hidden-toolbar workspace.
+        growForEdgePan(workspace, dx, dy);
+
         const beforeX = window.scrollX;
         const beforeY = window.scrollY;
         window.scrollBy(dx, dy);
-        if (window.scrollX !== beforeX || window.scrollY !== beforeY) place();
+
+        // Re-place on every requested edge-pan frame, even when a particular
+        // scrollBy was clamped. The growth step above may just have created new
+        // space and place() also keeps positive extents caught up with the block.
+        place();
+
+        if (window.scrollX === beforeX && window.scrollY === beforeY) {
+          growForEdgePan(workspace, dx, dy);
+        }
       }
     }
 
