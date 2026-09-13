@@ -428,10 +428,10 @@ body.toolbar-hidden .workspace {
   overflow: visible;
 }
 
-/* If hidden-toolbar dragging has created left/top runway, keep objects placed in
-   that expanded space visible after the toolbar is restored. Restoring the
-   toolbar stops further expansion; it does not move existing objects. */
-.workspace[data-hidden-toolbar-runway="true"] {
+/* Left/top space created while the top toolbar is hidden remains reachable
+   after the toolbar returns. Restoring the toolbar stops further growth; it
+   never rewrites object positions. */
+.workspace[data-expanded-origin="true"] {
   overflow: visible;
 }
 
