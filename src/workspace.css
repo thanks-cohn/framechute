@@ -19,6 +19,18 @@ body {
   color: CanvasText;
 }
 
+/* Once a hidden-toolbar drag opens expandable space, the scrollable area around
+   the original workspace must still look and behave like FrameChute canvas,
+   not like blank browser page. */
+body[data-framechute-expandable-canvas="true"] {
+  background-color: Canvas;
+  background-image:
+    linear-gradient(color-mix(in srgb, CanvasText 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, CanvasText 4%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: local;
+}
+
 button,
 input,
 select,
