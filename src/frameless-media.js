@@ -28,6 +28,7 @@ function revealMediaChrome(block) {
   const video = block.querySelector(":scope > video, :scope > .video-player");
   if (video && video.dataset.controlsBeforeFade === "true") video.controls = true;
   delete video?.dataset.controlsBeforeFade;
+  if (block.dataset.viewportFixed === "true") return;
   if (!block.classList.contains("is-frameless-media") || mediaChromeMode() === "always") return;
   chromeFadeTimers.set(block, setTimeout(() => {
     if (activePointers.has(block) || block.classList.contains("is-frameless-dragging") || block.classList.contains("is-frameless-resizing")) {
@@ -453,6 +454,12 @@ window.addEventListener("flashframe:set-object-chrome", (event) => {
 
 window.addEventListener("flashframe:restore-media-chrome", (event) => {
   prepare(event.detail?.block);
+});
+
+window.addEventListener("framechute:viewport-fixed-changed", (event) => {
+  const block = event.detail?.block;
+  if (!isVisualMediaObject(block)) return;
+  revealMediaChrome(block);
 });
 
 restoreAllButton?.addEventListener("click", () => {
