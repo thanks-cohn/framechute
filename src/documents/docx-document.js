@@ -301,9 +301,20 @@ function artifactKind(node) {
   if (allDescendants(node,"txbxContent").length) return "textBox";
   return local(node) || "unknown";
 }
-function preservedRun(node, capability="unsupportedPreserved") {
+function preservedRun(node, capability="unsupportedPreserved", placement="paragraphChild") {
   const kind=artifactKind(node), preview=String(node.textContent||"").replace(/\s+/g," ").trim();
-  return { text:"", artifact:{ kind, capability, label:preview || `${ARTIFACT_LABELS[kind]||"Unsupported DOCX artifact"} — preserved` } };
+  let rawXml="";
+  try { rawXml=new XMLSerializer().serializeToString(node); } catch { rawXml=""; }
+  return {
+    text:"",
+    artifact:{
+      kind,
+      capability,
+      placement,
+      rawXml,
+      label:preview || `${ARTIFACT_LABELS[kind]||"Unsupported DOCX artifact"} — preserved`
+    }
+  };
 }
 
 function parseParagraph(paragraph, relationships, parts, numbering=new Map(), styles=null, artifactSink=[]) {
@@ -328,7 +339,7 @@ function parseParagraph(paragraph, relationships, parts, numbering=new Map(), st
         for(const drawing of [...child.children].filter(item=>["drawing","pict","object"].includes(local(item)))) {
           const hasImage=allDescendants(drawing,"blip").length||allDescendants(drawing,"imagedata").length;
           if(!hasImage&&!parsed.drawings.length) {
-            const artifact=preservedRun(drawing,allDescendants(drawing,"Fallback").length?"preservedFallback":"unsupportedPreserved");
+            const artifact=preservedRun(drawing,allDescendants(drawing,"Fallback").length?"preservedFallback":"unsupportedPreserved","runChild");
             parsed.artifact=artifact.artifact; artifactSink.push(artifact.artifact);
           }
         }
@@ -525,11 +536,13 @@ export function parseDocx(bytes) {
 
 function runXml(run, drawingIds) {
   if(run.mathXml) return run.mathXml;
+  if(run.artifact?.rawXml && run.artifact.placement==="paragraphChild") return run.artifact.rawXml;
   const family=esc(run.fontFamily || ""), halfPoints=Math.max(2,Math.round(Number(run.fontSize)*2));
   const color=ooxmlColor(run.color),highlight=ooxmlColor(run.highlight),props = `${run.bold ? "<w:b/>" : ""}${run.italic ? "<w:i/>" : ""}${run.underline ? '<w:u w:val="single"/>' : ""}${run.strike?"<w:strike/>":""}${color?`<w:color w:val="${color}"/>`:""}${highlight?`<w:shd w:val="clear" w:color="auto" w:fill="${highlight}"/>`:""}${family?`<w:rFonts w:ascii="${family}" w:hAnsi="${family}"/>`:""}${run.fontSize?`<w:sz w:val="${halfPoints}"/><w:szCs w:val="${halfPoints}"/>`:""}`;
   const pieces = String(run.text ?? "").split(/([\t\n])/).map(part => part==="\t"?"<w:tab/>":part==="\n"?"<w:br/>":`<w:t xml:space="preserve">${esc(part)}</w:t>`).join("");
   const images = (run.images || []).map((image) => imageXml(image, drawingIds.next())).join("");
-  const xml=`<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}</w:r>`;
+  const preserved = run.artifact?.rawXml && run.artifact.placement==="runChild" ? run.artifact.rawXml : "";
+  const xml=`<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}${pieces}${images}${preserved}</w:r>`;
   return run.hyperlinkId ? `<w:hyperlink r:id="${esc(run.hyperlinkId)}">${xml}</w:hyperlink>` : xml;
 }
 function imageXml(image, drawingId) {
