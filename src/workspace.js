@@ -1197,17 +1197,10 @@ function renderDocxEditor(block, blocks, model = runtimeSources.get(block)?.mode
     addParagraph(item);
   }
 
-  for(const section of model?.supplemental||[]) {
-    const aside=document.createElement("section");
-    aside.className=`docx-supplemental docx-${section.type}`;
-    aside.contentEditable="false";
-    aside.dataset.docxPart=section.part;
-    const heading=document.createElement("div"); heading.className="docx-supplemental-label";
-    heading.textContent=section.type.replace(/^./,letter=>letter.toUpperCase()); aside.append(heading);
-    for(const paragraph of section.blocks) addParagraph(paragraph,aside);
-    editor.append(aside);
-  }
-
+  // Headers and footers are preserved in their original OOXML parts, but are
+  // not injected into the editable document body. Until FrameChute can place
+  // them faithfully in page-margin regions, rendering them as body sections
+  // creates fake bands that do not exist in Word.
   return urls;
 }
 
@@ -1240,16 +1233,8 @@ function renderDocxRecoveryView(block, model, error) {
     }
   }
 
-  for(const section of model?.supplemental||[]) {
-    const aside=document.createElement("section");
-    aside.className=`docx-supplemental docx-${section.type}`;
-    const label=document.createElement("div");
-    label.className="docx-supplemental-label";
-    label.textContent=section.type.replace(/^./,letter=>letter.toUpperCase());
-    aside.append(label);
-    for(const paragraph of section.blocks||[]) appendParagraph(paragraph,aside);
-    editor.append(aside);
-  }
+  // Compatibility view follows the same fidelity rule: supplemental header/
+  // footer parts remain preserved in the package, not shown as fake body bands.
 
   console.error("FrameChute DOCX rich rendering failed; compatibility view used instead.",error);
   return [];
