@@ -452,6 +452,8 @@ body.toolbar-hidden .workspace {
 .block.is-viewport-fixed {
   position: fixed !important;
   margin: 0 !important;
+  min-width: 120px !important;
+  min-height: 120px !important;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
 }
@@ -761,6 +763,10 @@ body.hide-block-headers .compact-drag-handle {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+.docx-block > .docx-toolbar[hidden] {
+  display: none !important;
 }
 
 /* The object header stays available while DOCX formatting controls sleep. */
