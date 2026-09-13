@@ -26,6 +26,7 @@ import { createSimpleDocx } from "./actions/document-operations.js";
 import { activeInternalDrag, beginInternalDrag, claimDocumentDrop, endInternalDrag, imageBlobsForDrop, isInternalFrameChuteDrag } from "./drag-ownership.mjs";
 import { customImageSourceBlob } from "./custom-image-source.mjs";
 import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from "./document-image-drag.mjs";
+import { createObjectDragSession } from "./object-drag-space.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -346,19 +347,18 @@ function attachBlockInteractions(block) {
     event.preventDefault();
     bringToFront(block);
 
-    const startPointerX = event.clientX;
-    const startPointerY = event.clientY;
     const startLeft = numberFromStyle(block.style.left, block.offsetLeft);
     const startTop = numberFromStyle(block.style.top, block.offsetTop);
+    const dragSession = createObjectDragSession({ workspace, block, event, startLeft, startTop });
 
     header.setPointerCapture(event.pointerId);
 
     const move = (moveEvent) => {
-      block.style.left = `${startLeft + moveEvent.clientX - startPointerX}px`;
-      block.style.top = `${startTop + moveEvent.clientY - startPointerY}px`;
+      dragSession.move(moveEvent);
     };
 
     const finish = () => {
+      dragSession.finish();
       header.removeEventListener("pointermove", move);
       header.removeEventListener("pointerup", finish);
       header.removeEventListener("pointercancel", finish);
