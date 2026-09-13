@@ -13,6 +13,12 @@ export function requiredPositiveExpansion({ left, top, width, height, workspaceW
   return { addWidth, addHeight };
 }
 
+export function requiredNegativeOriginGrowth({ position, origin = 0, margin = WORKSPACE_EDGE_MARGIN, step = WORKSPACE_EXPANSION_STEP }) {
+  let growth = 0;
+  while (origin + growth + position < margin) growth += step;
+  return growth;
+}
+
 /**
  * Viewport edge-panning is navigation. The workspace itself is unbounded from
  * the user's point of view: dragging to any edge may grow reachable canvas,
@@ -63,21 +69,22 @@ function workspaceOrigin(axis) {
   return Math.max(0, numericStyle(workspace, property, 0));
 }
 
-function expandNegativeEdge(axis) {
+function expandNegativeEdge(axis, amount) {
+  const growth = Math.max(0, Number(amount) || 0);
+  if (!growth) return 0;
+
   // Grow empty canvas BEFORE the logical workspace origin. Do not rewrite any
   // block coordinates. Scrolling by the same amount keeps every object visually
   // stationary while giving the user new reachable space to the left/up.
   if (axis === "x") {
-    const next = workspaceOrigin("x") + WORKSPACE_EXPANSION_STEP;
-    workspace.style.marginLeft = `${next}px`;
-    window.scrollBy(WORKSPACE_EXPANSION_STEP, 0);
-    return WORKSPACE_EXPANSION_STEP;
+    workspace.style.marginLeft = `${workspaceOrigin("x") + growth}px`;
+    window.scrollBy(growth, 0);
+    return growth;
   }
 
-  const next = workspaceOrigin("y") + WORKSPACE_EXPANSION_STEP;
-  workspace.style.marginTop = `${next}px`;
-  window.scrollBy(0, WORKSPACE_EXPANSION_STEP);
-  return WORKSPACE_EXPANSION_STEP;
+  workspace.style.marginTop = `${workspaceOrigin("y") + growth}px`;
+  window.scrollBy(0, growth);
+  return growth;
 }
 
 function bringForward(block) {
@@ -122,12 +129,12 @@ function beginMeasuredBlockDrag(event, block, handle) {
 
     // Allow genuine negative logical coordinates. Only add physical gutter when
     // the object would otherwise cross beyond the browser's scrollable origin.
-    while (workspaceOrigin("x") + left < WORKSPACE_EDGE_MARGIN) {
-      originGrowthX += expandNegativeEdge("x");
-    }
-    while (workspaceOrigin("y") + top < WORKSPACE_EDGE_MARGIN) {
-      originGrowthY += expandNegativeEdge("y");
-    }
+    // Calculate the entire needed gutter once so there is no repeated rebase
+    // loop that can look like the object is being thrown toward the center.
+    const growLeft = requiredNegativeOriginGrowth({ position:left, origin:workspaceOrigin("x") });
+    const growTop = requiredNegativeOriginGrowth({ position:top, origin:workspaceOrigin("y") });
+    if (growLeft) originGrowthX += expandNegativeEdge("x", growLeft);
+    if (growTop) originGrowthY += expandNegativeEdge("y", growTop);
 
     const size = workspaceSize();
     const growth = requiredPositiveExpansion({ left, top, width, height, workspaceWidth: size.width, workspaceHeight: size.height });
