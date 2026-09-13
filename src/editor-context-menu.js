@@ -47,7 +47,8 @@ function appendItems(parent, items) {
 }
 function show(next, x, y){window.dispatchEvent(new CustomEvent("framechute:close-context-menus",{detail:{except:menu}}));context=next;menu.replaceChildren();appendItems(menu,commandsForEditorContext(next));menu.hidden=false;place(menu,x,y);menu.querySelector("button:not(:disabled)")?.focus({preventScroll:true});}
 function run(action,value){const block=context?.block;if(!block)return;const selected=context.selected;
-  if(action==="save"||action==="save-as")block.querySelector(action==="save"?".document-save":".document-save-as")?.click();
+  if(action==="show-header")window.dispatchEvent(new CustomEvent("framechute:object-command",{detail:{block,command:"show-header"}}));
+  else if(action==="save"||action==="save-as")block.querySelector(action==="save"?".document-save":".document-save-as")?.click();
   else if(context.editorKind==="pdf"&&action==="settings")pdfSettings.showModal();
   else if(context.editorKind==="docx")window.dispatchEvent(new CustomEvent("framechute:docx-command",{detail:{block,action,value,selected,range:context.range}}));
   else if(action==="edit-text")selected?.dispatchEvent(new MouseEvent("dblclick",{bubbles:true}));
