@@ -391,12 +391,18 @@ export function parseDocx(bytes) {
   if (!body) throw new Error("The DOCX document has no body.");
   const parseXml=value=>new DOMParser().parseFromString(value,"application/xml");
   const partRelationships=new Map();
-  const documentRelationships=readPartRelationships(parts,"word/document.xml",parseXml,strFromU8);
+  let documentRelationships=new Map();
+  try {
+    documentRelationships=readPartRelationships(parts,"word/document.xml",parseXml,strFromU8);
+  } catch(error) {
+    console.warn("FrameChute: DOCX relationships could not be read; opening the document without linked artifacts.",error);
+  }
   partRelationships.set("word/document.xml",documentRelationships);
   const relationships = new Map([...documentRelationships].map(([id,rel])=>[id,rel.external?{target:rel.target,external:true}:rel.part]));
   const styles=parseStyles(parts);
   const numbering=new Map(),numberingSource=parts["word/numbering.xml"];
   if(numberingSource){
+    try {
     const numberingDoc=new DOMParser().parseFromString(strFromU8(numberingSource),"application/xml"),abstracts=new Map();
     for(const abstract of allDescendants(numberingDoc,"abstractNum")){
       const id=Number(wVal(abstract,"abstractNumId")||abstract.getAttribute("w:abstractNumId"));
@@ -417,14 +423,20 @@ export function parseDocx(bytes) {
         numbering.set(`${id}:${level}`,{...base,...(format?{format,list:format==="bullet"?"bullet":"number"}:{}),...(text?{text}:{}),...(Number.isFinite(startOverride)&&startOverride>0?{start:startOverride}:Number.isFinite(start)&&start>0?{start}:{})});
       }
     }
+    } catch(error) {
+      console.warn("FrameChute: DOCX numbering could not be interpreted; opening with plain paragraph flow.",error);
+      numbering.clear();
+    }
   }
   const blocks = [], artifacts=[];
   const originalBodyChildren = [];
   [...body.children].forEach((child, sourceIndex) => {
     const kind=local(child);
-    const raw=new XMLSerializer().serializeToString(child);
+    let raw="";
+    try { raw=new XMLSerializer().serializeToString(child); } catch { raw=""; }
     originalBodyChildren.push({ sourceIndex, kind, raw });
 
+    try {
     if (kind === "p") {
       const block=parseParagraph(child, relationships, parts,numbering,styles,artifacts);
       artifacts.push({kind:"paragraph",capability:"editable",sourceIndex});
@@ -466,18 +478,47 @@ export function parseDocx(bytes) {
       blocks.push({ type:"preserved", sourceIndex, preservedTag:artifact.kind, previewText:previewText||artifact.label, capability:artifact.capability });
       artifacts.push({...artifact,sourceIndex});
     }
+    } catch(error) {
+      console.warn(`FrameChute: preserving unsupported DOCX ${kind || "body"} content instead of aborting open.`,error);
+      const previewText=String(child?.textContent||"").replace(/\s+/g," ").trim();
+      blocks.push({
+        type:"preserved",
+        sourceIndex,
+        preservedTag:kind||"object",
+        previewText:previewText||`Preserved ${kind||"DOCX content"}`,
+        capability:"unsupportedPreserved"
+      });
+      artifacts.push({kind:kind||"unknown",capability:"unsupportedPreserved",sourceIndex});
+    }
   });
-  const pageLayout=parsePageLayout(body);
+  let pageLayout=null;
+  try { pageLayout=parsePageLayout(body); }
+  catch(error) { console.warn("FrameChute: DOCX page layout could not be interpreted; using the default page surface.",error); }
   const supplemental=[];
   for(const [id,rel] of documentRelationships) {
     const relationKind=rel.type.split("/").at(-1);
     if(!["header","footer","footnotes","endnotes","comments"].includes(relationKind)||!parts[rel.part]) continue;
-    const relatedDoc=parseXml(strFromU8(parts[rel.part]));
-    const relatedRels=readPartRelationships(parts,rel.part,parseXml,strFromU8); partRelationships.set(rel.part,relatedRels);
-    const compatible=new Map([...relatedRels].map(([key,value])=>[key,value.external?{target:value.target,external:true}:value.part]));
-    const relatedBlocks=allDescendants(relatedDoc,"p").map(p=>parseParagraph(p,compatible,parts,numbering,styles,artifacts));
-    supplemental.push({type:relationKind,id,part:rel.part,blocks:relatedBlocks});
-    artifacts.push({kind:relationKind.replace(/s$/, ""),capability:"readOnlyRenderable",part:rel.part});
+    try {
+      const relatedDoc=parseXml(strFromU8(parts[rel.part]));
+      if(relatedDoc.querySelector?.("parsererror")) throw new Error(`${relationKind} XML is malformed`);
+      let relatedRels=new Map();
+      try { relatedRels=readPartRelationships(parts,rel.part,parseXml,strFromU8); }
+      catch(error) { console.warn(`FrameChute: relationships for DOCX ${relationKind} could not be read.`,error); }
+      partRelationships.set(rel.part,relatedRels);
+      const compatible=new Map([...relatedRels].map(([key,value])=>[key,value.external?{target:value.target,external:true}:value.part]));
+      const relatedBlocks=allDescendants(relatedDoc,"p").map(p=>{
+        try { return parseParagraph(p,compatible,parts,numbering,styles,artifacts); }
+        catch(error) {
+          console.warn(`FrameChute: one DOCX ${relationKind} paragraph could not be rendered.`,error);
+          return {type:"paragraph",style:"",list:"",alignment:"left",runs:[{text:String(p.textContent||"")}]};
+        }
+      });
+      supplemental.push({type:relationKind,id,part:rel.part,blocks:relatedBlocks});
+      artifacts.push({kind:relationKind.replace(/s$/, ""),capability:"readOnlyRenderable",part:rel.part});
+    } catch(error) {
+      console.warn(`FrameChute: optional DOCX ${relationKind} part was preserved but not rendered.`,error);
+      artifacts.push({kind:relationKind.replace(/s$/, ""),capability:"unsupportedPreserved",part:rel.part});
+    }
   }
   return { blocks, supplemental, artifacts, originalBlocks: structuredClone(blocks), originalBodyChildren, parts, originalXml: xml, relationships, partRelationships, styles, numbering, pageLayout };
 }
