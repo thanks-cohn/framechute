@@ -28,6 +28,7 @@ import { customImageSourceBlob } from "./custom-image-source.mjs";
 import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from "./document-image-drag.mjs";
 import { createObjectDragSession } from "./object-drag-space.js";
 import { isViewportFixed } from "./viewport-fix.js";
+import { fitOpenedBlock } from "./initial-open-fit.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -214,7 +215,12 @@ async function reconnectSource(block, picker, loader) {
 }
 
 function bringToFront(block) {
-  zCounter += 1;
+  let highest = zCounter;
+  for (const candidate of workspace.querySelectorAll(".block")) {
+    const value = Number.parseInt(candidate.style.zIndex, 10);
+    if (Number.isFinite(value)) highest = Math.max(highest, value);
+  }
+  zCounter = highest + 1;
   block.style.zIndex = String(zCounter);
 }
 
@@ -1532,7 +1538,7 @@ registerBlockType("video", {
   }
 });
 
-async function createBlock(record = {}) {
+async function createBlock(record = {}, { fitOnOpen = true } = {}) {
   const type = record.type ?? "text";
   const definition = blockTypes.get(type);
 
@@ -1566,6 +1572,8 @@ async function createBlock(record = {}) {
   }
 
   window.dispatchEvent(new CustomEvent("framechute:block-restored", { detail: { block, record } }));
+
+  if (fitOnOpen) fitOpenedBlock(block);
 
   return block;
 }
@@ -1642,7 +1650,7 @@ async function restoreWorkspace(snapshot) {
   }
 
   for (const record of snapshot.blocks ?? []) {
-    await createBlock(record);
+    await createBlock(record, { fitOnOpen: false });
   }
 
   if (snapshot.workspace) window.scrollTo(Number(snapshot.workspace.scrollX) || 0, Number(snapshot.workspace.scrollY) || 0);
