@@ -2,6 +2,7 @@ import { connectArchiveDirectory, getArchiveStatus } from "./archive.js";
 import { createObjectDragSession } from "./object-drag-space.js";
 
 const SETTINGS_KEY = "flashframe.settings.v1";
+const DOCX_AUTO_HIDE_DEFAULT_KEY = "framechute.docx-tools-auto-hide-default.v2";
 const VIDEO_LOOP_OVERRIDES_KEY = "flashframe.video-loop-overrides.v1";
 const TOOLBAR_BUTTON_KEY = "flashframe.toolbar-summon-position.v1";
 const SETTINGS_DOCK_KEY = "flashframe.settings-dock.v2";
@@ -11,7 +12,7 @@ const VIDEO_STEP_KEY = "flashframe.video-step-seconds.v1";
 const defaults = {
   showBlockHeaders: true,
   showToolbar: true,
-  autoHideDocxTools: false,
+  autoHideDocxTools: true,
   loopVideosByDefault: false
 };
 
@@ -37,6 +38,17 @@ const archiveStatus = document.querySelector("#archive-status");
 const archiveConnect = document.querySelector("#archive-connect");
 
 let settings = { ...defaults, ...readJson(SETTINGS_KEY, {}) };
+
+// Auto-hide is now the DOCX default. Older FrameChute settings persisted the
+// previous false default, so migrate existing installs exactly once. The
+// checkbox remains available afterwards for users who explicitly want the
+// formatting bar pinned open.
+if (readJson(DOCX_AUTO_HIDE_DEFAULT_KEY, false) !== true) {
+  settings.autoHideDocxTools = true;
+  writeJson(SETTINGS_KEY, settings);
+  writeJson(DOCX_AUTO_HIDE_DEFAULT_KEY, true);
+}
+
 let videoLoopOverrides = readJson(VIDEO_LOOP_OVERRIDES_KEY, {});
 let toolbarTemporaryVisible = null;
 let suppressToolbarClick = false;
@@ -370,10 +382,12 @@ function scheduleDocxToolsHide(block) {
     docxToolsTimers.delete(block);
     if (!settings.autoHideDocxTools) return;
 
-    // Physical hover is the only thing allowed to postpone hiding. An open
-    // menu, old keyboard focus, document scrolling, or body hover cannot pin
-    // the Word controls open forever.
-    if (toolbar.matches(":hover")) return;
+    // Physical hover over either the formatting bar or the DOCX title chrome
+    // keeps the tools awake. Open menus, old keyboard focus, document scrolling,
+    // and document-body hover do not.
+    const header = block.querySelector(":scope > .block-header");
+    const grab = block.querySelector(":scope > .compact-drag-handle");
+    if (toolbar.matches(":hover") || header?.matches(":hover") || grab?.matches(":hover")) return;
 
     for (const details of toolbar.querySelectorAll("details[open]")) details.open = false;
     block.classList.add("docx-tools-collapsed");
@@ -417,6 +431,7 @@ function prepareDocxToolsAutoHide(block) {
   if (!(block instanceof HTMLElement) || block.dataset.blockType !== "docx") return;
   const toolbar = block.querySelector(":scope > .docx-toolbar");
   const header = block.querySelector(":scope > .block-header");
+  const grab = block.querySelector(":scope > .compact-drag-handle");
   if (!toolbar || !header) return;
 
   if (block.dataset.docxToolsAutoHideBound !== "true") {
@@ -425,9 +440,18 @@ function prepareDocxToolsAutoHide(block) {
     // Header hover is the primary wake gesture. Merely moving around or
     // scrolling inside the document body must never wake the Word tools.
     header.addEventListener("pointerenter", () => {
-      if (settings.autoHideDocxTools) revealDocxTools(block);
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
     });
     header.addEventListener("pointerleave", () => {
+      if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
+    });
+
+    // Grab is absolutely positioned beside the title rather than inside the
+    // header DOM, so explicitly make it part of the same wake surface.
+    grab?.addEventListener("pointerenter", () => {
+      if (settings.autoHideDocxTools) revealDocxTools(block, { hold: true });
+    });
+    grab?.addEventListener("pointerleave", () => {
       if (settings.autoHideDocxTools) scheduleDocxToolsHide(block);
     });
 
