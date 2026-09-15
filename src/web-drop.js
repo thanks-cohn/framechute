@@ -9,6 +9,7 @@ import {
 } from "./file-access.js";
 import { classifyLocalFile, looksLikeImageUrl, nativeImagePickerExtensions } from "./media-types.js";
 import { parseCsv } from "./actions/csv.js";
+import { fitOpenedBlock } from "./initial-open-fit.js";
 
 const MARKER = "__FLASHFRAME_CUSTOM_BLOCK_V1__";
 const LEGACY_EMBED_KIND = "you" + "tube";
@@ -394,7 +395,10 @@ function createCustomBlock(payload, options = {}) {
   if (!block) return null;
 
   if (options.replace) options.replace.replaceWith(block);
-  else workspace.append(block);
+  else {
+    workspace.append(block);
+    fitOpenedBlock(block);
+  }
   window.dispatchEvent(new CustomEvent("framechute:custom-block-ready", { detail: { block, payload } }));
   return block;
 }
@@ -535,6 +539,7 @@ async function createDroppedText(text, point) {
   if (name) name.value = "Dropped text";
   block.style.left = `${Math.max(8, point.x - 80)}px`;
   block.style.top = `${Math.max(8, point.y - 40)}px`;
+  fitOpenedBlock(block);
   workspace.dispatchEvent(new CustomEvent("flashframe:workspace-changed", { bubbles: true }));
 }
 
