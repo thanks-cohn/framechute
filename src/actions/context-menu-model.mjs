@@ -32,8 +32,16 @@ export function commandsForEditorContext(context) {
     const contextual = context.selectionKind === "hyperlink" ? [{id:"open-link",label:"Open Link"},{id:"edit-link",label:"Edit Link…"},{id:"remove-link",label:"Remove Link"}] : context.selectionKind === "image" ? [{id:"replace-image",label:"Replace Image…"},{id:"resize-image",label:"Resize Image…"},{id:"remove-image",label:"Remove Image"}] : context.selectionKind === "cell" ? [{id:"row-above",label:"Insert Row Above"},{id:"row-below",label:"Insert Row Below"},{id:"column-left",label:"Insert Column Left"},{id:"column-right",label:"Insert Column Right"},{id:"delete-row",label:"Delete Row"},{id:"delete-column",label:"Delete Column"},{id:"delete-table",label:"Delete Table"}] : [];
     return [showHeader,{type:"separator"},{id:"bold",label:"Bold"},{id:"italic",label:"Italic"},{id:"underline",label:"Underline"},{id:"highlight",label:"Highlight Selection"},{type:"separator"},{id:"editing",label:"Edit",submenu:edit},{id:"formatting",label:"Font & Paragraph",submenu:format},{id:"insert",label:"Document",submenu:insert},...(contextual.length?[{id:"context",label:context.selectionKind[0].toUpperCase()+context.selectionKind.slice(1),submenu:contextual}]:[]),{type:"separator"},{id:"save",label:"Save"},{id:"save-as",label:"Save As…"},...viewportTail];
   }
+  const pdfEditOn = context.block?.dataset?.pdfEditMode !== "off";
+  const pdfEditToggle = { id: "toggle-edit", label: `EDIT [ ${pdfEditOn ? "ON" : "OFF"} ]` };
+  if (!pdfEditOn) return [
+    showHeader, { type: "separator" }, pdfEditToggle,
+    { type: "separator" }, { id: "settings", label: "Settings…" },
+    { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
+  ];
+
   if (context.selectionKind === "edit") return [
-    showHeader, { type: "separator" },
+    showHeader, { type: "separator" }, pdfEditToggle,
     { id: "edit-text", label: "Edit Text" },
     { id: "font", label: "Font", submenu: ["Helvetica","Helvetica Bold","Helvetica Oblique","Times Roman","Times Bold","Times Italic","Courier","Courier Bold","Courier Oblique"].map(label => ({ id: "font", label, value: label })) },
     { id: "text-size", label: "Text Size…" }, { id: "duplicate", label: "Duplicate" }, { id: "delete", label: "Delete Field" },
@@ -41,11 +49,11 @@ export function commandsForEditorContext(context) {
     { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
   if (context.selectionKind === "source-text") return [
-    showHeader, { type: "separator" },
+    showHeader, { type: "separator" }, pdfEditToggle,
     { id: "edit-text", label: "Edit / Replace Text" }, { id: "delete", label: "Delete Text" },
     { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
-  return [showHeader,{ type: "separator" },{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail];
+  return [showHeader,{ type: "separator" },pdfEditToggle,{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail];
 }
 
 // CODEX DEBUG V10: this implementation is too video-specific and must become a
