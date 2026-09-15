@@ -14,7 +14,8 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties } from "./documents/pdf-document.js";
+import { clampPdfZoom, fitPdfScale } from "./documents/pdf-geometry.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { DocxNumberingState } from "./documents/docx/numbering.js";
 import { editorNodeToRuns, replaceTextNodes } from "./documents/rich-text-runs.js";
@@ -535,9 +536,18 @@ async function setPdfPage(block, page) {
   block.dataset.currentPage = String(nextPage);
 
   if (runtime?.model) {
-    runtime.pageData = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits);
+    runtime.renderTask?.cancel();
+    const token = runtime.renderToken = (runtime.renderToken || 0) + 1;
+    const surface = block.querySelector(".pdf-surface"), firstPage = await runtime.model.pdf.getPage(nextPage), base = firstPage.getViewport({scale:1});
+    if (runtime.fitMode) runtime.zoom = fitPdfScale(runtime.fitMode, base, {width:surface.clientWidth-20,height:surface.clientHeight-20});
+    try {
+      const result = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits, {scale:runtime.zoom, searchQuery:runtime.search?.query, onRenderTask:task=>runtime.renderTask=task});
+      if (token !== runtime.renderToken) return;
+      runtime.pageData = result;
+    } catch (error) { if (error?.name !== "RenderingCancelledException") throw error; else return; }
     selectPdfEdit(block, null);
     block.querySelector(".pdf-count").textContent = `/ ${runtime.model.pageCount}`;
+    block.querySelector(".pdf-zoom").value = String(Math.round((runtime.zoom || runtime.pageData.viewport.scale) * 100));
   }
 }
 
@@ -582,14 +592,14 @@ async function loadPdfHandle(block, handle, state = {}) {
 
   const model = await openPdfDocument(await file.arrayBuffer());
   const edits = Array.isArray(state.edits) ? structuredClone(state.edits) : [];
-  const runtime = { handle, model, edits, structurallyDirty: Boolean(state.structurallyDirty) };
+  const runtime = { handle, model, edits, structurallyDirty: Boolean(state.structurallyDirty), zoom: state.zoom, fitMode: state.fitMode || (!state.zoom ? "page" : null) };
   runtime.serialize = () => serializeEditedPdf(model, edits);
   runtimeSources.set(block, runtime);
   clearSourceUnavailable(block);
   setDocumentDirty(block, Boolean(state.dirty));
   await setPdfPage(block, state.page ?? block.dataset.currentPage ?? 1);
 }
-async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfDocument(bytes),edits=Array.isArray(state.edits)?structuredClone(state.edits):[],runtime={handle:null,model,edits,structurallyDirty:Boolean(state.structurallyDirty)};runtime.serialize=()=>serializeEditedPdf(model,edits);runtimeSources.set(block,runtime);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
+async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfDocument(bytes),edits=Array.isArray(state.edits)?structuredClone(state.edits):[],runtime={handle:null,model,edits,structurallyDirty:Boolean(state.structurallyDirty),zoom:state.zoom,fitMode:state.fitMode||(!state.zoom?"page":null)};runtime.serialize=()=>serializeEditedPdf(model,edits);runtimeSources.set(block,runtime);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
 
 async function applyPdfPageOperation(block, operation) {
   const previous = runtimeSources.get(block); if (!previous?.model) return;
@@ -737,6 +747,24 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-page").addEventListener("change", (event) => {
       void setPdfPage(block, event.currentTarget.value);
     });
+    const zoomBy = factor => { const runtime=runtimeSources.get(block);if(!runtime)return;runtime.fitMode=null;runtime.zoom=clampPdfZoom((runtime.zoom||runtime.pageData?.viewport?.scale||1)*factor);void setPdfPage(block,block.dataset.currentPage); };
+    block.querySelector(".pdf-zoom-out").addEventListener("click",()=>zoomBy(1/1.2));
+    block.querySelector(".pdf-zoom-in").addEventListener("click",()=>zoomBy(1.2));
+    block.querySelector(".pdf-zoom").addEventListener("change",event=>{const runtime=runtimeSources.get(block);if(!runtime)return;runtime.fitMode=null;runtime.zoom=clampPdfZoom(Number(event.target.value)/100);void setPdfPage(block,block.dataset.currentPage);});
+    block.querySelector(".pdf-fit").addEventListener("change",event=>{const runtime=runtimeSources.get(block);if(!runtime)return;runtime.fitMode=event.target.value||null;if(!runtime.fitMode)runtime.zoom=1;void setPdfPage(block,block.dataset.currentPage);});
+    const searchBox=block.querySelector(".pdf-search-box"),searchInput=block.querySelector(".pdf-search-input"),searchCount=block.querySelector(".pdf-search-count");
+    const showSearch=()=>{searchBox.hidden=false;searchInput.focus();searchInput.select();};
+    block.querySelector(".pdf-search-toggle").addEventListener("click",showSearch);
+    block.querySelector(".pdf-search-close").addEventListener("click",()=>{searchBox.hidden=true;const runtime=runtimeSources.get(block);if(runtime)runtime.search=null;void setPdfPage(block,block.dataset.currentPage);});
+    const runSearch=async()=>{const runtime=runtimeSources.get(block);if(!runtime)return;const query=searchInput.value,matches=await searchPdfDocument(runtime.model,query);runtime.search={query,matches,index:matches.length?0:-1};searchCount.textContent=matches.length?`1 / ${matches.length}`:"0 / 0";if(matches.length)await setPdfPage(block,matches[0].page);};
+    searchInput.addEventListener("change",()=>void runSearch());
+    const stepSearch=direction=>{const runtime=runtimeSources.get(block),search=runtime?.search;if(!search?.matches.length)return;search.index=(search.index+direction+search.matches.length)%search.matches.length;searchCount.textContent=`${search.index+1} / ${search.matches.length}`;void setPdfPage(block,search.matches[search.index].page);};
+    block.querySelector(".pdf-search-prev").addEventListener("click",()=>stepSearch(-1));block.querySelector(".pdf-search-next").addEventListener("click",()=>stepSearch(1));
+    block.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="f"&&!event.target.closest('[contenteditable="true"]')){event.preventDefault();showSearch();}if(event.key==="Escape"&&!searchBox.hidden){event.preventDefault();block.querySelector(".pdf-search-close").click();}if(!event.target.closest("input,textarea,select,[contenteditable=true]")){if(event.key==="PageUp"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)-1);}if(event.key==="PageDown"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)+1);}if(event.key==="Home"){event.preventDefault();void setPdfPage(block,1);}if(event.key==="End"){event.preventDefault();void setPdfPage(block,runtimeSources.get(block)?.model.pageCount);}}});
+    block.querySelector(".pdf-properties").addEventListener("click",async event=>{const runtime=runtimeSources.get(block);if(!runtime)return;const data=await pdfDocumentProperties(runtime.model,Number(block.dataset.currentPage));event.currentTarget.closest(".pdf-popdown").querySelector(".pdf-properties-list").replaceChildren(...Object.entries(data).map(([key,value])=>{const row=document.createElement("div");row.innerHTML=`<strong>${key.replace(/[A-Z]/g,m=>` ${m}`).replace(/^./,m=>m.toUpperCase())}</strong><span></span>`;row.lastChild.textContent=value||"—";return row;}));});
+    block.querySelector(".pdf-thumbnails").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const render=async(canvas,number)=>{if(canvas.dataset.rendered)return;canvas.dataset.rendered="true";const page=await runtime.model.pdf.getPage(number),viewport=page.getViewport({scale:.18}),ratio=devicePixelRatio||1;canvas.width=Math.ceil(viewport.width*ratio);canvas.height=Math.ceil(viewport.height*ratio);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;await page.render({canvasContext:canvas.getContext("2d"),viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]}).promise;};const observer=new IntersectionObserver(entries=>entries.filter(entry=>entry.isIntersecting).forEach(entry=>{void render(entry.target,Number(entry.target.dataset.page));observer.unobserve(entry.target);}),{root:panel,rootMargin:"150px"});for(let number=1;number<=runtime.model.pageCount;number++){const button=document.createElement("button"),canvas=document.createElement("canvas"),label=document.createElement("span");button.type="button";canvas.dataset.page=String(number);canvas.style.aspectRatio=".72";label.textContent=String(number);button.append(canvas,label);button.addEventListener("click",()=>void setPdfPage(block,number));panel.append(button);observer.observe(canvas);}});
+    block.querySelector(".pdf-outline").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const outline=await runtime.model.pdf.getOutline();const add=async(items,depth=0)=>{for(const item of items||[]){const button=document.createElement("button");button.type="button";button.textContent=item.title||"Untitled";button.style.paddingInlineStart=`${8+depth*14}px`;button.addEventListener("click",async()=>{let destination=item.dest;if(typeof destination==="string")destination=await runtime.model.pdf.getDestination(destination);if(destination?.[0])void setPdfPage(block,(await runtime.model.pdf.getPageIndex(destination[0]))+1);});panel.append(button);await add(item.items,depth+1);}};await add(outline);if(!outline?.length)panel.textContent="No document outline.";});
+    block.querySelector(".pdf-side-close").addEventListener("click",()=>{block.querySelector(".pdf-side-panel").hidden=true;});
     block.querySelector(".pdf-add-page").addEventListener("click", () => void applyPdfPageOperation(block, { type: "add", page: Number(block.dataset.currentPage || 1), to:Number(block.dataset.currentPage || 1)+1 }));
     block.querySelector(".pdf-rotate").addEventListener("click", () => void applyPdfPageOperation(block, { type: "rotate", page: Number(block.dataset.currentPage || 1), degrees: 90 }));
     block.querySelector(".pdf-delete").addEventListener("click", () => void applyPdfPageOperation(block, { type: "delete", page: Number(block.dataset.currentPage || 1) }).catch((error) => setStatus(error.message)));
@@ -833,7 +861,7 @@ registerBlockType("pdf", {
 
   capture(block) {
     const runtime = runtimeSources.get(block);
-    return { page: clampInteger(block.querySelector(".pdf-page").value, 1), edits: structuredClone(runtime?.edits || []), dirty: block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty), embeddedBlob:(!getSourceRecord(block)||runtime?.structurallyDirty)&&runtime?.model?.bytes?new Blob([runtime.model.bytes],{type:"application/pdf"}):null };
+    return { page: clampInteger(block.querySelector(".pdf-page").value, 1), zoom:runtime?.zoom, fitMode:runtime?.fitMode, edits: structuredClone(runtime?.edits || []), dirty: block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty), embeddedBlob:(!getSourceRecord(block)||runtime?.structurallyDirty)&&runtime?.model?.bytes?new Blob([runtime.model.bytes],{type:"application/pdf"}):null };
   },
 
   async restore(block, state = {}, source = null) {

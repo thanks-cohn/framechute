@@ -1,5 +1,7 @@
 import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
+import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
+export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
 
@@ -64,16 +66,18 @@ export async function openPdfDocument(bytes) {
   return { bytes: data, pdf, pageCount: pdf.numPages };
 }
 
-export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits = []) {
+export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits = [], options = {}) {
   const page = await model.pdf.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.max(.5, Math.min(2.5, (textLayer.parentElement.clientWidth - 20) / base.width || 1));
+  const scale = options.scale || Math.max(.5, Math.min(2.5, (textLayer.parentElement.clientWidth - 20) / base.width || 1));
   const viewport = page.getViewport({ scale });
   canvas.width = Math.ceil(viewport.width * devicePixelRatio);
   canvas.height = Math.ceil(viewport.height * devicePixelRatio);
   canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
   textLayer.style.width = `${viewport.width}px`; textLayer.style.height = `${viewport.height}px`;
-  await page.render({ canvasContext: canvas.getContext("2d"), viewport, transform: devicePixelRatio === 1 ? null : [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] }).promise;
+  const renderTask = page.render({ canvasContext: canvas.getContext("2d"), viewport, transform: devicePixelRatio === 1 ? null : [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] });
+  options.onRenderTask?.(renderTask);
+  await renderTask.promise;
   const content = await page.getTextContent();
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
@@ -99,6 +103,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = edits.find((edit) => edit.page === pageNumber && edit.index === index);
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
+    if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
     if (saved) {
       const [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
@@ -132,6 +137,37 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   return { viewport, content };
 }
 
+export async function searchPdfDocument(model, query) {
+  const needle = String(query || "").trim().toLocaleLowerCase();
+  if (!needle) return [];
+  const matches = [];
+  for (let pageNumber = 1; pageNumber <= model.pageCount; pageNumber++) {
+    const content = await (await model.pdf.getPage(pageNumber)).getTextContent();
+    content.items.forEach((item, index) => {
+      let from = 0, at;
+      const text = String(item.str || ""), haystack = text.toLocaleLowerCase();
+      while ((at = haystack.indexOf(needle, from)) !== -1) {
+        matches.push({ page: pageNumber, index, offset: at, text });
+        from = at + Math.max(1, needle.length);
+      }
+    });
+  }
+  return matches;
+}
+
+export async function pdfDocumentProperties(model, pageNumber = 1) {
+  const [metadata, page] = await Promise.all([model.pdf.getMetadata().catch(() => ({})), model.pdf.getPage(pageNumber)]);
+  const viewport = page.getViewport({ scale: 1 });
+  const info = metadata?.info || {};
+  return {
+    title: info.Title || "", author: info.Author || "", subject: info.Subject || "",
+    keywords: info.Keywords || "", creator: info.Creator || "", producer: info.Producer || "",
+    creationDate: info.CreationDate || "", modificationDate: info.ModDate || "",
+    pageCount: model.pageCount, pageSize: `${Math.round(viewport.width * 100) / 100} × ${Math.round(viewport.height * 100) / 100} pt`,
+    version: info.PDFFormatVersion || "Unknown"
+  };
+}
+
 /** Return the fixed cover used by both the live preview and PDF serialization. */
 export function sourceMaskForEdit(edit) {
   return {
@@ -160,16 +196,6 @@ export function layoutPdfText(edit, font) {
   const limit = Math.max(1, Math.floor(value.height / lineHeight));
   const allLines = font ? wrapPdfText(value.text, font, value.fontSize, value.width) : value.text.replace(/\r\n?/g, "\n").split("\n");
   return { ...value, lineHeight, firstBaseline: value.y + value.height - value.fontSize, lines: allLines.slice(0, limit), overflow: allLines.length > limit };
-}
-
-export function pdfRectToViewport(viewport, rect) {
-  const points = viewport.convertToViewportRectangle([rect.x, rect.y, rect.x + rect.width, rect.y + rect.height]);
-  return [Math.min(points[0], points[2]), Math.min(points[1], points[3]), Math.max(points[0], points[2]), Math.max(points[1], points[3])];
-}
-
-export function viewportRectToPdf(viewport, rect) {
-  const points = viewport.convertToPdfPoint(rect.left, rect.top).concat(viewport.convertToPdfPoint(rect.left + rect.width, rect.top + rect.height));
-  return { x: Math.min(points[0], points[2]), y: Math.min(points[1], points[3]), width: Math.abs(points[2]-points[0]), height: Math.abs(points[3]-points[1]) };
 }
 
 export async function serializeEditedPdf(model, edits) {
