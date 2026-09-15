@@ -48,6 +48,50 @@ export function repositionPdfImage(edit, geometry) {
   return edit;
 }
 
+/** Calculate a direct-manipulation resize without replacing the semantic edit. */
+export function resizePdfEditDisplay(start, deltaX, deltaY, preserveAspectRatio = false) {
+  const width = Math.max(2, Number(start.width) + Number(deltaX || 0));
+  if (!preserveAspectRatio) return { ...start, width, height: Math.max(2, Number(start.height) + Number(deltaY || 0)) };
+  const ratio = Number(start.width) / Number(start.height);
+  const heightFromWidth = width / ratio;
+  const height = Math.max(2, Number(start.height) + Number(deltaY || 0));
+  // Follow the pointer's dominant proportional change, so every corner remains predictable.
+  return Math.abs(width - start.width) >= Math.abs((height - start.height) * ratio)
+    ? { ...start, width, height: heightFromWidth }
+    : { ...start, width: height * ratio, height };
+}
+
+/** Remap pending semantic edits when the underlying page tree changes. */
+let pdfEditSequence = 0;
+export function remapPdfEditsForPageOperation(edits, operation, makeId = () => globalThis.crypto?.randomUUID?.() || `copy-${Date.now()}-${++pdfEditSequence}`) {
+  const page = Math.max(1, Number(operation.page) || 1);
+  if (operation.type === "rotate") return edits;
+  if (operation.type === "add") {
+    edits.forEach(edit => { if (edit.page > page) edit.page += 1; });
+  } else if (operation.type === "delete") {
+    for (let index = edits.length - 1; index >= 0; index -= 1) {
+      if (edits[index].page === page) edits.splice(index, 1);
+      else if (edits[index].page > page) edits[index].page -= 1;
+    }
+  } else if (operation.type === "duplicate") {
+    edits.forEach(edit => { if (edit.page > page) edit.page += 1; });
+    let nextIndex = Math.min(-1, ...edits.map(edit => Number(edit.index) || 0)) - 1;
+    const copies = edits.filter(edit => edit.page === page).map(edit => ({
+      ...structuredClone(edit), page: page + 1, id: `${edit.kind || "replacement"}:${makeId()}`,
+      index: edit.index < 0 ? nextIndex-- : edit.index
+    }));
+    edits.push(...copies);
+  } else if (operation.type === "move") {
+    const to = Math.max(1, Number(operation.to) || 1);
+    edits.forEach(edit => {
+      if (edit.page === page) edit.page = to;
+      else if (page < to && edit.page > page && edit.page <= to) edit.page -= 1;
+      else if (to < page && edit.page >= to && edit.page < page) edit.page += 1;
+    });
+  }
+  return edits;
+}
+
 /** Keep a free-text edit's semantic model synchronized without replacing its identity or geometry. */
 export function updatePdfFreeText(edit, text) {
   if (!edit || edit.kind !== "text") return false;

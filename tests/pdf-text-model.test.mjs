@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, remapPdfEditsForPageOperation, resizePdfEditDisplay } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -67,4 +67,27 @@ test("same-PDF movement mutates the existing image object without duplication",a
   assert.equal(repositionPdfImage(image,{x:20,y:30,width:3,height:4}),image);
   assert.equal(edits.length,1);assert.equal(edits[0].id,"image:stable");assert.equal(edits[0].x,20);
   assert.deepEqual(structuredClone(edits),[{kind:"image",id:"image:stable",x:20,y:30,width:3,height:4}]);
+});
+
+test("PDF image resize preserves aspect ratio by default and permits explicit reshape",()=>{
+  const start={left:10,top:20,width:100,height:50};
+  assert.deepEqual(resizePdfEditDisplay(start,20,3,true),{...start,width:120,height:60});
+  assert.deepEqual(resizePdfEditDisplay(start,20,3,false),{...start,width:120,height:53});
+});
+
+test("page operations remap pending edits without losing semantic identity",()=>{
+  const edits=[{id:"a",kind:"text",page:1,index:-1},{id:"b",kind:"image",page:2,index:-2},{id:"c",kind:"text",page:3,index:-3}];
+  remapPdfEditsForPageOperation(edits,{type:"move",page:1,to:3});
+  assert.deepEqual(edits.map(edit=>[edit.id,edit.page]),[["a",3],["b",1],["c",2]]);
+  remapPdfEditsForPageOperation(edits,{type:"delete",page:1});
+  assert.deepEqual(edits.map(edit=>[edit.id,edit.page]),[["a",2],["c",1]]);
+  remapPdfEditsForPageOperation(edits,{type:"add",page:1});
+  assert.deepEqual(edits.map(edit=>[edit.id,edit.page]),[["a",3],["c",1]]);
+});
+
+test("duplicating a page duplicates its pending edits with fresh identity",()=>{
+  const edits=[{id:"original",kind:"image",page:1,index:-7,x:10}];
+  remapPdfEditsForPageOperation(edits,{type:"duplicate",page:1},()=>"copy");
+  assert.equal(edits.length,2);assert.equal(edits[0].id,"original");
+  assert.equal(edits[1].id,"image:copy");assert.equal(edits[1].page,2);assert.equal(edits[1].x,10);
 });
