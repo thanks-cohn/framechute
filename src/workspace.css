@@ -463,15 +463,53 @@ body.toolbar-hidden .workspace {
   resize: none;
 }
 
-.pdf-toolbar { position: relative; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.pdf-toolbar { position: relative; flex-wrap: wrap; overflow: visible; scrollbar-width: none; }
 .pdf-toolbar > * { flex: 0 0 auto; }
 .pdf-toolbar details { position: static; }
-.pdf-toolbar summary { cursor: pointer; list-style: none; padding: 6px 9px; border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 7px; white-space: nowrap; }
-.pdf-toolbar summary::after { content: " ▾"; }
-.pdf-popdown { position: absolute; z-index: 80; bottom: calc(100% + 4px); display: grid; gap: 5px; min-width: 180px; max-width: min(300px, calc(100vw - 20px)); padding: 7px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 9px; background: Canvas; color: CanvasText; box-shadow: 0 10px 30px #0005; }
+.pdf-toolbar summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  cursor: pointer;
+  list-style: none;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+  border-radius: 7px;
+  background: Canvas;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+}
+.pdf-toolbar summary::after { content: " ▾"; opacity: .65; }
+.pdf-popdown {
+  position: absolute;
+  z-index: 80;
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+  max-width: min(320px, calc(100% - 16px));
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+  border-radius: 10px;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 12px 28px color-mix(in srgb, CanvasText 22%, transparent);
+}
 .pdf-toolbar details:not([open]) .pdf-popdown { display: none; }
-.pdf-popdown button { width: 100%; text-align: left; }
-.pdf-popdown.pdf-popdown-portal { position: fixed; z-index: 2147483646; }
+.pdf-popdown button {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 9px;
+  text-align: left;
+  border-radius: 6px;
+}
+.pdf-popdown.pdf-popdown-attached {
+  position: absolute !important;
+  right: auto !important;
+  bottom: auto !important;
+  overflow: auto;
+  z-index: 90;
+}
 .pdf-edit-controls:not([hidden]) + .pdf-no-edit { display: none; }
 #pdf-image-export-dialog fieldset { margin: 10px 0; }
 
@@ -636,11 +674,19 @@ body.hide-block-headers .compact-drag-handle {
   min-height: 360px;
 }
 
+.pdf-block > .block-header { order: 0; }
 .pdf-toolbar {
-  order: 2;
+  order: 1;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 6px 8px;
   border-top: 0;
   border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+  background: color-mix(in srgb, Canvas 97%, CanvasText);
 }
+.pdf-block > .pdf-search-box { order: 2; flex: 0 0 auto; }
+.pdf-block > .source-message { order: 3; flex: 0 0 auto; }
+.pdf-block > .pdf-reader { order: 4; }
 
 .pdf-toolbar label {
   display: flex;
@@ -695,10 +741,34 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-text-edit.is-selected .pdf-move-handle, .pdf-text-edit.is-selected .pdf-resize-handle { display: block; }
 .pdf-move-handle { left: -18px; top: -18px; width: 18px; height: 18px; cursor: move; font-size: 11px; }
 .pdf-resize-handle { right: -6px; bottom: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.pdf-edit-mode {
+  min-height: 30px;
+  padding-inline: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.pdf-edit-mode[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, CanvasText 22%, transparent);
+}
 .pdf-edit-controls { align-items: center; gap: 5px; border-left: 1px solid color-mix(in srgb, CanvasText 20%, transparent); padding-left: 7px; }
 .pdf-edit-controls:not([hidden]) { display: inline-flex; }
 .pdf-edit-controls label { display: inline-flex; align-items: center; gap: 3px; }
 .pdf-font-size { width: 55px; }
+.pdf-block.pdf-edit-mode-off .pdf-text-edit.is-selected { outline: none; overflow: hidden; }
+.pdf-block.pdf-edit-mode-off .pdf-text-edit .pdf-move-handle,
+.pdf-block.pdf-edit-mode-off .pdf-text-edit .pdf-resize-handle { display: none !important; }
+.pdf-block.pdf-edit-mode-off .pdf-text-item:hover {
+  outline: none;
+  background: transparent;
+  color: transparent;
+}
+.pdf-block.pdf-edit-mode-off .pdf-text-item.pdf-search-match {
+  background: #ffeb3b99;
+  color: #111;
+  outline: 1px solid #d99b00;
+}
 .docx-block {
   min-width: 420px;
   min-height: 360px;
