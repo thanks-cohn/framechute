@@ -15,6 +15,7 @@ const status = document.querySelector("#status");
 const addTextButton = document.querySelector("#add-text");
 
 const objectUrls = new WeakMap();
+import { fitOpenedBlock } from "./initial-open-fit.js";
 import { shouldGenericWorkspaceIngest, shouldShowGlobalIngest } from "./drag-ownership.mjs";
 let dropOffset = 0;
 let dragDepth = 0;
@@ -751,7 +752,10 @@ function createCustomBlock(payload, options = {}) {
   if (payload.kind === "file") block = renderGenericFile(payload, options);
   if (!block) return null;
   if (options.replace) options.replace.replaceWith(block);
-  else workspace.append(block);
+  else {
+    workspace.append(block);
+    fitOpenedBlock(block);
+  }
   return block;
 }
 
@@ -824,6 +828,7 @@ async function createTextFileBlock(file, point, offset = 0) {
   if (name) name.value = file.name || "Dropped text";
   block.style.left = `${Math.max(8, point.x - 80 + offset)}px`;
   block.style.top = `${Math.max(8, point.y - 40 + offset)}px`;
+  fitOpenedBlock(block);
   workspace.dispatchEvent(new CustomEvent("flashframe:workspace-changed", { bubbles: true }));
   return true;
 }
