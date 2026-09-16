@@ -4,6 +4,7 @@ import {
   classifyOverlap,
   createPdfLayoutCache,
   createPdfPageLayout,
+  layoutSemanticFlow,
   layoutRectsIntersect
 } from "../src/documents/pdf-layout.js";
 
@@ -131,4 +132,53 @@ test("layout cache is lazy, bounded, and invalidates only the affected page", ()
   assert.equal(get(1),get(1));get(2);get(3);
   assert.equal(cache.size,2);assert.equal(cache.peek(1),null);
   const page2=get(2);cache.invalidate(3);assert.equal(cache.peek(2),page2);assert.equal(cache.peek(3),null);
+});
+
+test("canonical flow normalizes source, replacement, and free text provenance", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[run(0,"Original",20,700,100)],edits:[
+    {kind:"replacement",id:"edit",page:1,index:0,replacement:"Changed",x:20,y:700,width:100,height:12,fontSize:10},
+    {kind:"text",id:"free",page:1,index:-1,text:"Note",x:20,y:100,width:100,height:20,fontSize:12}
+  ]});
+  assert.equal(layout.flow.id,"flow-page:p1");
+  const flowRuns=layout.flow.regions.flatMap(region=>region.blocks).flatMap(block=>block.lines).flatMap(line=>line.runs);
+  assert.ok(flowRuns.some(item=>item.text==="Changed"&&item.provenance==="replacement"));
+  assert.ok(flowRuns.some(item=>item.text==="Note"&&item.provenance==="user-authored"));
+});
+
+test("semantic typesetter preserves font size and pushes same-block lines monotonically", () => {
+  const result=layoutSemanticFlow({region:{x:20,y:100,width:180,height:300},blocks:[{id:"body",style:{fontSize:12},runs:[{
+    id:"replacement",provenance:"replacement",text:"A substantially longer replacement sentence that wraps into several well spaced lines without shrinking."
+  }]}]});
+  assert.ok(result.lines.length>2);
+  assert.ok(result.lines.every(line=>line.fontSize===12));
+  assert.ok(result.lines.every((line,index)=>!index||line.y<result.lines[index-1].y));
+  assert.equal(result.status,"fit");
+});
+
+test("source and replacement use identical readable lanes around a right image", () => {
+  const input=provenance=>layoutSemanticFlow({region:{x:20,y:100,width:300,height:300},obstacles:[{x:220,y:250,width:90,height:100,wrapText:true}],
+    blocks:[{id:"body",style:{fontSize:10},runs:[{id:provenance,provenance,text:"One ordinary paragraph uses the same obstacle geometry regardless of where its text originated."}]}]});
+  assert.deepEqual(input("source").lines.map(({x,y,width})=>({x,y,width})),input("replacement").lines.map(({x,y,width})=>({x,y,width})));
+  assert.ok(input("source").lines.filter(line=>line.y<350&&line.y>240).every(line=>line.x===20&&line.width===194));
+});
+
+test("wide centered image forces below flow instead of tiny side fragments", () => {
+  const result=layoutSemanticFlow({region:{x:20,y:100,width:300,height:300},obstacles:[{x:70,y:220,width:200,height:130,wrapText:true}],
+    blocks:[{id:"body",style:{fontSize:11},runs:[{text:"Words stay intact and begin below a centered publication image."}]}]});
+  assert.ok(result.lines.every(line=>line.y+line.height<=214||line.y>=356));
+  assert.ok(result.lines.every(line=>line.width===300));
+  assert.ok(result.lines.every(line=>!line.text.includes(" ")||line.text.split(" ").every(Boolean)));
+});
+
+test("flow regions isolate columns and retain heading/footer roles", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[run(0,"Heading",20,760,540),run(1,"Left",20,700,120),run(2,"Right",330,700,120),run(3,"Footer",20,40,540)]});
+  assert.ok(layout.flow.regions.length>=2);
+  const roles=layout.flow.regions.flatMap(region=>region.blocks.map(block=>block.role));
+  assert.ok(roles.includes("spanning"));
+});
+
+test("impossible layout reports overflow without changing the selected size", () => {
+  const result=layoutSemanticFlow({region:{x:0,y:0,width:100,height:20},blocks:[{style:{fontSize:18},runs:[{text:"This cannot fit safely"}]}]});
+  assert.equal(result.status,"needs-more-space");
+  assert.ok(result.fontSizes.every(size=>size===18));
 });

@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText } from "./documents/pdf-document.js";
 import { clampPdfZoom, fitPdfScale } from "./documents/pdf-geometry.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { DocxNumberingState } from "./documents/docx/numbering.js";
@@ -958,6 +958,8 @@ registerBlockType("pdf", {
         const fontSize=Math.max(4,Math.min(144,Number(text.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
         runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0});
       }
+      const committed=runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
+      if(committed)reflowPdfTextEditGeometry(committed);
       delete text.dataset.pendingFontSize;
       setDocumentDirty(block,true);void setPdfPage(block,page);
     });
@@ -987,7 +989,7 @@ registerBlockType("pdf", {
         return;
       }
       if(!currentEdit||currentEdit.kind==="image"||size===currentEdit.fontSize)return;
-      pushPdfHistory(runtime);currentEdit.fontSize=size;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);
+      pushPdfHistory(runtime);currentEdit.fontSize=size;reflowPdfTextEditGeometry(currentEdit);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);
     });
     fontSelect.addEventListener("change",event=>{if(!pdfEditEnabled(block))return;const runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!edit||edit.fontFamily===event.target.value)return;pushPdfHistory(runtime);edit.fontFamily=event.target.value;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);});
 

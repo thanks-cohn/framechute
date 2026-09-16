@@ -16,6 +16,100 @@ const OCCUPYING_KINDS = new Set([
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const round = value => Math.round(number(value) * 1000) / 1000;
 
+export const PDF_FLOW_DEFAULTS = Object.freeze({ gutter:6, minimumMeasure:72, leading:1.2, paragraphSpacing:.55 });
+
+function wordsForFlow(text) {
+  // Keep punctuation attached to its word. Explicit newlines are structural
+  // tokens, never whitespace that the line breaker may silently discard.
+  const tokens=[];
+  String(text ?? "").replace(/\r\n?/g,"\n").split("\n").forEach((paragraph,index,array)=>{
+    const words=paragraph.match(/\S+/g)||[];
+    words.forEach(word=>tokens.push({text:word,breakBefore:false}));
+    if(index<array.length-1)tokens.push({text:"",paragraphBreak:true});
+  });
+  return tokens;
+}
+
+function approximateWidth(text,fontSize,measure) {
+  if(typeof measure==="function")return Math.max(0,number(measure(text,fontSize)));
+  return [...String(text)].reduce((width,char)=>width+fontSize*(/[MW]/.test(char)?.82:/[ilI.,'’]/.test(char)?.28:.52),0);
+}
+
+function usableLane(region, obstacles, top, height, options) {
+  const bottom=top-height,gutter=options.gutter;
+  const hits=obstacles.filter(obstacle=>obstacle.wrapText!==false&&
+    bottom<obstacle.y+obstacle.height+gutter&&top>obstacle.y-gutter);
+  if(!hits.length)return {x:region.x,width:region.width};
+  let left=region.x,right=region.x+region.width;
+  for(const obstacle of hits){
+    const obstacleLeft=obstacle.x-gutter,obstacleRight=obstacle.x+obstacle.width+gutter;
+    const leftWidth=Math.max(0,obstacleLeft-region.x),rightWidth=Math.max(0,region.x+region.width-obstacleRight);
+    // One readable lane is preferable to alternating around an image. Wide or
+    // centered obstacles deliberately yield no lane and force below-image flow.
+    if(Math.max(leftWidth,rightWidth)<options.minimumMeasure)return null;
+    if(leftWidth>=rightWidth)right=Math.min(right,obstacleLeft);else left=Math.max(left,obstacleRight);
+  }
+  const width=right-left;
+  return width>=options.minimumMeasure?{x:round(left),width:round(width)}:null;
+}
+
+/**
+ * Canonical deterministic typesetter for source, replacement, displaced, and
+ * free text. Coordinates are PDF points; lines advance downward from region's
+ * top. It never changes a run's font size and never searches upward/free-space.
+ */
+export function layoutSemanticFlow({region,blocks=[],obstacles=[],measure,options={}}={}) {
+  const bounds=normalizeLayoutRect(region),settings={...PDF_FLOW_DEFAULTS,...options};
+  settings.gutter=Math.max(0,number(settings.gutter,6));
+  settings.minimumMeasure=Math.max(24,number(settings.minimumMeasure,72));
+  const output=[],laidBlocks=[];
+  let top=bounds.y+bounds.height,overflow=false;
+  for(const [blockIndex,rawBlock] of blocks.entries()){
+    const runs=(rawBlock.runs?.length?rawBlock.runs:[rawBlock]).map((run,index)=>({
+      id:String(run.id??`${rawBlock.id||blockIndex}:run:${index}`),text:String(run.text??""),
+      provenance:run.provenance||rawBlock.provenance||"source",sourceRefs:Object.freeze([...(run.sourceRefs||rawBlock.sourceRefs||[])]),
+      style:Object.freeze({...rawBlock.style,...run.style,fontSize:number(run.style?.fontSize??rawBlock.style?.fontSize,12)})
+    }));
+    const blockLines=[],tokens=[];
+    for(const run of runs)wordsForFlow(run.text).forEach(token=>tokens.push({...token,run}));
+    let cursor=0,lineNumber=0;
+    while(cursor<tokens.length){
+      const fontSize=Math.max(4,tokens[cursor].run.style.fontSize),lineHeight=fontSize*number(rawBlock.leading,settings.leading);
+      let lane=usableLane(bounds,obstacles,top,lineHeight,settings);
+      if(!lane){
+        const relevant=obstacles.filter(o=>o.wrapText!==false&&top-lineHeight<o.y+o.height+settings.gutter&&top>o.y-settings.gutter);
+        if(!relevant.length){overflow=true;break;}
+        top=Math.min(...relevant.map(o=>o.y-settings.gutter));
+        lane=usableLane(bounds,obstacles,top,lineHeight,settings);
+        if(!lane)continue;
+      }
+      let text="",width=0,start=cursor,lastRun=tokens[cursor].run;
+      while(cursor<tokens.length){
+        const token=tokens[cursor];
+        if(token.paragraphBreak){cursor++;break;}
+        const candidate=text?`${text} ${token.text}`:token.text;
+        const candidateWidth=approximateWidth(candidate,fontSize,measure);
+        if(text&&candidateWidth>lane.width)break;
+        // A single long word stays intact and reports overflow rather than
+        // being fragmented merely to occupy a narrow geometric gap.
+        text=candidate;width=candidateWidth;lastRun=token.run;cursor++;
+        if(candidateWidth>lane.width){overflow=true;break;}
+      }
+      if(!text&&cursor===start){cursor++;continue;}
+      const line=Object.freeze({id:`${rawBlock.id||`block:${blockIndex}`}:line:${lineNumber++}`,blockId:String(rawBlock.id||`block:${blockIndex}`),
+        runId:lastRun.id,text,x:lane.x,y:round(top-lineHeight),width:lane.width,height:round(lineHeight),fontSize,
+        provenance:lastRun.provenance,sourceRefs:lastRun.sourceRefs});
+      blockLines.push(line);output.push(line);top-=lineHeight;
+      if(top<bounds.y){overflow=true;break;}
+    }
+    laidBlocks.push(Object.freeze({id:String(rawBlock.id||`block:${blockIndex}`),role:rawBlock.role||"body",lines:Object.freeze(blockLines)}));
+    top-=number(rawBlock.paragraphSpacing,Math.max(0,(runs[0]?.style.fontSize||12)*settings.paragraphSpacing));
+    if(top<bounds.y&&blockIndex<blocks.length-1)overflow=true;
+  }
+  return Object.freeze({region:bounds,blocks:Object.freeze(laidBlocks),lines:Object.freeze(output),overflow,
+    status:overflow?"needs-more-space":"fit",fontSizes:Object.freeze(output.map(line=>line.fontSize))});
+}
+
 export function normalizeLayoutRect(rect = {}) {
   let x = number(rect.x), y = number(rect.y), width = number(rect.width), height = number(rect.height);
   if (width < 0) { x += width; width = -width; }
@@ -178,6 +272,37 @@ function orderColumns(blocks) {
   return result;
 }
 
+function canonicalFlowTree(page,bounds,blocks,lines,runs,editNodes) {
+  const lineById=new Map(lines.map(line=>[line.id,line])),runById=new Map(runs.map(run=>[run.id,run]));
+  const columns=[];
+  for(const block of [...blocks].sort((a,b)=>a.bounds.x-b.bounds.x||b.bounds.y-a.bounds.y)){
+    if(block.bounds.width>=bounds.width*.6){columns.push({id:`flow-region:p${page}:${columns.length}`,page,bounds:block.bounds,blocks:[block]});continue;}
+    let column=columns.find(item=>item.blocks.some(other=>horizontalOverlap(block.bounds,other.bounds)>=Math.min(block.bounds.width,other.bounds.width)*.25));
+    if(!column){column={id:`flow-region:p${page}:${columns.length}`,page,bounds:block.bounds,blocks:[]};columns.push(column);}
+    column.blocks.push(block);column.bounds=unionBounds(column.blocks);
+  }
+  const replacementByLine=new Map();
+  for(const edit of editNodes)if(edit.metadata.sourceLineId)replacementByLine.set(edit.metadata.sourceLineId,edit);
+  const regions=columns.map(column=>Object.freeze({...column,bounds:normalizeLayoutRect(column.bounds),blocks:Object.freeze(
+    column.blocks.sort((a,b)=>b.bounds.y-a.bounds.y||a.bounds.x-b.bounds.x).map(block=>Object.freeze({
+      id:block.id,role:block.bounds.width>=bounds.width*.6?"spanning":"body",bounds:block.bounds,provenance:block.provenance,
+      lines:Object.freeze(block.childIds.map(id=>lineById.get(id)).map(line=>Object.freeze({
+        id:line.id,bounds:line.bounds,provenance:line.provenance,runs:Object.freeze(line.childIds.map(id=>runById.get(id)).map(run=>{
+          const replacement=replacementByLine.get(line.id);
+          return Object.freeze({id:replacement?.id||run.id,text:replacement?.text??run.text,style:replacement?.style||run.style,
+            provenance:replacement?.provenance||run.provenance,sourceRefs:Object.freeze(replacement?.sourceRefs||run.sourceRefs)});
+        }))
+      })))
+    }))
+  )}));
+  const free=editNodes.filter(node=>node.kind==="free-text").map((node,index)=>Object.freeze({
+    id:`flow-region:p${page}:free:${index}`,page,bounds:node.bounds,blocks:Object.freeze([Object.freeze({id:`block:${node.id}`,role:"free-text",bounds:node.bounds,
+      provenance:node.provenance,lines:Object.freeze([Object.freeze({id:`line:${node.id}`,bounds:node.bounds,provenance:node.provenance,
+        runs:Object.freeze([Object.freeze({id:node.id,text:node.text,style:node.style,provenance:node.provenance,sourceRefs:node.sourceRefs})])})])})])
+  }));
+  return Object.freeze({id:`flow-page:p${page}`,page,bounds,regions:Object.freeze([...regions,...free])});
+}
+
 function assignReadingOrder(blocks, pageBounds) {
   // First split the page at broad, spanning blocks. A heading or footer must
   // not become a bridge that joins otherwise independent columns. Each region
@@ -276,16 +401,17 @@ export function createPdfPageLayout({ page=1, pageBounds, sourceRuns=[], edits=[
   nodes.filter(node=>node!==pageNode).sort((a,b)=>a.bounds.x-b.bounds.x || a.bounds.y-b.bounds.y || a.id.localeCompare(b.id))
     .forEach((node,index)=>node.spatialOrder=index);
   const byId=new Map(nodes.map(node=>[node.id,node]));
-  const api = buildQueryApi({ page, bounds, nodes, byId, readingNodes, runs, lines, blocks, editNodes, uncertain });
+  const flow=canonicalFlowTree(page,bounds,blocks,lines,runs,editNodes);
+  const api = buildQueryApi({ page, bounds, nodes, byId, readingNodes, runs, lines, blocks, editNodes, uncertain, flow });
   return Object.freeze(api);
 }
 
 function buildQueryApi(state) {
-  const {page,bounds,nodes,byId,readingNodes,runs,lines,blocks,editNodes,uncertain}=state;
+  const {page,bounds,nodes,byId,readingNodes,runs,lines,blocks,editNodes,uncertain,flow}=state;
   const resolve=value=>typeof value === "string" ? byId.get(value) : value;
   const queryNodes=nodes.filter(node=>node.kind!=="page-region");
   const api={
-    page, bounds, nodes:Object.freeze(nodes),
+    page, bounds, nodes:Object.freeze(nodes), flow,
     get:id=>byId.get(id) || null,
     children:id=>Object.freeze((byId.get(id)?.childIds || []).map(child=>byId.get(child)).filter(Boolean)),
     parent:id=>byId.get(byId.get(id)?.parentId) || null,
