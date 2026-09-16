@@ -13,7 +13,13 @@ export function resolveEditorContext(target) {
   const block = surface.closest(".block");
   const editorKind = surface.matches(".pdf-surface") ? "pdf" : "docx";
   const selected = editorKind === "pdf" ? target.closest?.(".pdf-text-item") : target.closest?.("img[data-docx-relationship], a, td, th");
-  const selectionKind = !selected ? "text" : selected.matches("img") ? "image" : selected.matches("a") ? "hyperlink" : selected.matches("td,th") ? "cell" : selected.classList.contains("pdf-text-edit") ? "edit" : "source-text";
+  const selectionKind = !selected ? "text"
+    : editorKind === "pdf" && selected.classList.contains("pdf-image-edit") ? "image"
+    : selected.matches("img") ? "image"
+    : selected.matches("a") ? "hyperlink"
+    : selected.matches("td,th") ? "cell"
+    : selected.classList.contains("pdf-text-edit") ? "edit"
+    : "source-text";
   return { editorKind, block, surface, selectionKind, selected };
 }
 
@@ -40,6 +46,20 @@ export function commandsForEditorContext(context) {
     { type: "separator" }, { id: "settings", label: "Settings…" },
     { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
+
+  if (context.selectionKind === "image") {
+    const wrapOn = context.selected?.dataset?.wrapText === "on";
+    return [
+      showHeader, quickActionsToggle, { type: "separator" }, pdfEditToggle,
+      { id: "toggle-wrap", label: `Wrap Text  [ ${wrapOn ? "ON" : "OFF"} ]` },
+      { id: "duplicate", label: "Duplicate Image" },
+      { id: "delete", label: "Delete Image" },
+      { type: "separator" },
+      { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" },
+      { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" },
+      ...viewportTail
+    ];
+  }
 
   if (context.selectionKind === "edit") return [
     showHeader, quickActionsToggle, { type: "separator" }, pdfEditToggle,
