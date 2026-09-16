@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -67,4 +67,20 @@ test("same-PDF movement mutates the existing image object without duplication",a
   assert.equal(repositionPdfImage(image,{x:20,y:30,width:3,height:4}),image);
   assert.equal(edits.length,1);assert.equal(edits[0].id,"image:stable");assert.equal(edits[0].x,20);
   assert.deepEqual(structuredClone(edits),[{kind:"image",id:"image:stable",x:20,y:30,width:3,height:4}]);
+});
+
+test("PDF image text wrap chooses a clear lane and leaves nonintersecting text alone",()=>{
+  const image={x:100,y:100,width:80,height:80};
+  assert.equal(wrapPdfTextBoxAroundImage({x:10,y:200,width:70,height:12,pageWidth:300},image),null);
+  const left=wrapPdfTextBoxAroundImage({x:60,y:130,width:80,height:12,pageWidth:300},image);
+  assert.ok(left.x+left.width<=94);
+  const right=wrapPdfTextBoxAroundImage({x:150,y:130,width:100,height:12,pageWidth:300},image);
+  assert.ok(right.x>=186);
+});
+
+test("PDF image text wrap moves fully covered source text clear of the image",()=>{
+  const image={x:80,y:80,width:120,height:120};
+  const wrapped=wrapPdfTextBoxAroundImage({x:110,y:120,width:40,height:12,pageWidth:300},image);
+  const overlaps=wrapped.x<image.x+image.width&&wrapped.x+wrapped.width>image.x&&wrapped.y<image.y+image.height&&wrapped.y+wrapped.height>image.y;
+  assert.equal(overlaps,false);
 });
