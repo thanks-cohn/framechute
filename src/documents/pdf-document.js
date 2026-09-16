@@ -1,6 +1,7 @@
 import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
 import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
+import { createPdfLayoutCache, createPdfPageLayout } from "./pdf-layout.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -190,7 +191,44 @@ export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });
   const pdf = await task.promise;
-  return { bytes: data, pdf, pageCount: pdf.numPages };
+  return { bytes: data, pdf, pageCount: pdf.numPages, layoutCache:createPdfLayoutCache({maxPages:3}), layoutSignatures:new Map() };
+}
+
+function semanticSourceRun(viewport, item, index, pageNumber) {
+  const box=sourceTextBoxForItem(viewport,item,index);
+  if(!box)return null;
+  return {
+    sourceIndex:index, sourceRef:`p${pageNumber}:text:${index}`, text:item.str, bounds:box,
+    fontSize:inferPdfSourceFontSize(item), angle:Math.atan2(Number(item.transform?.[1])||0,Number(item.transform?.[0])||1)*180/Math.PI,
+    paintOrder:index, confidence:1
+  };
+}
+
+/** Lazily construct the canonical semantic page model in PDF points. */
+export async function getPdfPageLayout(model, pageNumber, edits=[], prepared={}) {
+  const page=prepared.page || await model.pdf.getPage(pageNumber);
+  const viewport=prepared.viewport || page.getViewport({scale:1});
+  const content=prepared.content || await page.getTextContent();
+  const pageEdits=edits.filter(edit=>Number(edit.page)===pageNumber);
+  const signature=JSON.stringify(pageEdits.map(edit=>[edit.id,edit.kind,edit.index,edit.x,edit.y,edit.width,edit.height,edit.replacement,edit.text,edit.wrapText]));
+  if(model.layoutSignatures.get(pageNumber)!==signature){model.layoutCache.invalidate(pageNumber);model.layoutSignatures.set(pageNumber,signature);}
+  return model.layoutCache.get(pageNumber,()=>createPdfPageLayout({
+    page:pageNumber,
+    pageBounds:viewportRectToPdf(viewport,{left:0,top:0,width:viewport.width,height:viewport.height}),
+    sourceRuns:content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber)).filter(Boolean),
+    edits:pageEdits,
+    // Text content alone cannot prove the absence of paths, scans, or masks.
+    // Candidates can still be queried, but are explicitly not certified free.
+    uncertain:true
+  }));
+}
+
+/** Edit-aware logical extraction; never serializes or rewrites PDF streams. */
+export async function extractSemanticPdfText(model, edits=[], {pageNumber=null, applyEdits=true}={}) {
+  const pages=pageNumber?[pageNumber]:Array.from({length:model.pageCount},(_,index)=>index+1);
+  const text=[];
+  for(const number of pages)text.push((await getPdfPageLayout(model,number,edits)).extractText({applyEdits}));
+  return text.filter(Boolean).join("\n\n");
 }
 
 export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits = [], options = {}) {
@@ -206,6 +244,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   options.onRenderTask?.(renderTask);
   await renderTask.promise;
   const content = await page.getTextContent();
+  await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
   const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {

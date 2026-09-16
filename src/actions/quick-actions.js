@@ -53,7 +53,7 @@ function addResult(blob, name, point) {
 async function textOf(block) {
   if(kind(block)==="text")return block.querySelector(".text-editor")?.value||"";
   if(kind(block)==="docx"){const blob=await window.FrameChuteWorkspace.sourceBlob(block);return extractDocxText(blob);}
-  if(kind(block)==="pdf")return [...block.querySelectorAll(".pdf-text-layer")].map(node=>node.textContent||"").join("\n").trim();
+  if(kind(block)==="pdf")return (await window.FrameChuteWorkspace.extractText(block))||"";
   return "";
 }
 const isTextDocument=(item)=>["text","docx","pdf"].includes(kind(item));

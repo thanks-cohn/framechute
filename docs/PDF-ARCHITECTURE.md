@@ -9,6 +9,10 @@ This inventory records the Milestone 1 boundary; it is not a new file format.
   for native PDF output; overlays compile to ordinary PDF text/images.
 - `documents/pdf-geometry.js` is the sole PDF-point ↔ PDF.js viewport boundary.
   Workspace edits remain in PDF points and never store CSS pixels or zoom.
+- `documents/pdf-layout.js` is the canonical semantic page layer. It lazily
+  reconstructs stable source runs, lines, conservative blocks, provenance,
+  reading order, spatial queries, collision classes, and analytical free-space
+  candidates in PDF points. Paint, spatial, and reading order remain separate.
 - `workspace.js` is the PDF object controller: current page/view state,
   selection, history, drop ownership, save integration, and compact controls.
 - `workspace.html` and `workspace.css` provide the toolbar, page surface, canvas,
@@ -25,6 +29,22 @@ Each runtime owns immutable source `model.bytes`, a PDF.js document, PDF-space
 state (page, zoom/fit mode, search, and panels). Workspace capture persists the
 useful viewer/edit state; final PDF serialization never writes proprietary
 viewer state.
+
+## Semantic layout boundary
+
+`pdf-document.js` adapts PDF.js text items into the layout layer once per page.
+Layouts are held in a three-page LRU and invalidated only when that page's edit
+signature changes. Derived nodes never contain PDF bytes, canvases, or DOM
+references, so inactive layouts are cheap to discard and deterministic to
+rebuild. The model treats the absence of PDF.js text as insufficient proof of
+free space: free-space query results remain marked uncertain until non-text
+operators have also been classified.
+
+Edit-aware text extraction consumes this semantic model. A replacement owns
+the source line/run it replaces and inherits that reading position even when
+its visible field moves or its drawing operators are appended later. The raw
+paint order remains available for rendering and diagnostics. This does not
+rewrite content streams or persist a proprietary graph into saved PDFs.
 
 ## Preservation boundary
 

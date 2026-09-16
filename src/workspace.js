@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText } from "./documents/pdf-document.js";
 import { clampPdfZoom, fitPdfScale } from "./documents/pdf-geometry.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { DocxNumberingState } from "./documents/docx/numbering.js";
@@ -1776,6 +1776,11 @@ window.FrameChuteWorkspace = Object.freeze({
   registerBlockType,
   createBlock,
   captureBlock,
+  async extractText(block) {
+    const runtime=runtimeSources.get(block);
+    if(block?.dataset?.blockType==="pdf"&&runtime?.model)return extractSemanticPdfText(runtime.model,runtime.edits);
+    return null;
+  },
   async sourceBlob(block) {
     const type = block.dataset.blockType;
     if (["image", "canvas"].includes(block.dataset.customKind)) return customImageSourceBlob(block, { resolveHandle });
