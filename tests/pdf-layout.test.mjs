@@ -145,6 +145,17 @@ test("canonical flow normalizes source, replacement, and free text provenance", 
   assert.ok(flowRuns.some(item=>item.text==="Note"&&item.provenance==="user-authored"));
 });
 
+test("canonical flow replaces only the targeted run on a multi-run source line", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[
+    run(0,"Hello",20,700,25),run(1,"world",45,700,25)
+  ],edits:[{kind:"replacement",id:"edit:first",page:1,index:0,replacement:"Changed",x:20,y:700,width:35,height:12,fontSize:10}]});
+  const line=layout.flow.regions.flatMap(region=>region.blocks).flatMap(block=>block.lines)
+    .find(item=>item.runs.some(run=>run.text==="Changed"));
+  assert.ok(line);
+  assert.deepEqual(line.runs.map(run=>run.text),["Changed","world"]);
+  assert.equal(line.runs.filter(run=>run.provenance==="replacement").length,1);
+});
+
 test("semantic typesetter preserves font size and pushes same-block lines monotonically", () => {
   const result=layoutSemanticFlow({region:{x:20,y:100,width:180,height:300},blocks:[{id:"body",style:{fontSize:12},runs:[{
     id:"replacement",provenance:"replacement",text:"A substantially longer replacement sentence that wraps into several well spaced lines without shrinking."

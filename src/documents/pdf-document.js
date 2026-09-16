@@ -1,7 +1,7 @@
 import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
 import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
-import { createPdfLayoutCache, createPdfPageLayout } from "./pdf-layout.js";
+import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from "./pdf-layout.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -44,16 +44,24 @@ export function growPdfTextField(edit, requiredLines) {
   return { ...value, height: requiredHeight, y: oldTop - requiredHeight };
 }
 
-/** Preserve the user's point size and grow downward using a conservative
- * standard-font estimate. Exact font metrics are used again during Save. */
+/** Preserve the user's point size and grow downward using the same
+ * semantic word-flow rules used by the page typesetter. Exact font metrics are
+ * still used during Save; this is the stable runtime geometry estimate. */
 export function reflowPdfTextEditGeometry(edit) {
-  const value=normalizePdfEdit(edit),average=Math.max(1,value.fontSize*.52),columns=Math.max(1,Math.floor(value.width/average));
-  let lines=0;
-  for(const paragraph of value.text.split("\n")){
-    if(!paragraph){lines++;continue;}
-    let used=0;for(const word of paragraph.match(/\S+/g)||[]){const length=[...word].length,next=used?used+1+length:length;if(used&&next>columns){lines++;used=length;}else used=next;if(length>columns){lines+=Math.floor((length-1)/columns);used=((length-1)%columns)+1;}}lines++;
-  }
-  const grown=growPdfTextField(value,Math.max(1,lines));
+  const value=normalizePdfEdit(edit);
+  if(value.clipExplicitly)return edit;
+  const flow=layoutSemanticFlow({
+    region:{x:value.x,y:0,width:value.width,height:100000},
+    blocks:[{
+      id:`edit:${value.id}`,
+      leading:1.2,
+      paragraphSpacing:0,
+      style:{fontSize:value.fontSize},
+      runs:[{id:value.id,text:value.text,provenance:value.kind==="replacement"?"replacement":"user-authored"}]
+    }],
+    options:{paragraphSpacing:0}
+  });
+  const grown=growPdfTextField(value,Math.max(1,flow.lines.length));
   Object.assign(edit,{y:grown.y,height:grown.height});
   return edit;
 }
@@ -143,10 +151,56 @@ function sourceTextBoxForItem(viewport, item, index) {
  * These are not stored as proprietary file state; they are recomputed from the
  * source PDF text plus image geometry on render/save.
  */
+export function semanticWrapTarget(textBox, imageBox, {text="",fontSize=null,gap=6}={}) {
+  if(!pdfRectsIntersect(textBox,imageBox))return null;
+  const size=Math.max(4,Number(fontSize)||Number(textBox.fontSize)||12);
+  const top=Math.max(1,Number(textBox.y)||0)+Math.max(1,Number(textBox.height)||size*1.2);
+  const leading=Math.max(1,(Number(textBox.height)||size*1.2)/size);
+  const minimumMeasure=Math.min(72,Math.max(24,(Number(textBox.width)||72)*.45));
+  const flow=layoutSemanticFlow({
+    region:{x:textBox.x,y:0,width:textBox.width,height:top},
+    obstacles:[{...imageBox,wrapText:true}],
+    blocks:[{
+      id:"image-wrap",
+      leading,
+      paragraphSpacing:0,
+      style:{fontSize:size},
+      runs:[{id:"image-wrap:run",text,provenance:"replacement"}]
+    }],
+    options:{gutter:gap,minimumMeasure,paragraphSpacing:0}
+  });
+  if(!flow.lines.length)return null;
+  const first=flow.lines[0];
+  // A replacement field is still one rectangular PDF object. Once a readable
+  // lane is selected, size that rectangle for the complete text at that lane
+  // width so live preview/save can never clip the tail merely because the
+  // semantic flow would regain full width below the image.
+  const laneFlow=layoutSemanticFlow({
+    region:{x:first.x,y:0,width:first.width,height:100000},
+    blocks:[{
+      id:"image-wrap-lane",
+      leading,
+      paragraphSpacing:0,
+      style:{fontSize:size},
+      runs:[{id:"image-wrap-lane:run",text,provenance:"replacement"}]
+    }],
+    options:{gutter:gap,minimumMeasure:Math.min(minimumMeasure,first.width),paragraphSpacing:0}
+  });
+  const lineHeight=laneFlow.lines[0]?.height||first.height;
+  return {
+    x:first.x,
+    y:first.y-Math.max(0,laneFlow.lines.length-1)*lineHeight,
+    width:first.width,
+    height:Math.max(Number(textBox.height)||first.height,laneFlow.lines.length*lineHeight),
+    status:laneFlow.status
+  };
+}
+
 export function imageWrapEditsForPage(viewport, content, edits, pageNumber) {
-  const explicitIndexes = new Set(
-    edits.filter(edit => edit.page === pageNumber && edit.kind !== "image" && Number.isFinite(Number(edit.index)))
-      .map(edit => Number(edit.index))
+  const explicitByIndex=new Map(
+    edits
+      .filter(edit=>edit.page===pageNumber&&edit.kind!=="image"&&Number.isFinite(Number(edit.index))&&Number(edit.index)>=0)
+      .map(edit=>[Number(edit.index),normalizePdfEdit(edit)])
   );
   const claimed = new Set();
   const wraps = [];
@@ -160,21 +214,29 @@ export function imageWrapEditsForPage(viewport, content, edits, pageNumber) {
       height: image.height
     };
     content.items.forEach((item, index) => {
-      if (claimed.has(index) || explicitIndexes.has(index)) return;
+      if (claimed.has(index)) return;
       const source = sourceTextBoxForItem(viewport, item, index);
-      if (!source || !pdfRectsIntersect(source, obstacle)) return;
-      const target = wrapPdfTextBoxAroundImage(source, obstacle, 6);
+      if (!source) return;
+      const explicit=explicitByIndex.get(index)||null;
+      const layoutBox=explicit
+        ? {...source,x:explicit.x,y:explicit.y,width:explicit.width,height:explicit.height}
+        : source;
+      if(!pdfRectsIntersect(layoutBox,obstacle))return;
+      const replacement=explicit?.text??item.str;
+      const fontSize=explicit?.fontSize??source.fontSize;
+      const target=semanticWrapTarget(layoutBox,obstacle,{text:replacement,fontSize,gap:6});
       if (!target) return;
       claimed.add(index);
       wraps.push({
         kind: "wrap",
         id: `wrap:${image.id || image.index}:${index}`,
         wrapImageId: image.id || String(image.index),
+        sourceEditId:explicit?.id||null,
         page: pageNumber,
         index,
         original: item.str,
-        replacement: item.str,
-        text: item.str,
+        replacement,
+        text: replacement,
         x: target.x,
         y: target.y,
         width: target.width,
@@ -183,9 +245,9 @@ export function imageWrapEditsForPage(viewport, content, edits, pageNumber) {
         sourceY: source.y,
         sourceWidth: source.width,
         sourceHeight: source.height,
-        fontFamily: "Helvetica",
-        fontSize: source.fontSize,
-        rotation: 0
+        fontFamily: explicit?.fontFamily||"Helvetica",
+        fontSize,
+        rotation: explicit?.rotation||0
       });
     });
   }
@@ -269,8 +331,10 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
+  const wrappedSourceEditIds=new Set(wrapEdits.map(edit=>edit.sourceEditId).filter(Boolean));
+  const maskEdits=edits.filter(edit=>!wrappedSourceEditIds.has(normalizePdfEdit(edit).id));
   const visibleMasks = [
-    ...sourceMasksForPage(edits, pageNumber),
+    ...sourceMasksForPage(maskEdits, pageNumber),
     ...wrapEdits.flatMap(replacementMasksForEdit)
   ];
   for (const mask of visibleMasks) {
@@ -294,7 +358,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
     const explicit = edits.find((edit) => edit.page === pageNumber && edit.index === index && edit.kind !== "image");
     const wrapped = wrapEdits.find(edit => edit.index === index);
-    const saved = explicit || wrapped;
+    const saved = wrapped || explicit;
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
     if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
@@ -305,7 +369,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       const previewWeight = saved.fontFamily?.includes("Bold") ? "700" : "400";
       const previewStyle = /Oblique|Italic/.test(saved.fontFamily || "") ? "italic" : "normal";
       Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px`, fontFamily: previewFamily, fontWeight: previewWeight, fontStyle: previewStyle });
-      if (saved.kind === "wrap") {
+      if (saved.kind === "wrap" && !saved.sourceEditId) {
         span.classList.add("pdf-wrapped-source");
       } else {
         span.classList.add("pdf-text-edit");
@@ -456,6 +520,7 @@ export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
   const fonts = new Map();
   const wrapByImage = new Map();
+  const wrappedSourceEditIds = new Set();
 
   for (let pageNumber = 1; pageNumber <= model.pageCount; pageNumber++) {
     const images = edits.filter(edit => edit.page === pageNumber && edit.kind === "image" && edit.wrapText === true);
@@ -467,6 +532,7 @@ export async function serializeEditedPdf(model, edits) {
       const list = wrapByImage.get(String(wrap.wrapImageId)) || [];
       list.push(wrap);
       wrapByImage.set(String(wrap.wrapImageId), list);
+      if(wrap.sourceEditId)wrappedSourceEditIds.add(wrap.sourceEditId);
     }
   }
 
@@ -511,6 +577,7 @@ export async function serializeEditedPdf(model, edits) {
       page.drawImage(embedded, { x: normalized.x, y: normalized.y, width: normalized.width, height: normalized.height });
       continue;
     }
+    if(wrappedSourceEditIds.has(normalized.id))continue;
     await drawTextEdit(normalized);
   }
   return new Blob([await output.save()], { type: "application/pdf" });
