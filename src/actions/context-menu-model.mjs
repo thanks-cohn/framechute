@@ -25,7 +25,8 @@ export function resolveEditorContext(target) {
 
 export function commandsForEditorContext(context) {
   const showHeader = { id: "show-header", label: "Show Header" };
-  const quickActionsToggle = { id: "quick-actions-global", label: `Quick Actions  [ ${context.quickActionsEnabled === false ? "OFF" : "ON"} ]` };
+  const quickActionsVisible = context.quickActionsVisible ?? (context.quickActionsEnabled !== false && context.block?.dataset?.quickActionsHidden !== "true");
+  const quickActionsToggle = { id: "quick-actions-object", label: `Quick Actions  [ ${quickActionsVisible ? "ON" : "OFF"} ]` };
   const fixViewport = { id: "fix-viewport", label: `Fix to Viewport  [ ${context.block?.dataset?.viewportFixed === "true" ? "ON" : "OFF"} ]` };
   const viewportTail = [{ type: "separator" }, fixViewport];
   if (context.editorKind === "docx") {
