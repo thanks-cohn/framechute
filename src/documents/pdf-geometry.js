@@ -27,6 +27,33 @@ export function viewportRectToPdf(viewport, rect) {
   };
 }
 
+/** Named diagnostic shape for viewport-local CSS pixels. */
+export function pdfRectToViewportRect(viewport, rect) {
+  const [left, top, right, bottom] = pdfRectToViewport(viewport, normalizePdfRect(rect));
+  return { left, top, width:right-left, height:bottom-top };
+}
+
+export function normalizePdfRect(rect = {}) {
+  let x=Number(rect.x)||0,y=Number(rect.y)||0,width=Number(rect.width)||0,height=Number(rect.height)||0;
+  if(width<0){x+=width;width=-width;} if(height<0){y+=height;height=-height;}
+  return {x,y,width,height};
+}
+
+/** Convert a viewport-local rectangle to browser client/workspace coordinates. */
+export function viewportLocalRectToClient(rect, viewportElementRect) {
+  return {left:rect.left+viewportElementRect.left,top:rect.top+viewportElementRect.top,width:rect.width,height:rect.height};
+}
+
+export function cssRectToDevicePixels(rect, devicePixelRatio=1) {
+  const ratio=Math.max(0,Number(devicePixelRatio)||1);
+  return Object.fromEntries(Object.entries(rect).map(([key,value])=>[key,Number(value)*ratio]));
+}
+
+export function pdfBaselineToViewport(viewport, baseline) {
+  const point=viewport.convertToViewportPoint(baseline.x,baseline.y);
+  return {left:point[0],top:point[1]};
+}
+
 export function clampPdfZoom(value) {
   return Math.max(.25, Math.min(5, Number(value) || 1));
 }

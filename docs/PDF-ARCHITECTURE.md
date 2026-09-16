@@ -13,6 +13,10 @@ This inventory records the Milestone 1 boundary; it is not a new file format.
   reconstructs stable source runs, lines, conservative blocks, provenance,
   reading order, spatial queries, collision classes, and analytical free-space
   candidates in PDF points. Paint, spatial, and reading order remain separate.
+- `documents/pdf-diagnostics.js` builds on-demand, JSON-safe one-page snapshots.
+  It keeps PDF-point, expected viewport, observed DOM box, browser text-range
+  ink, mask/Save, state, ownership, collision, and layer records separate. Its
+  observed measurements are instrumentation and never feed the edit model.
 - `workspace.js` is the PDF object controller: current page/view state,
   selection, history, drop ownership, save integration, and compact controls.
 - `workspace.html` and `workspace.css` provide the toolbar, page surface, canvas,
@@ -54,6 +58,17 @@ selected point size, intact words, leading, minimum readable measure, and an
 image gutter. Wide/centered obstacles force above/below flow; edge obstacles
 offer one readable side lane and restore the region width below the image.
 Unsafe exhaustion produces `needs-more-space`, never automatic font scaling.
+
+## Agent diagnostics boundary
+
+The PDF More menu exposes **Copy Page Diagnostics**. Work is performed only
+when requested. Rendered source runs, semantic parents, edits, images, wraps,
+and masks use stable `data-pdf-*` identities; text ink is measured from browser
+Ranges and accompanied by canvas font metrics. Structured validation reports
+identity, geometry, clipping/overflow, ownership, current-version, and
+live-versus-reopened parity failures by object ID. Every active snapshot object
+is explicitly `current`; undo snapshots remain outside the render tree until an
+Undo/Redo command replaces the current edit list.
 
 
 ## WYSIWYG trust invariant

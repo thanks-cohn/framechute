@@ -325,7 +325,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
     const [left, top, right, bottom] = pdfRectToViewport(viewport, edit);
-    const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index); element.dataset.wrapText = edit.wrapText === true ? "on" : "off";
+    const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index); element.dataset.wrapText = edit.wrapText === true ? "on" : "off"; element.dataset.pdfObjectId=edit.id||`image:p${pageNumber}:${edit.index}`;element.dataset.pdfEditId=element.dataset.pdfObjectId;
     const image = document.createElement("img"); image.src = `data:${edit.mime};base64,${edit.base64}`; image.alt = "Inserted PDF image"; image.draggable = true;
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
@@ -344,6 +344,10 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     element.setAttribute("aria-hidden", "true");
     if (mask.maskIndex !== undefined) element.dataset.maskIndex = String(mask.maskIndex);
     if (mask.maskRole) element.dataset.maskRole = mask.maskRole;
+    const owner=edits.find(edit=>String(edit.index)===String(mask.maskIndex))?.id||`source:p${pageNumber}:${String(mask.maskIndex).split(",")[0]}`;
+    mask.maskOwnerId=owner;
+    element.dataset.pdfMaskOwnerId=owner;
+    element.dataset.pdfObjectId=`mask:p${pageNumber}:${mask.maskRole||"source"}:${mask.maskIndex??visibleMasks.indexOf(mask)}`;
     Object.assign(element.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px` });
     textLayer.append(element);
   }
@@ -356,7 +360,12 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = wrapped || explicit;
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
-    if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
+    const sourceId=pageLayout.nodes.find(node=>node.kind==="source-text-run"&&Number(node.metadata?.sourceIndex)===index)?.id||`source:p${pageNumber}:${index}`;
+    span.dataset.pdfSourceId=sourceId;span.dataset.pdfObjectId=saved?.id||sourceId;
+    const sourceNode=pageLayout.get(sourceId),lineNode=sourceNode&&pageLayout.parent(sourceNode.id),blockNode=lineNode&&pageLayout.parent(lineNode.id);
+    if(lineNode)span.dataset.pdfLineId=lineNode.id;if(blockNode)span.dataset.pdfBlockId=blockNode.id;
+    if(saved?.id)span.dataset.pdfEditId=saved.id;
+    if (options.searchQuery && String(saved?.replacement??item.str).toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
     if (saved) {
       const [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
@@ -378,7 +387,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   });
   edits.filter(edit => edit.page === pageNumber && edit.kind === "text").forEach(edit => {
     const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
-    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);
+    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);span.dataset.pdfObjectId=saved.id;span.dataset.pdfEditId=saved.id;
     const text=document.createElement("span");text.className="pdf-edit-text";text.textContent=saved.text;span.append(text);
     const markDirty=()=>{const block=text.closest?.(".block");if(block)block.dataset.documentDirty="true";};
     text.addEventListener("input",()=>{if(updatePdfFreeText(edit,text.innerText))markDirty();});
@@ -391,18 +400,22 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
   });
-  return { viewport, content };
+  return { viewport, content, layout:pageLayout, masks:visibleMasks, wrapEdits };
 }
 
-export async function searchPdfDocument(model, query) {
+export async function searchPdfDocument(model, query, edits=[]) {
   const needle = String(query || "").trim().toLocaleLowerCase();
   if (!needle) return [];
   const matches = [];
   for (let pageNumber = 1; pageNumber <= model.pageCount; pageNumber++) {
-    const content = await (await model.pdf.getPage(pageNumber)).getTextContent();
+    const page=await model.pdf.getPage(pageNumber),content=await page.getTextContent(),layout=await getPdfPageLayout(model,pageNumber,edits,{page,content,viewport:page.getViewport({scale:1})});
+    const currentByIndex=new Map(layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>[Number(node.metadata.sourceIndex),node.text]));
+    for(const replacement of layout.nodes.filter(node=>node.kind==="replacement-text"&&node.metadata?.sourceRunId)){
+      const source=layout.get(replacement.metadata.sourceRunId);if(source)currentByIndex.set(Number(source.metadata.sourceIndex),replacement.text);
+    }
     content.items.forEach((item, index) => {
       let from = 0, at;
-      const text = String(item.str || ""), haystack = text.toLocaleLowerCase();
+      const text = String(currentByIndex.get(index)??item.str??""), haystack = text.toLocaleLowerCase();
       while ((at = haystack.indexOf(needle, from)) !== -1) {
         matches.push({ page: pageNumber, index, offset: at, text });
         from = at + Math.max(1, needle.length);
@@ -509,7 +522,7 @@ export function clampPdfRectToBox(rect, box) {
 export function sourceMasksForPage(edits, pageNumber) {
   return edits
     .filter(edit => edit.page === pageNumber && (edit.kind || "replacement") === "replacement")
-    .flatMap(replacementMasksForEdit);
+    .map(sourceMaskForEdit);
 }
 
 /**
