@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, serializationMasksForEdit, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, pdfPageMaskPlan, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -166,15 +166,19 @@ test("live PDF mask does not claim the line tail when an untouched source run fo
   assert.ok(masks[0].x+masks[0].width<120,"middle edit stays bounded before the untouched terminal run");
 });
 
-test("saved-PDF masks erase only owned source text by default",()=>{
-  const masks=serializationMasksForEdit({
-    kind:"replacement",index:7,
-    sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
-    x:120,y:90,width:100,height:24
-  });
-  assert.equal(masks.length,1);
-  assert.equal(masks[0].maskRole,"source");
-  assert.ok(masks[0].x<10&&masks[0].x+masks[0].width>50);
+test("PDF Save and live preview share one semantic mask plan",()=>{
+  const line={id:"line:save",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1"]};
+  const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:70,height:9},metadata:{sourceIndex:0}};
+  const run1={id:"run:1",kind:"source-text-run",bounds:{x:95,y:101,width:105,height:9},metadata:{sourceIndex:1}};
+  const parents=new Map([["run:0",line],["run:1",line]]);
+  const layout={nodes:[run0,run1,line],parent:id=>parents.get(id)||null};
+  const edits=[{kind:"replacement",id:"edit:1",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9,x:120,y:80,width:90,height:22}];
+  const plan=pdfPageMaskPlan(layout,edits,[],1);
+  const source=plan.find(mask=>mask.maskRole==="source-line");
+  const field=plan.find(mask=>mask.maskRole==="field");
+  assert.ok(source,"shared plan includes semantic source-line erasure");
+  assert.ok(field,"shared plan includes the same replacement-field erasure visible in the editor");
+  assert.ok(source.x+source.width>200,"terminal run cleanup reaches the semantic line tail");
 });
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
