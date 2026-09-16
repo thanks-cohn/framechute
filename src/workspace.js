@@ -601,6 +601,7 @@ window.addEventListener("framechute:pdf-context-command", event => {
   else if(action==="duplicate"){pushPdfHistory(runtime);runtime.edits.push({...structuredClone(edit),id:`text:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now(),x:edit.x+8,y:edit.y-8});}
   else if(action==="font"&&value!==edit.fontFamily){pushPdfHistory(runtime);edit.fontFamily=value;}
   else if(action==="text-size"){const size=Number(prompt("Text size in points",String(edit.fontSize)));if(!Number.isFinite(size))return;pushPdfHistory(runtime);edit.fontSize=Math.max(4,Math.min(144,size));}
+  else if(action==="toggle-wrap"&&edit.kind==="image"){pushPdfHistory(runtime);edit.wrapText=edit.wrapText!==true;}
   else return;
   setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);
 });
@@ -820,7 +821,7 @@ registerBlockType("pdf", {
         const bitmap=await createImageBitmap(blob),surface=textLayer.getBoundingClientRect(),scale=Math.min(1,runtime.pageData.viewport.width*.45/bitmap.width,runtime.pageData.viewport.height*.45/bitmap.height),displayWidth=bitmap.width*scale,displayHeight=bitmap.height*scale;
         const left=Math.max(0,Math.min(runtime.pageData.viewport.width-displayWidth,event.clientX-surface.left-displayWidth/2)),top=Math.max(0,Math.min(runtime.pageData.viewport.height-displayHeight,event.clientY-surface.top-displayHeight/2));
         const geometry=viewportRectToPdf(runtime.pageData.viewport,{left,top,width:displayWidth,height:displayHeight}),bytes=new Uint8Array(await blob.arrayBuffer());bitmap.close();
-        pushPdfHistory(runtime);runtime.edits.push({kind:"image",id:`image:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now()-runtime.edits.length,page:Number(block.dataset.currentPage),mime:blob.type.toLowerCase(),base64:bytesToBase64(bytes),...geometry});inserted++;
+        pushPdfHistory(runtime);runtime.edits.push({kind:"image",id:`image:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now()-runtime.edits.length,page:Number(block.dataset.currentPage),mime:blob.type.toLowerCase(),base64:bytesToBase64(bytes),wrapText:true,...geometry});inserted++;
       }
       endInternalDrag();if(!inserted)return;setDocumentDirty(block,true);await setPdfPage(block,block.dataset.currentPage);setStatus(`${inserted} image${inserted===1?"":"s"} inserted into the PDF.`);
     }, true);
