@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -122,6 +122,24 @@ test("explicit PDF replacements participate in the same image-wrap path as sourc
   assert.equal(overlaps,false);
 });
 
+
+test("live PDF masks erase the full semantic line band for changed source ranges",()=>{
+  const line={id:"line:1",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1"]};
+  const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:70,height:9},metadata:{sourceIndex:0}};
+  const run1={id:"run:1",kind:"source-text-run",bounds:{x:95,y:101,width:105,height:9},metadata:{sourceIndex:1}};
+  const parents=new Map([["run:0",line],["run:1",line]]);
+  const layout={nodes:[run0,run1,line],parent:id=>parents.get(id)||null};
+  const partial=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9}],1,0);
+  assert.equal(partial.length,1);
+  assert.ok(partial[0].y<100&&partial[0].y+partial[0].height>112,"vertical eraser covers the entire semantic line band plus safety");
+  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<200,"partial edit does not erase the untouched end of the line");
+  const full=semanticLiveSourceMasks(layout,[
+    {kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9},
+    {kind:"wrap",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9}
+  ],1,0);
+  assert.equal(full.length,1);
+  assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"when every source run changed, the live eraser covers the entire semantic line");
+});
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
   assert.deepEqual(
