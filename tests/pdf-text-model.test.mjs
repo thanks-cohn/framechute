@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -119,4 +119,17 @@ test("resizing a PDF replacement field enlarges its erasure region",()=>{
     .find(mask=>mask.maskRole==="field");
   assert.ok(large.width>small.width);
   assert.ok(large.height>small.height);
+});
+
+
+test("PDF source font size is inferred once from the source transform",()=>{
+  assert.equal(inferPdfSourceFontSize({transform:[1,0,0,10,0,0]}),10);
+  assert.equal(inferPdfSourceFontSize({transform:[1,0,0,0,0,0]},11),11);
+});
+
+test("resizing a PDF replacement field never changes its explicit font size",()=>{
+  const small=normalizePdfEdit({kind:"replacement",page:1,index:1,x:10,y:10,width:40,height:12,fontSize:10,replacement:"hello"});
+  const large=normalizePdfEdit({...small,width:240,height:80});
+  assert.equal(small.fontSize,10);
+  assert.equal(large.fontSize,10);
 });
