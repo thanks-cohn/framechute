@@ -186,6 +186,11 @@ if (!workspace || !bar || !actions?.selection) {
     quickActionsEnabled = readQuickActionsEnabled();
     applyBarVisibility();
   });
+  window.addEventListener("framechute:quick-actions-global-changed", event => {
+    quickActionsEnabled = typeof event.detail?.enabled === "boolean" ? event.detail.enabled : readQuickActionsEnabled();
+    applyBarVisibility();
+    if (status) status.textContent = `Quick Actions are now ${quickActionsEnabled ? "on" : "off"} everywhere.`;
+  });
 
   const barObserver = new MutationObserver(() => applyBarVisibility());
   barObserver.observe(bar, { attributes: true, attributeFilter: ["hidden"] });
