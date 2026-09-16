@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -132,4 +132,15 @@ test("resizing a PDF replacement field never changes its explicit font size",()=
   const large=normalizePdfEdit({...small,width:240,height:80});
   assert.equal(small.fontSize,10);
   assert.equal(large.fontSize,10);
+});
+
+test("semantic PDF extraction places a later replacement at its source position",async()=>{
+  const source=await PDFDocument.create(),page=source.addPage([300,300]);
+  page.drawText("First",{x:20,y:250});page.drawText("Middle",{x:20,y:220});page.drawText("Last",{x:20,y:190});
+  const model=await openPdfDocument(await source.save());
+  try {
+    const text=await extractSemanticPdfText(model,[{kind:"replacement",id:"replacement:middle",page:1,index:2,replacement:"Changed",x:180,y:30,width:80,height:16}]);
+    assert.equal(text,"First\nChanged\nLast");
+    assert.ok(model.layoutCache.size<=3);
+  } finally { await model.pdf.destroy(); }
 });
