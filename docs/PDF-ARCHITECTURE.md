@@ -55,6 +55,24 @@ image gutter. Wide/centered obstacles force above/below flow; edge obstacles
 offer one readable side lane and restore the region width below the image.
 Unsafe exhaustion produces `needs-more-space`, never automatic font scaling.
 
+
+## WYSIWYG trust invariant
+
+The saved PDF is the canonical visual target for the editor. After an edit is
+committed, the live page must represent the same effective result the serializer
+will produce: the same source-erasure intent, replacement geometry, font size,
+line flow, image wrapping, and reading order. A discrepancy where Save produces
+a clean page but the editor still shows original-glyph fragments, stale masks,
+or different placement is a live-preview bug, not an acceptable limitation.
+
+Because the PDF canvas already contains the original source glyphs, the live
+editor may use semantic cover/erase layers rather than destructively editing
+canvas pixels. Those layers must erase the entire affected semantic source band
+with enough antialiasing safety to leave no visible remnants, while staying
+horizontally bounded so unrelated source text is not hidden. If every source run
+on a semantic line is replaced/reflowed, the live preview should erase that
+whole semantic line before drawing the replacement.
+
 ## Preservation boundary
 
 Rendering and text inspection use PDF.js. Editing starts from the original
