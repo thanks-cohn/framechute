@@ -72,6 +72,88 @@ An agent should be able to understand the page without seeing a screenshot.
 
 ---
 
+# P0 — Current-version boundary: history must never leak into the document
+
+This is a hard product invariant.
+
+FrameChute may retain edit history, undo snapshots, prior semantic states, or future explicit document versions. That historical data is **not part of the currently opened document**.
+
+Once an edit is committed, the current version becomes the user's truth.
+
+When a PDF is saved and later reopened:
+
+- it must open as a **clean current-version slate**,
+- it must look exactly like the version the user remembers saving,
+- deleted/replaced/obsolete text must not exist in the active render tree,
+- dead source runs must not reappear on hover, selection, focus, rerender, zoom, page navigation, or edit mode,
+- old replacement fields must not become active merely because a pointer passes over their former location,
+- old masks, stale overlays, and superseded geometry must not participate in hit-testing or layout,
+- diagnostics must clearly distinguish current objects from historical objects.
+
+If historical versions are intentionally retained, they must be quarantined behind an explicit **Previous Versions** / version-history boundary.
+
+Conceptually:
+
+```
+CURRENT DOCUMENT
+  current source state
+  current semantic objects
+  current edits
+  current masks
+  current render/save plan
+
+PREVIOUS VERSIONS
+  immutable historical snapshots
+  never rendered
+  never hit-tested
+  never included in current layout
+  only materialized after explicit user action
+```
+
+Do not use "history exists internally" as a reason for historical text to remain addressable in the active page.
+
+Undo history is also not the current document. It may keep data necessary to restore a prior state, but that data must remain inert until Undo/Redo is explicitly invoked.
+
+### Save + reopen compaction
+
+Treat Save + reopen as a strong correctness boundary.
+
+The reopened document must reconstruct only the **current committed state**.
+
+If the underlying PDF still physically contains superseded source bytes for preservation reasons, those bytes must remain semantically dead and visually inaccessible in the active document unless the user explicitly opens a previous version.
+
+No hover state, text-layer regeneration, source-index lookup, search result, selection event, or diagnostic observer may accidentally resurrect superseded text.
+
+Add diagnostics such as:
+
+- `CURRENT_STATE_CONTAINS_SUPERSEDED_OBJECT`
+- `HISTORICAL_OBJECT_RENDERED`
+- `HISTORICAL_OBJECT_HIT_TESTABLE`
+- `SAVE_REOPEN_RESURRECTED_TEXT`
+- `STALE_OVERLAY_ACTIVE`
+
+The page snapshot should expose a version/state field for every object, e.g. `current`, `superseded`, or `historical`.
+
+Only `current` objects may participate in ordinary rendering, hit-testing, layout, masks, wrapping, search, extraction, and Save.
+
+### Required tests
+
+Add tests where:
+
+1. source text A is replaced by B,
+2. B is edited again into C,
+3. the document is saved,
+4. the saved PDF is reopened,
+5. the pointer hovers the former A/B locations,
+6. edit mode toggles off/on,
+7. the page rerenders at another zoom,
+8. search/extraction runs.
+
+At every step, A and B must remain absent from the active document.
+
+If version history is implemented, A/B may appear only after explicit navigation into **Previous Versions**.
+
+
 # P0 — Canonical object localization records
 
 Introduce a small, serializable diagnostic model for PDF page objects.
@@ -619,7 +701,11 @@ Specifically verify cases like:
 - old text is hidden live but returns after Save,
 - neighboring letters get clipped,
 - inserted image causes text mash-up,
-- an edit looks different only while hovered/selected.
+- an edit looks different only while hovered/selected,
+- superseded text from an earlier edit reappears after Save + reopen,
+- dead historical text becomes visible or hit-testable only on hover.
+
+Also verify that Save + reopen reconstructs only the current committed version. Historical objects may exist only behind an explicit Previous Versions/version-history path and must remain inert during ordinary rendering, selection, search, extraction, wrapping, and editing.
 
 For each failure, diagnostics must identify the responsible object IDs and whether the mismatch is semantic geometry, viewport transform, observed ink, mask ownership, state/CSS, layer order, or Save plan.
 
