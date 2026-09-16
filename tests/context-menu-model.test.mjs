@@ -66,13 +66,15 @@ test("media synchronization accepts playable audio and rejects mislabeled static
   assert.equal(supportsMediaSync({dataset:{blockType:"image"},querySelector:()=>({})}),false);
 });
 
-test("document context menus expose the global Quick Actions state toggle",()=>{
+test("document context menus expose the effective per-object Quick Actions state",()=>{
   const pdfOn=commandsForEditorContext({editorKind:"pdf",selectionKind:"source-text",quickActionsEnabled:true,block:{dataset:{pdfEditMode:"on"}}});
-  const pdfOff=commandsForEditorContext({editorKind:"pdf",selectionKind:"page",quickActionsEnabled:false,block:{dataset:{pdfEditMode:"on"}}});
-  const docx=commandsForEditorContext({editorKind:"docx",selectionKind:"text",quickActionsEnabled:false,block:{dataset:{}}});
-  assert.equal(pdfOn.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ ON ]");
-  assert.equal(pdfOff.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ OFF ]");
-  assert.equal(docx.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ OFF ]");
+  const pdfHidden=commandsForEditorContext({editorKind:"pdf",selectionKind:"page",quickActionsEnabled:true,block:{dataset:{pdfEditMode:"on",quickActionsHidden:"true"}}});
+  const pdfGlobalOff=commandsForEditorContext({editorKind:"pdf",selectionKind:"page",quickActionsEnabled:false,block:{dataset:{pdfEditMode:"on"}}});
+  const docxHidden=commandsForEditorContext({editorKind:"docx",selectionKind:"text",quickActionsEnabled:true,block:{dataset:{quickActionsHidden:"true"}}});
+  assert.equal(pdfOn.find(item=>item.id==="quick-actions-object")?.label,"Quick Actions  [ ON ]");
+  assert.equal(pdfHidden.find(item=>item.id==="quick-actions-object")?.label,"Quick Actions  [ OFF ]");
+  assert.equal(pdfGlobalOff.find(item=>item.id==="quick-actions-object")?.label,"Quick Actions  [ OFF ]");
+  assert.equal(docxHidden.find(item=>item.id==="quick-actions-object")?.label,"Quick Actions  [ OFF ]");
 });
 
 test("PDF edit mode keeps existing source-text editing explicit",()=>{
