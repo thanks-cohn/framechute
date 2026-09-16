@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, searchPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize } from "./documents/pdf-document.js";
 import { clampPdfZoom, fitPdfScale } from "./documents/pdf-geometry.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
 import { DocxNumberingState } from "./documents/docx/numbering.js";
@@ -907,6 +907,14 @@ registerBlockType("pdf", {
       const index = Number(span.dataset.index);
       const page = Number(block.dataset.currentPage || 1);
       const existing = runtime?.edits?.find(edit => edit.page === page && edit.index === index && edit.kind !== "image");
+      const original = index >= 0 ? runtime?.pageData?.content?.items?.[index] : null;
+      const initialFontSize = existing?.fontSize ?? inferPdfSourceFontSize(original, 12);
+      text.dataset.pendingFontSize = String(initialFontSize);
+      const controls = block.querySelector(".pdf-edit-controls");
+      const fontSizeInput = controls?.querySelector(".pdf-font-size");
+      if (controls) controls.hidden = false;
+      if (fontSizeInput) fontSizeInput.value = String(Math.round(initialFontSize * 10) / 10);
+      span.style.fontSize = `${initialFontSize * (runtime?.pageData?.viewport?.scale || 1)}px`;
       if (!existing && index >= 0) createPdfLiveEditMask(textLayer, span);
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
       text.focus();
@@ -937,7 +945,7 @@ registerBlockType("pdf", {
       text.removeAttribute("contenteditable");
       text.closest(".pdf-text-item")?.classList.remove("is-editing");
       removePdfLiveEditMask(textLayer);
-      if(text.dataset.cancel){delete text.dataset.cancel;return;}
+      if(text.dataset.cancel){delete text.dataset.cancel;delete text.dataset.pendingFontSize;return;}
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
       const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
       const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
@@ -947,8 +955,10 @@ registerBlockType("pdf", {
       else if(existing)existing.replacement=replacement;
       else {
         const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);
-        runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:geometry.height*.8,rotation:0});
+        const fontSize=Math.max(4,Math.min(144,Number(text.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
+        runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0});
       }
+      delete text.dataset.pendingFontSize;
       setDocumentDirty(block,true);void setPdfPage(block,page);
     });
     textLayer.addEventListener("pointerdown",event=>{
@@ -960,7 +970,25 @@ registerBlockType("pdf", {
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
     block.querySelector(".pdf-redo").addEventListener("click",()=>void travelPdfHistory(block,"redo"));
-    block.querySelector(".pdf-font-size").addEventListener("change",event=>{if(!pdfEditEnabled(block))return;const runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!edit)return;const size=Math.max(4,Math.min(144,Number(event.target.value)||edit.fontSize));if(size===edit.fontSize)return;pushPdfHistory(runtime);edit.fontSize=size;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);});
+    block.querySelector(".pdf-font-size").addEventListener("change",event=>{
+      if(!pdfEditEnabled(block))return;
+      const runtime=runtimeSources.get(block);
+      const activeText=textLayer.querySelector('.pdf-edit-text[contenteditable="true"]');
+      const currentEdit=selectedPdfEdit(block);
+      const fallback=Number(activeText?.dataset.pendingFontSize)||currentEdit?.fontSize||12;
+      const size=Math.max(4,Math.min(144,Number(event.target.value)||fallback));
+      event.target.value=String(Math.round(size*10)/10);
+      if(activeText){
+        activeText.dataset.pendingFontSize=String(size);
+        activeText.closest(".pdf-text-item").style.fontSize=`${size*(runtime?.pageData?.viewport?.scale||1)}px`;
+        if(currentEdit&&currentEdit.kind!=="image"&&currentEdit.fontSize!==size){
+          pushPdfHistory(runtime);currentEdit.fontSize=size;setDocumentDirty(block,true);
+        }
+        return;
+      }
+      if(!currentEdit||currentEdit.kind==="image"||size===currentEdit.fontSize)return;
+      pushPdfHistory(runtime);currentEdit.fontSize=size;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);
+    });
     fontSelect.addEventListener("change",event=>{if(!pdfEditEnabled(block))return;const runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!edit||edit.fontFamily===event.target.value)return;pushPdfHistory(runtime);edit.fontFamily=event.target.value;setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);});
 
 
