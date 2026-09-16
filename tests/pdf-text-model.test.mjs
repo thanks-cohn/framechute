@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -90,6 +90,34 @@ test("PDF image text wrap chooses a clear lane and leaves nonintersecting text a
 test("PDF image text wrap moves fully covered source text clear of the image",()=>{
   const image={x:80,y:80,width:120,height:120};
   const wrapped=wrapPdfTextBoxAroundImage({x:110,y:120,width:40,height:12,pageWidth:300},image);
+  const overlaps=wrapped.x<image.x+image.width&&wrapped.x+wrapped.width>image.x&&wrapped.y<image.y+image.height&&wrapped.y+wrapped.height>image.y;
+  assert.equal(overlaps,false);
+});
+
+test("semantic image wrap never teleports text upward and keeps source/replacement lane policy identical",()=>{
+  const box={x:60,y:130,width:180,height:14,fontSize:10};
+  const image={x:110,y:110,width:90,height:80};
+  const source=semanticWrapTarget(box,image,{text:"ordinary paragraph words",fontSize:10});
+  const replacement=semanticWrapTarget(box,image,{text:"ordinary paragraph words",fontSize:10});
+  assert.deepEqual(replacement,source);
+  assert.ok(source.y<=box.y,"forward flow may stay level or move downward, never upward");
+  const overlaps=source.x<image.x+image.width&&source.x+source.width>image.x&&source.y<image.y+image.height&&source.y+source.height>image.y;
+  assert.equal(overlaps,false);
+});
+
+test("explicit PDF replacements participate in the same image-wrap path as source text",()=>{
+  const viewport={
+    scale:1,width:300,transform:[1,0,0,1,0,0],
+    convertToPdfPoint:(x,y)=>[x,y]
+  };
+  const content={items:[{str:"original words",transform:[1,0,0,10,60,144],width:180}]};
+  const replacement={kind:"replacement",id:"replacement:0",page:1,index:0,replacement:"edited words stay with the paragraph",x:60,y:134,width:180,height:14,fontSize:10,fontFamily:"Helvetica"};
+  const image={kind:"image",id:"image:1",page:1,index:-1,x:110,y:110,width:90,height:80,wrapText:true};
+  const wraps=imageWrapEditsForPage(viewport,content,[replacement,image],1);
+  assert.equal(wraps.length,1);
+  assert.equal(wraps[0].sourceEditId,"replacement:0");
+  assert.equal(wraps[0].replacement,"edited words stay with the paragraph");
+  const wrapped=wraps[0];
   const overlaps=wrapped.x<image.x+image.width&&wrapped.x+wrapped.width>image.x&&wrapped.y<image.y+image.height&&wrapped.y+wrapped.height>image.y;
   assert.equal(overlaps,false);
 });
