@@ -461,26 +461,24 @@ export function sourceMaskForEdit(edit) {
 }
 
 /**
- * A replacement owns two erase regions: its original source glyph box and its
- * current replacement field box. This makes resizing the field a deliberate
- * "erase underneath here" operation without erasing the strip between source
- * and destination when a field is moved.
+ * A replacement always erases the source glyphs it owns.
+ *
+ * It must NOT erase the whole destination field by default. Saved PDFs start
+ * from the pristine source bytes, so a destination-field cover can destroy
+ * unrelated nearby text (for example the first/last letter of a neighboring
+ * label) even when that text is not part of the edit. Field erasure is now an
+ * explicit opt-in reserved for a future collision-checked operation.
  */
 export function replacementMasksForEdit(edit) {
-  if ((edit.kind || "replacement") === "wrap") {
-    return [{ ...padPdfRect(sourceMaskForEdit(edit)), maskRole:"source", maskIndex:edit.index }];
-  }
-  const source = padPdfRect(sourceMaskForEdit(edit));
+  const source={ ...padPdfRect(sourceMaskForEdit(edit)), maskRole:"source", maskIndex:edit.index };
+  if ((edit.kind || "replacement") === "wrap" || edit.eraseUnderField !== true) return [source];
   const field = padPdfRect({
     x: edit.x,
     y: edit.y,
     width: Math.max(Number(edit.width) || 0, 2),
     height: Math.max(Number(edit.height) || 0, 2)
   });
-  return [
-    { ...source, maskRole:"source", maskIndex:edit.index },
-    { ...field, maskRole:"field", maskIndex:edit.index }
-  ];
+  return [source,{ ...field, maskRole:"field", maskIndex:edit.index }];
 }
 
 export function clampPdfRectToBox(rect, box) {
@@ -515,8 +513,15 @@ function horizontalBandOverlap(left,right,bounds) {
   return Math.max(0,Math.min(right,bounds.x+bounds.width)-Math.max(left,bounds.x));
 }
 
-function midpointBoundary(nearEdge,farEdge,nearCenter,farCenter) {
-  return farEdge>=nearEdge ? (nearEdge+farEdge)/2 : (nearCenter+farCenter)/2;
+function guardedBoundary(nearEdge,farEdge,nearCenter,farCenter,guard) {
+  // When source boxes leave real whitespace between them, let the edited owner
+  // consume almost all of that whitespace. Stop just before the untouched
+  // neighbor instead of halfway through the gap; this removes antialiased
+  // remnants without touching the neighbor. If source boxes overlap, fall back
+  // to the midpoint between centers so ownership still remains disjoint.
+  return farEdge>=nearEdge
+    ? Math.max(nearEdge,farEdge-Math.max(0,guard))
+    : (nearCenter+farCenter)/2;
 }
 
 function semanticLineOwnershipCell(layout,line,left,right,padding) {
@@ -534,11 +539,15 @@ function semanticLineOwnershipCell(layout,line,left,right,padding) {
     if(otherCenter<center&&(!below||otherCenter>below.center))below={line:candidate,center:otherCenter};
   }
   const safePad=Math.max(Number(padding)||0,line.bounds.height*.18,2.5);
+  const aboveGuard=above?Math.max(1,Math.min(safePad,above.line.bounds.height*.16)):safePad;
+  const belowGuard=below?Math.max(1,Math.min(safePad,below.line.bounds.height*.16)):safePad;
   const top=above
-    ? midpointBoundary(lineTop,above.line.bounds.y,center,above.center)
+    ? guardedBoundary(lineTop,above.line.bounds.y,center,above.center,aboveGuard)
     : lineTop+safePad;
   const bottom=below
-    ? midpointBoundary(below.line.bounds.y+below.line.bounds.height,lineBottom,below.center,center)
+    ? (below.line.bounds.y+below.line.bounds.height<=lineBottom
+        ? Math.min(lineBottom,below.line.bounds.y+below.line.bounds.height+belowGuard)
+        : (below.center+center)/2)
     : lineBottom-safePad;
   const pageBottom=Number.isFinite(page.y)?page.y:bottom;
   const pageTop=Number.isFinite(page.y+page.height)?page.y+page.height:top;
@@ -558,16 +567,24 @@ function semanticRunHorizontalCell(layout,line,changedIds,padding) {
   const firstIndex=siblings.indexOf(changed[0]),lastIndex=siblings.indexOf(changed.at(-1));
   const first=changed[0],last=changed.at(-1),previous=siblings[firstIndex-1],next=siblings[lastIndex+1];
   const firstCenter=first.bounds.x+first.bounds.width/2,lastCenter=last.bounds.x+last.bounds.width/2;
-  let left=first.bounds.x-Math.max(Number(padding)||0,2.5);
-  let right=last.bounds.x+last.bounds.width+Math.max(Number(padding)||0,2.5);
+  const safePad=Math.max(Number(padding)||0,2.5);
+  let left=first.bounds.x-safePad;
+  let right=last.bounds.x+last.bounds.width+safePad;
   if(previous){
     const previousRight=previous.bounds.x+previous.bounds.width;
     const previousCenter=previous.bounds.x+previous.bounds.width/2;
-    left=midpointBoundary(previousRight,first.bounds.x,previousCenter,firstCenter);
+    const guard=Math.max(1,Math.min(safePad,previous.bounds.height*.14));
+    left=first.bounds.x>=previousRight
+      ? Math.min(first.bounds.x,previousRight+guard)
+      : (previousCenter+firstCenter)/2;
   }
   if(next){
     const nextCenter=next.bounds.x+next.bounds.width/2;
-    right=midpointBoundary(last.bounds.x+last.bounds.width,next.bounds.x,lastCenter,nextCenter);
+    const lastRight=last.bounds.x+last.bounds.width;
+    const guard=Math.max(1,Math.min(safePad,next.bounds.height*.14));
+    right=next.bounds.x>=lastRight
+      ? Math.max(lastRight,next.bounds.x-guard)
+      : (lastCenter+nextCenter)/2;
   }
   return {left,right};
 }
