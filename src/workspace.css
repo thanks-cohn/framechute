@@ -672,6 +672,7 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-block {
   min-width: 420px;
   min-height: 360px;
+  container-type: inline-size;
 }
 
 .pdf-block > .block-header { order: 0; }
@@ -1192,3 +1193,30 @@ body.hide-block-headers .compact-drag-handle {
 }
 /* System-font fallback keeps this ordinary and usable if classic decoration is unavailable. */
 .workspace-file-menu{position:fixed;z-index:100001;padding:4px;border:2px solid #111;border-radius:5px;background:#ddd;box-shadow:inset 1px 1px #fff,3px 3px #0005;font:13px Geneva,Charcoal,system-ui,sans-serif}.workspace-file-menu[hidden]{display:none}.workspace-file-menu button{min-width:138px;padding:6px 14px;border:1px solid #111;border-radius:3px;background:#eee;color:#111;font:inherit;text-align:left;cursor:pointer}.workspace-file-menu button:focus-visible{outline:2px solid #111;outline-offset:1px}
+
+/* The PDF page is primary. Reader chrome stays on one calm row; contextual
+   controls appear only for a selection and secondary commands live in More. */
+.pdf-toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+  min-height: 43px;
+  align-items: center;
+}
+.pdf-toolbar button, .pdf-toolbar select, .pdf-toolbar input, .pdf-toolbar summary { min-height: 30px; }
+.pdf-toolbar .document-save { font-weight: 700; }
+.pdf-edit-controls[hidden] { display: none !important; }
+@container (max-width: 720px) {
+  .pdf-toolbar .document-save-as,
+  .pdf-toolbar .pdf-zoom-out,
+  .pdf-toolbar .pdf-zoom-in,
+  .pdf-toolbar .pdf-organize-menu { display: none; }
+  .pdf-toolbar { gap: 3px; padding-inline: 6px; }
+  .pdf-page { width: 52px; }
+}
+@media (max-width: 720px) {
+  .pdf-block:not(.is-maximized) .pdf-toolbar .document-save-as,
+  .pdf-block:not(.is-maximized) .pdf-toolbar .pdf-zoom-out,
+  .pdf-block:not(.is-maximized) .pdf-toolbar .pdf-zoom-in,
+  .pdf-block:not(.is-maximized) .pdf-toolbar .pdf-organize-menu { display: none; }
+}

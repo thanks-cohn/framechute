@@ -44,6 +44,20 @@ export function growPdfTextField(edit, requiredLines) {
   return { ...value, height: requiredHeight, y: oldTop - requiredHeight };
 }
 
+/** Preserve the user's point size and grow downward using a conservative
+ * standard-font estimate. Exact font metrics are used again during Save. */
+export function reflowPdfTextEditGeometry(edit) {
+  const value=normalizePdfEdit(edit),average=Math.max(1,value.fontSize*.52),columns=Math.max(1,Math.floor(value.width/average));
+  let lines=0;
+  for(const paragraph of value.text.split("\n")){
+    if(!paragraph){lines++;continue;}
+    let used=0;for(const word of paragraph.match(/\S+/g)||[]){const length=[...word].length,next=used?used+1+length:length;if(used&&next>columns){lines++;used=length;}else used=next;if(length>columns){lines+=Math.floor((length-1)/columns);used=((length-1)%columns)+1;}}lines++;
+  }
+  const grown=growPdfTextField(value,Math.max(1,lines));
+  Object.assign(edit,{y:grown.y,height:grown.height});
+  return edit;
+}
+
 /** Mutate the existing PDF image edit so identity/history references stay stable. */
 export function repositionPdfImage(edit, geometry) {
   if (!edit || edit.kind !== "image") return null;
@@ -433,8 +447,8 @@ export function normalizePdfEdit(edit) {
 /** Shared layout rule: preserve/wrap whitespace, then clip lines to field height. */
 export function layoutPdfText(edit, font) {
   const value = normalizePdfEdit(edit), lineHeight = value.fontSize * 1.2;
-  const limit = Math.max(1, Math.floor(value.height / lineHeight));
   const allLines = font ? wrapPdfText(value.text, font, value.fontSize, value.width) : value.text.replace(/\r\n?/g, "\n").split("\n");
+  const limit = Math.max(1, Math.floor(value.height / lineHeight));
   return { ...value, lineHeight, firstBaseline: value.y + value.height - value.fontSize, lines: allLines.slice(0, limit), overflow: allLines.length > limit };
 }
 

@@ -46,6 +46,15 @@ its visible field moves or its drawing operators are appended later. The raw
 paint order remains available for rendering and diagnostics. This does not
 rewrite content streams or persist a proprietary graph into saved PDFs.
 
+Before layout, every text path is exposed through one runtime flow tree:
+`page → flow region/column → block → line → run`. Source, replacement, free,
+and displaced text retain provenance and source references, but use the same
+deterministic PDF-point typesetter. Its forward-only line breaker preserves the
+selected point size, intact words, leading, minimum readable measure, and an
+image gutter. Wide/centered obstacles force above/below flow; edge obstacles
+offer one readable side lane and restore the region width below the image.
+Unsafe exhaustion produces `needs-more-space`, never automatic font scaling.
+
 ## Preservation boundary
 
 Rendering and text inspection use PDF.js. Editing starts from the original

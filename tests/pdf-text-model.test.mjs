@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -23,6 +23,15 @@ test("free PDF text updates in place without losing identity, geometry, spaces, 
   assert.equal(edit.id, "text:stable");
   assert.deepEqual({ x:edit.x, y:edit.y, width:edit.width, height:edit.height }, beforeGeometry);
   assert.equal(updatePdfFreeText(edit, "hello  world\n\tindented"), false);
+});
+
+test("long edits grow downward without silently changing the selected font size",()=>{
+  const edit={kind:"replacement",text:"A long replacement that requires several ordinary lines of text",x:20,y:200,width:90,height:12,fontSize:10};
+  const top=edit.y+edit.height;
+  assert.equal(reflowPdfTextEditGeometry(edit),edit);
+  assert.equal(edit.fontSize,10);
+  assert.equal(edit.y+edit.height,top);
+  assert.ok(edit.height>12);
 });
 
 test("PDF serialization accepts multiline edits and every offered font", async () => {
