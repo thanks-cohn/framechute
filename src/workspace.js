@@ -544,6 +544,14 @@ async function setPdfPage(block, page) {
       const result = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits, {scale:runtime.zoom, searchQuery:runtime.search?.query, onRenderTask:task=>runtime.renderTask=task});
       if (token !== runtime.renderToken) return;
       runtime.pageData = result;
+      const hasSourceText = result.content.items.some(item => item.str?.trim());
+      block.dataset.pdfHasSourceText = hasSourceText ? "true" : "false";
+      const editButton = block.querySelector(".pdf-edit-mode");
+      if (editButton && pdfEditEnabled(block)) {
+        editButton.title = hasSourceText
+          ? "Edit existing PDF text and added objects"
+          : "This page has no embedded PDF text. Existing page lettering may be image/vector content and needs OCR before text editing.";
+      }
     } catch (error) { if (error?.name !== "RenderingCancelledException") throw error; else return; }
     selectPdfEdit(block, null);
     block.querySelector(".pdf-count").textContent = `/ ${runtime.model.pageCount}`;
@@ -830,7 +838,12 @@ registerBlockType("pdf", {
     textLayer.addEventListener("dblclick", (event) => {
       if (!pdfEditEnabled(block)) return;
       const span = event.target.closest(".pdf-text-item");
-      if (!span) return;
+      if (!span) {
+        if (block.dataset.pdfHasSourceText === "false") {
+          setStatus("This PDF page has no embedded text to edit. It appears to be image/vector content; OCR support will be needed for direct text editing.");
+        }
+        return;
+      }
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
