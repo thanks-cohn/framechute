@@ -8,6 +8,7 @@
 // Also keep PDF/DOCX routing format-native; PDF gets its own Settings command.
 
 import { commandsForEditorContext, resolveEditorContext } from "./actions/context-menu-model.mjs";
+import { readQuickActionsEnabled, writeQuickActionsEnabled } from "./actions/object-menu-model.mjs";
 import { positionSubmenu } from "./submenu-position.mjs";
 
 const workspace = document.querySelector("#workspace");
@@ -52,10 +53,14 @@ function run(action,value){const block=context?.block;if(!block)return;const sel
   else if(action==="save"||action==="save-as")block.querySelector(action==="save"?".document-save":".document-save-as")?.click();
   else if(context.editorKind==="pdf"&&action==="settings")pdfSettings.showModal();
   else if(context.editorKind==="pdf"&&action==="toggle-edit")block.querySelector(".pdf-edit-mode")?.click();
+  else if(action==="quick-actions-global"){
+    const enabled=writeQuickActionsEnabled(!readQuickActionsEnabled());
+    window.dispatchEvent(new CustomEvent("framechute:quick-actions-global-changed",{detail:{enabled}}));
+  }
   else if(context.editorKind==="docx")window.dispatchEvent(new CustomEvent("framechute:docx-command",{detail:{block,action,value,selected,range:context.range}}));
   else if(action==="edit-text")selected?.dispatchEvent(new MouseEvent("dblclick",{bubbles:true}));
   else window.dispatchEvent(new CustomEvent("framechute:pdf-context-command",{detail:{block,action,value,selected,clientX:context.clientX,clientY:context.clientY}}));close();}
-workspace?.addEventListener("contextmenu",event=>{const next=resolveEditorContext(event.target);if(!next)return;event.preventDefault();event.stopImmediatePropagation();next.clientX=event.clientX;next.clientY=event.clientY;const selection=document.getSelection();if(next.editorKind==="docx"&&selection?.rangeCount&&next.surface.contains(selection.anchorNode))next.range=selection.getRangeAt(0).cloneRange();if(next.selected?.matches(".pdf-text-item"))next.selected.dispatchEvent(new MouseEvent("click",{bubbles:true}));show(next,event.clientX||next.surface.getBoundingClientRect().left+24,event.clientY||next.surface.getBoundingClientRect().top+24);},true);
+workspace?.addEventListener("contextmenu",event=>{const next=resolveEditorContext(event.target);if(!next)return;event.preventDefault();event.stopImmediatePropagation();next.quickActionsEnabled=readQuickActionsEnabled();next.clientX=event.clientX;next.clientY=event.clientY;const selection=document.getSelection();if(next.editorKind==="docx"&&selection?.rangeCount&&next.surface.contains(selection.anchorNode))next.range=selection.getRangeAt(0).cloneRange();if(next.selected?.matches(".pdf-text-item"))next.selected.dispatchEvent(new MouseEvent("click",{bubbles:true}));show(next,event.clientX||next.surface.getBoundingClientRect().left+24,event.clientY||next.surface.getBoundingClientRect().top+24);},true);
 menu.addEventListener("click",event=>{const button=event.target.closest("button[data-editor-action]");if(button&&!button.disabled)run(button.dataset.editorAction,button.dataset.value);});
 menu.addEventListener("keydown",event=>{const button=event.target.closest("button");if(event.key==="Escape"){event.preventDefault();close(true);}else if(event.key==="ArrowRight"&&button?.nextElementSibling?.classList.contains("menu-submenu")){event.preventDefault();openSubmenu(button,button.nextElementSibling);}else if(event.key==="ArrowLeft"&&button?.closest(".menu-submenu")){event.preventDefault();button.closest(".menu-submenu").classList.remove("is-open");button.closest(".menu-submenu-owner")?.querySelector(":scope > button")?.focus();}else if(["ArrowDown","ArrowUp"].includes(event.key)){event.preventDefault();const scope=button?.parentElement.closest('[role="menu"]')||menu,buttons=[...scope.querySelectorAll(":scope > button:not(:disabled), :scope > .menu-submenu-owner > button:not(:disabled)")],at=buttons.indexOf(button);buttons[(at+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();}});
 document.addEventListener("pointerdown",event=>{if(!menu.hidden&&!menu.contains(event.target))close();});window.addEventListener("framechute:close-context-menus",event=>{if(event.detail?.except!==menu)close();});
