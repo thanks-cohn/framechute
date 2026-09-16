@@ -147,6 +147,96 @@ The first impression should be that the user edited the document, not pasted a f
 
 ---
 
+## Canonical flow form: all text becomes one thing before layout
+
+This is the architectural rule for this run.
+
+The current PDF surface still has too many behavioral paths: untouched PDF.js source text, replacement text, free text, image-wrapped source text, and automatically displaced/redrawn lines can each behave differently.
+
+Normalize them into one internal **semantic flow representation** before deciding where they render.
+
+Conceptually, every piece of text that participates in page layout should resolve to the same kind of flow data:
+
+- flow-region / column identity,
+- block / paragraph identity,
+- stable semantic order,
+- source lineage,
+- logical text,
+- style runs,
+- font family/substitution,
+- user-authoritative font size,
+- line height / leading,
+- alignment,
+- indentation / paragraph spacing where inferable,
+- available measure,
+- wrap/obstacle policy,
+- protected/fixed status,
+- canonical PDF-space geometry.
+
+Source text, edited text, free text, and reflowed text may have different provenance, but **the layout engine must not care which path produced them**. It should typeset the canonical flow form according to one set of rules, then the renderer/save layer decides whether the visible result comes from untouched source glyphs or source-mask + redraw overlays.
+
+Do not destructively convert the original PDF into a new proprietary document format. This standardization is runtime semantic state only. Original bytes remain the preservation source.
+
+The canonical hierarchy should be explicit enough to support:
+
+`page → flow region/column → blocks/paragraphs → lines → runs`
+
+An inserted image/obstacle belongs to a page flow region and causes that region to be recomposed according to the rules below. Do not make the image interact separately with "old text" and "new text."
+
+## Publishing / typesetting laws for ordinary English prose
+
+For ordinary left-to-right English body text, layout should follow simple publishing rules instead of "nearest free rectangle" geometry.
+
+These are P0 behavioral laws:
+
+- reading order is monotonic: forward text never jumps above earlier text merely to escape a collision,
+- preserve paragraph and block order,
+- preserve column membership,
+- preserve headings/captions/footers as distinct semantic roles,
+- use consistent baseline spacing / leading within a paragraph,
+- retain paragraph spacing and indentation when they can be inferred,
+- do not split ordinary words arbitrarily just to fill a geometric gap,
+- do not strand closing punctuation in an isolated lane when a sensible adjacent break exists,
+- avoid absurdly short line fragments beside an obstacle,
+- enforce a minimum usable text measure; a 20 pt-wide sliver is not a legitimate "free text lane",
+- prefer aesthetically reasonable line breaks over maximum geometric packing,
+- avoid obvious one-line widows/orphans when a nearby break can fix them without changing font size,
+- never place text flush against an image; apply a consistent small gutter in PDF points,
+- maintain consistent alignment and visual rhythm across lines in the same paragraph.
+
+A simple deterministic line breaker with penalties is sufficient. This does not need a huge desktop-publishing engine. But the output must look intentionally typeset rather than mathematically packed.
+
+### Image placement rules
+
+When a user drops/moves/resizes an image into a body-text flow region, recompute the affected region as a text-flow problem.
+
+Use the image plus gutter as an obstacle.
+
+For ordinary body prose:
+
+- image near the right edge: prefer text on the left while enough readable measure exists,
+- image near the left edge: prefer text on the right while enough readable measure exists,
+- centered/wide image: prefer text above/below rather than squeezing prose into two ugly narrow gutters,
+- once below the image, restore the normal full region width,
+- preserve paragraph continuity across the obstacle,
+- do not let text alternate chaotically left/right from line to line,
+- do not use both sides of an image merely because both contain technically free pixels if that creates poor reading order.
+
+If the obstacle spans more than one paragraph/block, recompose the affected **flow region** in semantic order, not each text box independently. Shift later body blocks in that same region only as much as needed. Do not borrow space from another column or move headers/footers/unrelated regions.
+
+This is how image drop should feel:
+
+1. user drops image,
+2. image snaps into the body flow region,
+3. surrounding prose recomposes cleanly around it,
+4. paragraph order remains obvious,
+5. spacing remains even,
+6. moving/resizing the image recomposes the same region again,
+7. Save reproduces what the user saw.
+
+A result with scattered words, text drawn through an image, or lines teleported above the image is a failure even if there are no literal bounding-box collisions.
+
+
 # P0 — Local semantic reflow: the core feature
 
 Build a small deterministic layout/reflow layer on top of the PR #61 semantic model.
@@ -436,6 +526,14 @@ At minimum cover:
 18. toolbar remains usable at a narrow PDF-block width without wrapping into a broken multi-row pile,
 19. reader-only state hides irrelevant edit controls,
 20. selected-text state exposes only the expected contextual controls.
+21. untouched source text and replacement text produce identical line lanes around the same image obstacle,
+22. centered/wide images force clean above/below flow instead of narrow side slivers,
+23. left/right image placement chooses a readable side lane with a consistent gutter,
+24. image movement/resizing deterministically recomposes the same flow region,
+25. no line moves upward before its semantic predecessor to escape an image,
+26. no word is arbitrarily split to occupy a narrow geometric gap,
+27. paragraph order/leading/spacing remain stable during image reflow,
+28. an image spanning multiple body blocks reflows only the owning flow region and not a neighboring column/header/footer.
 
 Prefer pure layout tests in `tests/pdf-layout.test.mjs` plus targeted PDF model tests. Use synthetic PDFs where practical.
 
