@@ -65,3 +65,21 @@ test("media synchronization accepts playable audio and rejects mislabeled static
   assert.equal(supportsMediaSync(audio),true);
   assert.equal(supportsMediaSync({dataset:{blockType:"image"},querySelector:()=>({})}),false);
 });
+
+test("document context menus expose the global Quick Actions state toggle",()=>{
+  const pdfOn=commandsForEditorContext({editorKind:"pdf",selectionKind:"source-text",quickActionsEnabled:true,block:{dataset:{pdfEditMode:"on"}}});
+  const pdfOff=commandsForEditorContext({editorKind:"pdf",selectionKind:"page",quickActionsEnabled:false,block:{dataset:{pdfEditMode:"on"}}});
+  const docx=commandsForEditorContext({editorKind:"docx",selectionKind:"text",quickActionsEnabled:false,block:{dataset:{}}});
+  assert.equal(pdfOn.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ ON ]");
+  assert.equal(pdfOff.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ OFF ]");
+  assert.equal(docx.find(item=>item.id==="quick-actions-global")?.label,"Quick Actions  [ OFF ]");
+});
+
+test("PDF edit mode keeps existing source-text editing explicit",()=>{
+  const on=commandsForEditorContext({editorKind:"pdf",selectionKind:"source-text",block:{dataset:{pdfEditMode:"on"}}});
+  const off=commandsForEditorContext({editorKind:"pdf",selectionKind:"source-text",block:{dataset:{pdfEditMode:"off"}}});
+  assert.equal(on.find(item=>item.id==="toggle-edit")?.label,"EDIT [ ON ]");
+  assert.equal(on.find(item=>item.id==="edit-text")?.label,"Edit / Replace Text");
+  assert.equal(off.find(item=>item.id==="toggle-edit")?.label,"EDIT [ OFF ]");
+  assert.equal(off.some(item=>item.id==="edit-text"),false);
+});
