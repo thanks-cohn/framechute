@@ -165,10 +165,7 @@ function reconstructBlocks(lines, page) {
   });
 }
 
-function assignReadingOrder(blocks) {
-  // Connected horizontal bands form conservative columns. Distinct columns are
-  // consumed left-to-right before their vertical contents, avoiding y/x row
-  // interleaving for common multi-column pages.
+function orderColumns(blocks) {
   const columns = [];
   for (const block of [...blocks].sort((a,b)=>a.bounds.x-b.bounds.x || b.bounds.y-a.bounds.y)) {
     let column = columns.find(candidate => candidate.some(other => horizontalOverlap(block.bounds, other.bounds) >= Math.min(block.bounds.width,other.bounds.width)*.25));
@@ -178,6 +175,31 @@ function assignReadingOrder(blocks) {
   columns.sort((a,b)=>Math.min(...a.map(n=>n.bounds.x))-Math.min(...b.map(n=>n.bounds.x)));
   const result=[];
   for (const column of columns) result.push(...column.sort((a,b)=>b.bounds.y-a.bounds.y || a.bounds.x-b.bounds.x || a.id.localeCompare(b.id)));
+  return result;
+}
+
+function assignReadingOrder(blocks, pageBounds) {
+  // First split the page at broad, spanning blocks. A heading or footer must
+  // not become a bridge that joins otherwise independent columns. Each region
+  // between spans is then clustered into columns independently.
+  const spanWidth=Math.max(1,pageBounds.width*.6);
+  const spanning=[],local=[];
+  for(const block of blocks)(block.bounds.width>=spanWidth?spanning:local).push(block);
+  spanning.sort((a,b)=>b.bounds.y-a.bounds.y||a.bounds.x-b.bounds.x||a.id.localeCompare(b.id));
+  if(!spanning.length)return orderColumns(local);
+
+  const regions=Array.from({length:spanning.length+1},()=>[]);
+  for(const block of local){
+    const center=block.bounds.y+block.bounds.height/2;
+    let region=0;
+    while(region<spanning.length&&center<spanning[region].bounds.y+spanning[region].bounds.height/2)region++;
+    regions[region].push(block);
+  }
+  const result=[];
+  for(let index=0;index<regions.length;index++){
+    result.push(...orderColumns(regions[index]));
+    if(index<spanning.length)result.push(spanning[index]);
+  }
   return result;
 }
 
@@ -194,9 +216,11 @@ function genericNode(data, page, fallbackId) {
 }
 
 function editNode(edit, page, index, sourceByIndex, lineByRun) {
-  const replacement = edit.kind === "replacement" || edit.kind === "wrap" || Number.isFinite(Number(edit.index));
+  const replacement = edit.kind === "replacement" || edit.kind === "wrap" ||
+    edit.sourceRunId != null || edit.sourceLineId != null || (edit.sourceRefs?.length > 0);
   const kind = edit.kind === "image" ? "inserted-image" : replacement ? "replacement-text" : "free-text";
-  const source = replacement ? sourceByIndex.get(Number(edit.index)) : null;
+  const sourceIndex=edit.sourceIndex ?? ((edit.kind === "replacement" || edit.kind === "wrap") ? edit.index : null);
+  const source = replacement && sourceIndex != null ? sourceByIndex.get(Number(sourceIndex)) : null;
   const line = source ? lineByRun.get(source.id) : null;
   return genericNode({
     ...edit, kind, bounds:edit, id:edit.id || `edit:p${page}:${kind}:${index}`,
@@ -227,10 +251,12 @@ export function createPdfPageLayout({ page=1, pageBounds, sourceRuns=[], edits=[
   for (const block of blocks) block.parentId = pageNode.id;
   for (const node of [...editNodes,...regionNodes]) node.parentId ||= pageNode.id;
 
-  const readingBlocks = assignReadingOrder(blocks);
+  const freeTextNodes=editNodes.filter(node=>node.kind==="free-text");
+  const readingBlocks = assignReadingOrder([...blocks,...freeTextNodes],bounds);
   const readingNodes=[];
   for (const block of readingBlocks) {
     block.readingOrder=readingNodes.length;
+    if(block.kind==="free-text"){readingNodes.push(block);continue;}
     const blockLines=block.childIds.map(id=>lines.find(line=>line.id===id));
     for (const line of blockLines) {
       line.readingOrder=readingNodes.length; readingNodes.push(line);
@@ -241,11 +267,8 @@ export function createPdfPageLayout({ page=1, pageBounds, sourceRuns=[], edits=[
   // source line slot even when physically moved or painted later.
   for (const edit of editNodes) {
     if (edit.metadata.sourceLineId) edit.readingOrder=lines.find(line=>line.id===edit.metadata.sourceLineId)?.readingOrder ?? null;
-    else if (edit.kind === "free-text") {
-      let position=readingNodes.findIndex(node=>node.bounds.y < edit.bounds.y);
-      if(position<0)position=readingNodes.length;
-      readingNodes.splice(position,0,edit);
-    }
+    // Free text has already participated in the same page segmentation as
+    // reconstructed source blocks above.
   }
   readingNodes.forEach((node,index)=>node.readingOrder=index);
 
@@ -319,19 +342,39 @@ function sourceLineage(byId,id) {
 
 function deriveFreeSpace(pageBounds,nodes,constraints={},uncertain=false) {
   const minimumWidth=Math.max(0,number(constraints.minWidth)),minimumHeight=Math.max(0,number(constraints.minHeight));
+  const maxCandidates=Math.max(1,Math.min(256,number(constraints.maxCandidates,64)));
   const blockers=nodes.filter(node=>OCCUPYING_KINDS.has(node.kind)||node.metadata?.spatialState==="reserved")
     .map(node=>({node,bounds:node.bounds}));
-  const xs=[pageBounds.x,pageBounds.x+pageBounds.width],ys=[pageBounds.y,pageBounds.y+pageBounds.height];
-  for(const {bounds} of blockers){xs.push(Math.max(pageBounds.x,bounds.x),Math.min(pageBounds.x+pageBounds.width,bounds.x+bounds.width));ys.push(Math.max(pageBounds.y,bounds.y),Math.min(pageBounds.y+pageBounds.height,bounds.y+bounds.height));}
-  const unique=values=>[...new Set(values.map(round))].sort((a,b)=>a-b),x=unique(xs),y=unique(ys),free=[];
-  for(let xi=0;xi<x.length-1;xi++)for(let yi=0;yi<y.length-1;yi++){
-    const rect=normalizeLayoutRect({x:x[xi],y:y[yi],width:x[xi+1]-x[xi],height:y[yi+1]-y[yi]});
-    if(rect.width<minimumWidth||rect.height<minimumHeight||blockers.some(item=>layoutRectsIntersect(item.bounds,rect)))continue;
-    free.push(rect);
+  const bottom=pageBounds.y,top=pageBounds.y+pageBounds.height,left=pageBounds.x,right=pageBounds.x+pageBounds.width;
+  const events=new Map([[bottom,[]],[top,[]]]);
+  for(const blocker of blockers){
+    const start=Math.max(bottom,blocker.bounds.y),end=Math.min(top,blocker.bounds.y+blocker.bounds.height);
+    if(end<=start)continue;
+    if(!events.has(start))events.set(start,[]);if(!events.has(end))events.set(end,[]);
+    events.get(start).push({type:"add",blocker});events.get(end).push({type:"remove",blocker});
+  }
+  const levels=[...events.keys()].sort((a,b)=>a-b),active=new Set(),free=[];
+  const remember=rect=>{
+    if(rect.width<minimumWidth||rect.height<minimumHeight)return;
+    const prior=free.find(item=>item.x===rect.x&&item.width===rect.width&&Math.abs(item.y+item.height-rect.y)<EPSILON);
+    if(prior)prior.height=round(prior.height+rect.height);else free.push({...rect});
+    free.sort((a,b)=>b.width*b.height-a.width*a.height||a.x-b.x||b.y-a.y);
+    if(free.length>maxCandidates)free.length=maxCandidates;
+  };
+  for(let index=0;index<levels.length-1;index++){
+    const y=levels[index],nextY=levels[index+1];
+    for(const event of events.get(y)||[])if(event.type==="remove")active.delete(event.blocker);
+    for(const event of events.get(y)||[])if(event.type==="add")active.add(event.blocker);
+    if(nextY-y<EPSILON)continue;
+    const intervals=[...active].map(({bounds})=>[Math.max(left,bounds.x),Math.min(right,bounds.x+bounds.width)])
+      .filter(([start,end])=>end>start).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+    let cursor=left;
+    for(const [start,end] of intervals){if(start>cursor)remember({x:round(cursor),y:round(y),width:round(start-cursor),height:round(nextY-y)});cursor=Math.max(cursor,end);}
+    if(cursor<right)remember({x:round(cursor),y:round(y),width:round(right-cursor),height:round(nextY-y)});
   }
   free.sort((a,b)=>b.width*b.height-a.width*a.height||a.x-b.x||b.y-a.y);
   const hasUnknown=uncertain||nodes.some(node=>node.kind==="unknown-content");
-  return Object.freeze({ regions:Object.freeze(free), complete:!hasUnknown, hasUnknown });
+  return Object.freeze({ regions:Object.freeze(free.map(normalizeLayoutRect)), complete:!hasUnknown, hasUnknown });
 }
 
 function extractSemanticText({runs,lines,blocks,editNodes,readingNodes},{applyEdits=true}={}) {

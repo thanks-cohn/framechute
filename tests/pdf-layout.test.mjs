@@ -23,12 +23,20 @@ test("semantic IDs and hierarchy are deterministic and retain explicit provenanc
   assert.deepEqual(first.sourceLineage(line.id).map(node=>node.kind),["text-line","source-text-run","source-text-run"]);
 });
 
-test("line reconstruction restores geometric spaces without inventing spaces for joined runs", () => {
+test("line reconstruction keeps touching runs joined", () => {
   const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[
-    run(0,"This PDF is",20,700,50),run(1,"three",78,700,25),run(2,"pages",103,700,25),run(3," long.",128,700,25)
+    run(0,"three",20,700,25),run(1,"pages",45,700,25)
   ]});
-  assert.equal(layout.nodes.find(node=>node.kind==="text-line").text,"This PDF is threepages long.");
-  assert.equal(layout.extractText(),"This PDF is threepages long.");
+  assert.equal(layout.nodes.find(node=>node.kind==="text-line").text,"threepages");
+  assert.equal(layout.extractText(),"threepages");
+});
+
+test("line reconstruction inserts a space between visibly separated runs", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[
+    run(0,"three",20,700,25),run(1,"pages",52,700,25)
+  ]});
+  assert.equal(layout.nodes.find(node=>node.kind==="text-line").text,"three pages");
+  assert.equal(layout.extractText(),"three pages");
 });
 
 test("reading order keeps columns distinct from paint and spatial order", () => {
@@ -39,6 +47,25 @@ test("reading order keeps columns distinct from paint and spatial order", () => 
   assert.equal(layout.extractText(),"Left one\n\nLeft two\n\nRight one\n\nRight two");
   const paint=layout.nodes.filter(node=>node.kind==="source-text-run").sort((a,b)=>a.paintOrder-b.paintOrder);
   assert.deepEqual(paint.map(node=>node.text),["Left one","Right one","Left two","Right two"]);
+});
+
+test("full-width headings and footers do not bridge two reading columns", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[
+    run(0,"Heading",30,750,540),
+    run(1,"Left one",30,700,90),run(2,"Right one",330,700,90),
+    run(3,"Left two",30,660,90),run(4,"Right two",330,660,90),
+    run(5,"Footer",30,50,540)
+  ]});
+  assert.equal(layout.extractText(),"Heading\n\nLeft one\n\nLeft two\n\nRight one\n\nRight two\n\nFooter");
+});
+
+test("negative-index free text remains user-authored and participates in extraction", () => {
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns:[run(0,"Before",20,700,60),run(1,"After",20,600,60)],edits:[{
+    kind:"text",id:"text:stable",page:1,index:-123,text:"Inserted",x:20,y:650,width:80,height:16
+  }]});
+  const free=layout.get("text:stable");
+  assert.equal(free.kind,"free-text");assert.equal(free.provenance,"user-authored");
+  assert.equal(layout.extractText(),"Before\n\nInserted\n\nAfter");
 });
 
 test("a later-painted replacement inherits its source line semantic position", () => {
@@ -88,6 +115,14 @@ test("free space is analytical and never claims completeness around unknown cont
   assert.equal(free.complete,false);assert.equal(free.hasUnknown,true);
   assert.ok(free.regions.length>0);
   assert.ok(free.regions.every(rect=>!layoutRectsIntersect(rect,layout.get("opaque").bounds)));
+});
+
+test("free-space sweep bounds candidates on text-heavy pages", () => {
+  const sourceRuns=Array.from({length:500},(_,index)=>run(index,`line ${index}`,20,10+index*1.5,220,1));
+  const layout=createPdfPageLayout({page:1,pageBounds:bounds,sourceRuns});
+  const free=layout.freeSpace({minWidth:20,minHeight:1,maxCandidates:12});
+  assert.ok(free.regions.length<=12);
+  assert.ok(free.regions.every(rect=>sourceRuns.every(item=>!layoutRectsIntersect(rect,item.bounds))));
 });
 
 test("layout cache is lazy, bounded, and invalidates only the affected page", () => {
