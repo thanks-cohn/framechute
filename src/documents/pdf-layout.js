@@ -281,18 +281,26 @@ function canonicalFlowTree(page,bounds,blocks,lines,runs,editNodes) {
     if(!column){column={id:`flow-region:p${page}:${columns.length}`,page,bounds:block.bounds,blocks:[]};columns.push(column);}
     column.blocks.push(block);column.bounds=unionBounds(column.blocks);
   }
-  const replacementByLine=new Map();
-  for(const edit of editNodes)if(edit.metadata.sourceLineId)replacementByLine.set(edit.metadata.sourceLineId,edit);
+  const replacementByRun=new Map(),lineOnlyReplacement=new Map();
+  for(const edit of editNodes){
+    if(edit.metadata.sourceRunId)replacementByRun.set(edit.metadata.sourceRunId,edit);
+    else if(edit.metadata.sourceLineId)lineOnlyReplacement.set(edit.metadata.sourceLineId,edit);
+  }
   const regions=columns.map(column=>Object.freeze({...column,bounds:normalizeLayoutRect(column.bounds),blocks:Object.freeze(
     column.blocks.sort((a,b)=>b.bounds.y-a.bounds.y||a.bounds.x-b.bounds.x).map(block=>Object.freeze({
       id:block.id,role:block.bounds.width>=bounds.width*.6?"spanning":"body",bounds:block.bounds,provenance:block.provenance,
-      lines:Object.freeze(block.childIds.map(id=>lineById.get(id)).map(line=>Object.freeze({
-        id:line.id,bounds:line.bounds,provenance:line.provenance,runs:Object.freeze(line.childIds.map(id=>runById.get(id)).map(run=>{
-          const replacement=replacementByLine.get(line.id);
-          return Object.freeze({id:replacement?.id||run.id,text:replacement?.text??run.text,style:replacement?.style||run.style,
-            provenance:replacement?.provenance||run.provenance,sourceRefs:Object.freeze(replacement?.sourceRefs||run.sourceRefs)});
-        }))
-      })))
+      lines:Object.freeze(block.childIds.map(id=>lineById.get(id)).map(line=>{
+        const lineReplacement=lineOnlyReplacement.get(line.id);
+        const flowRuns=lineReplacement
+          ? [Object.freeze({id:lineReplacement.id,text:lineReplacement.text,style:lineReplacement.style,
+              provenance:lineReplacement.provenance,sourceRefs:Object.freeze(lineReplacement.sourceRefs)})]
+          : line.childIds.map(id=>runById.get(id)).map(run=>{
+              const replacement=replacementByRun.get(run.id);
+              return Object.freeze({id:replacement?.id||run.id,text:replacement?.text??run.text,style:replacement?.style||run.style,
+                provenance:replacement?.provenance||run.provenance,sourceRefs:Object.freeze(replacement?.sourceRefs||run.sourceRefs)});
+            });
+        return Object.freeze({id:line.id,bounds:line.bounds,provenance:line.provenance,runs:Object.freeze(flowRuns)});
+      }))
     }))
   )}));
   const free=editNodes.filter(node=>node.kind==="free-text").map((node,index)=>Object.freeze({
