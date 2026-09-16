@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -83,4 +83,16 @@ test("PDF image text wrap moves fully covered source text clear of the image",()
   const wrapped=wrapPdfTextBoxAroundImage({x:110,y:120,width:40,height:12,pageWidth:300},image);
   const overlaps=wrapped.x<image.x+image.width&&wrapped.x+wrapped.width>image.x&&wrapped.y<image.y+image.height&&wrapped.y+wrapped.height>image.y;
   assert.equal(overlaps,false);
+});
+
+
+test("PDF replacement masks clamp to page/CropBox bounds",()=>{
+  assert.deepEqual(
+    clampPdfRectToBox({x:-40,y:-10,width:500,height:400},{x:0,y:0,width:300,height:200}),
+    {x:0,y:0,width:300,height:200}
+  );
+  assert.deepEqual(
+    clampPdfRectToBox({x:30,y:40,width:50,height:60},{x:20,y:30,width:100,height:100}),
+    {x:30,y:40,width:50,height:60}
+  );
 });
