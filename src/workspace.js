@@ -949,7 +949,7 @@ registerBlockType("pdf", {
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
       const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
       const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
-      if(replacement===(existing?.replacement??original.str))return;
+      if(replacement===(existing?.replacement??original.str)){delete text.dataset.pendingFontSize;return;}
       pushPdfHistory(runtime);
       if (replacement === original.str) { if (existing) runtime.edits.splice(runtime.edits.indexOf(existing), 1); }
       else if(existing)existing.replacement=replacement;
