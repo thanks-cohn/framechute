@@ -8,6 +8,9 @@ The core user experience is:
 
 Use the semantic line/block/reading-order/collision model, not DOM heuristics. Implement bounded local reflow for ordinary body text: wrap edited text inside its semantic block/column, grow/shrink as needed, and minimally move subsequent lines in the SAME semantic block so they never overlap. Do not move unrelated columns, headings, footers, images, annotations, or unknown content. If a safe layout cannot be proven, preserve the user's text and show a small non-modal fit/space warning instead of overlapping content.
 
+
+**Use one obstacle/wrap engine for original and edited text.** If an inserted image is set to wrap/avoid, source text, replacement text, reflowed source lines, and newly-created lines in that semantic paragraph must all use the same image geometry and the same available horizontal lanes. Replacement text must never draw across an image while the original text wraps, and it must not "solve" the collision by jumping awkwardly upward or into an unrelated free rectangle. Reflow the affected semantic block in reading order: flow beside the image where a valid lane exists, then continue normally below it. If no safe lane exists, stop before overlap and show the quiet space/overflow state.
+
 **Never silently change the user's font size to make text fit.** Font size remains exactly what the user selected until they change it.
 
 Keep the existing conservative source-mask/cover-and-redraw PDF strategy and WYSIWYG save semantics. Reflowed source lines must be masked/redrawn safely rather than rewriting arbitrary PDF content streams.
