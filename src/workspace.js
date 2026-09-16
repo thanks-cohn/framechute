@@ -833,13 +833,21 @@ registerBlockType("pdf", {
       if (!span) return;
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
-      text.contentEditable = "true"; text.dataset.before = text.textContent; text.focus();
+      text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
+      text.focus();
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     });
     textLayer.addEventListener("keydown", (event) => {
       if (!pdfEditEnabled(block)) return;
       const text=event.target.closest('.pdf-edit-text[contenteditable="true"]');
+      if(text&&(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="a"){
+        event.preventDefault();
+        event.stopPropagation();
+        const range=document.createRange();range.selectNodeContents(text);
+        const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+        return;
+      }
       if(text&&event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();text.blur();}
       if(text&&event.key==="Tab"){event.preventDefault();document.execCommand("insertText",false,"\t");}
       if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
@@ -851,7 +859,9 @@ registerBlockType("pdf", {
     textLayer.addEventListener("focusout", (event) => {
       const text = event.target.closest('.pdf-edit-text[contenteditable="true"]');
       if (!text) return;
-      text.removeAttribute("contenteditable");if(text.dataset.cancel){delete text.dataset.cancel;return;}
+      text.removeAttribute("contenteditable");
+      text.closest(".pdf-text-item")?.classList.remove("is-editing");
+      if(text.dataset.cancel){delete text.dataset.cancel;return;}
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
       const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
       const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
