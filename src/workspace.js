@@ -577,8 +577,9 @@ function selectPdfEdit(block, span) {
   const controls=block.querySelector(".pdf-edit-controls");
   if (!pdfEditEnabled(block)) span = null;
   if(!span?.classList.contains("pdf-text-edit")){controls.hidden=true;delete block.dataset.selectedPdfIndex;return;}
-  span.classList.add("is-selected");block.dataset.selectedPdfIndex=span.dataset.index;controls.hidden=false;
+  span.classList.add("is-selected");block.dataset.selectedPdfIndex=span.dataset.index;
   const runtime=runtimeSources.get(block),edit=runtime?.edits.find(item=>item.page===Number(block.dataset.currentPage)&&item.index===Number(span.dataset.index));
+  controls.hidden = edit?.kind === "image";
   if(edit?.kind !== "image")controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
   if(edit?.kind !== "image")controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
 }
@@ -831,6 +832,7 @@ registerBlockType("pdf", {
       const span = event.target.closest(".pdf-text-item");
       if (!span) return;
       const text = span.querySelector(".pdf-edit-text");
+      if (!text) return;
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.focus();
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
