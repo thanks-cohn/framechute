@@ -123,22 +123,30 @@ test("explicit PDF replacements participate in the same image-wrap path as sourc
 });
 
 
-test("live PDF masks erase the full semantic line band for changed source ranges",()=>{
+test("live PDF masks use non-colliding semantic ownership rectangles",()=>{
+  const above={id:"line:above",kind:"text-line",bounds:{x:20,y:118,width:180,height:10},childIds:["run:above"]};
   const line={id:"line:1",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1"]};
+  const below={id:"line:below",kind:"text-line",bounds:{x:20,y:84,width:180,height:10},childIds:["run:below"]};
+  const runAbove={id:"run:above",kind:"source-text-run",bounds:{x:20,y:119,width:180,height:8},metadata:{sourceIndex:8}};
   const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:70,height:9},metadata:{sourceIndex:0}};
   const run1={id:"run:1",kind:"source-text-run",bounds:{x:95,y:101,width:105,height:9},metadata:{sourceIndex:1}};
-  const parents=new Map([["run:0",line],["run:1",line]]);
-  const layout={nodes:[run0,run1,line],parent:id=>parents.get(id)||null};
-  const partial=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9}],1,0);
+  const runBelow={id:"run:below",kind:"source-text-run",bounds:{x:20,y:85,width:180,height:8},metadata:{sourceIndex:9}};
+  const parents=new Map([["run:above",above],["run:0",line],["run:1",line],["run:below",below]]);
+  const layout={bounds:{x:0,y:0,width:300,height:300},nodes:[runAbove,run0,run1,runBelow,above,line,below],parent:id=>parents.get(id)||null};
+
+  const partial=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9}],1,3);
   assert.equal(partial.length,1);
-  assert.ok(partial[0].y<100&&partial[0].y+partial[0].height>112,"vertical eraser covers the entire semantic line band plus safety");
-  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<200,"partial edit does not erase the untouched end of the line");
+  const partialTop=partial[0].y+partial[0].height;
+  assert.ok(partial[0].y>=97&&partialTop<=115,"vertical ownership cell stops between adjacent lines instead of clipping them");
+  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<95,"partial edit stops before the untouched sibling run");
+
   const full=semanticLiveSourceMasks(layout,[
     {kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9},
     {kind:"wrap",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9}
-  ],1,0);
+  ],1,3);
   assert.equal(full.length,1);
-  assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"when every source run changed, the live eraser covers the entire semantic line");
+  assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"a fully replaced line owns its full horizontal line cell");
+  assert.ok(full[0].y>=97&&full[0].y+full[0].height<=115,"even a full-line erase cannot enter the rectangles owned by adjacent lines");
 });
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
