@@ -123,30 +123,22 @@ test("explicit PDF replacements participate in the same image-wrap path as sourc
 });
 
 
-test("live PDF masks use non-colliding semantic ownership rectangles",()=>{
-  const above={id:"line:above",kind:"text-line",bounds:{x:20,y:118,width:180,height:10},childIds:["run:above"]};
+test("live PDF masks erase the full semantic line band for changed source ranges",()=>{
   const line={id:"line:1",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1"]};
-  const below={id:"line:below",kind:"text-line",bounds:{x:20,y:84,width:180,height:10},childIds:["run:below"]};
-  const runAbove={id:"run:above",kind:"source-text-run",bounds:{x:20,y:119,width:180,height:8},metadata:{sourceIndex:8}};
   const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:70,height:9},metadata:{sourceIndex:0}};
   const run1={id:"run:1",kind:"source-text-run",bounds:{x:95,y:101,width:105,height:9},metadata:{sourceIndex:1}};
-  const runBelow={id:"run:below",kind:"source-text-run",bounds:{x:20,y:85,width:180,height:8},metadata:{sourceIndex:9}};
-  const parents=new Map([["run:above",above],["run:0",line],["run:1",line],["run:below",below]]);
-  const layout={bounds:{x:0,y:0,width:300,height:300},nodes:[runAbove,run0,run1,runBelow,above,line,below],parent:id=>parents.get(id)||null};
-
-  const partial=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9}],1,3);
+  const parents=new Map([["run:0",line],["run:1",line]]);
+  const layout={nodes:[run0,run1,line],parent:id=>parents.get(id)||null};
+  const partial=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9}],1,0);
   assert.equal(partial.length,1);
-  const partialTop=partial[0].y+partial[0].height;
-  assert.ok(partial[0].y>=97&&partialTop<=115,"vertical ownership cell stops between adjacent lines instead of clipping them");
-  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<=94,"partial edit consumes the inter-run gap but keeps a guard before the untouched sibling");
-
+  assert.ok(partial[0].y<100&&partial[0].y+partial[0].height>112,"vertical eraser covers the entire semantic line band plus safety");
+  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<200,"partial edit does not erase the untouched end of the line");
   const full=semanticLiveSourceMasks(layout,[
     {kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9},
     {kind:"wrap",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9}
-  ],1,3);
+  ],1,0);
   assert.equal(full.length,1);
-  assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"a fully replaced line owns its full horizontal line cell");
-  assert.ok(full[0].y>=97&&full[0].y+full[0].height<=115,"even a full-line erase cannot enter the rectangles owned by adjacent lines");
+  assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"when every source run changed, the live eraser covers the entire semantic line");
 });
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
@@ -161,28 +153,27 @@ test("PDF replacement masks clamp to page/CropBox bounds",()=>{
 });
 
 
-test("PDF replacement erases only its owned source by default",()=>{
+test("PDF replacement erases both original source and current field without bridging between them",()=>{
   const masks=replacementMasksForEdit({
     kind:"replacement",index:7,
-    sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
-    x:120,y:90,width:100,height:24
-  });
-  assert.equal(masks.length,1);
-  assert.equal(masks[0].maskRole,"source");
-  assert.ok(masks[0].x<10 && masks[0].x+masks[0].width>50);
-});
-
-test("destination-field erasure requires explicit opt in",()=>{
-  const masks=replacementMasksForEdit({
-    kind:"replacement",index:7,eraseUnderField:true,
     sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
     x:120,y:90,width:100,height:24
   });
   assert.equal(masks.length,2);
   const source=masks.find(mask=>mask.maskRole==="source");
   const field=masks.find(mask=>mask.maskRole==="field");
-  assert.ok(source.x+source.width<field.x,"opt-in field erasure still does not bridge source and destination");
-  assert.ok(field.x<120&&field.x+field.width>220);
+  assert.ok(source.x<10 && source.x+source.width>50);
+  assert.ok(field.x<120 && field.x+field.width>220);
+  assert.ok(source.x+source.width<field.x, "separate masks must not erase the strip between moved source and field");
+});
+
+test("resizing a PDF replacement field enlarges its erasure region",()=>{
+  const small=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:30,height:10})
+    .find(mask=>mask.maskRole==="field");
+  const large=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:160,height:36})
+    .find(mask=>mask.maskRole==="field");
+  assert.ok(large.width>small.width);
+  assert.ok(large.height>small.height);
 });
 
 
