@@ -1,0 +1,19 @@
+Read and execute `agents/codex/prompts/NEXT_RUN_PDF_PREMIUM_SEMANTIC_EDITOR_AND_READER_V14.md` on the latest `main`. Treat it as the single authoritative prompt for this run.
+
+PR #61 already installed the semantic PDF page model. This run must turn that foundation into the visible product.
+
+The core user experience is:
+
+**Open PDF → click text → type → it stays aligned → nearby text does not get covered → Save.**
+
+Use the semantic line/block/reading-order/collision model, not DOM heuristics. Implement bounded local reflow for ordinary body text: wrap edited text inside its semantic block/column, grow/shrink as needed, and minimally move subsequent lines in the SAME semantic block so they never overlap. Do not move unrelated columns, headings, footers, images, annotations, or unknown content. If a safe layout cannot be proven, preserve the user's text and show a small non-modal fit/space warning instead of overlapping content.
+
+**Never silently change the user's font size to make text fit.** Font size remains exactly what the user selected until they change it.
+
+Keep the existing conservative source-mask/cover-and-redraw PDF strategy and WYSIWYG save semantics. Reflowed source lines must be masked/redrawn safely rather than rewriting arbitrary PDF content streams.
+
+Also make the PDF reader/editor look finished and premium: page-first design, compact primary navigation, contextual text/image controls, secondary commands in overflow/popdowns, and no broken multi-row button pile when the PDF block is narrow. Editing should require almost no ceremony; the page should look like a clean reader whenever nothing is selected.
+
+Preserve existing image editing, page operations, search, links/annotations, history, Save/Save As, and PDF-space geometry. Keep the semantic model lazy and low-memory.
+
+Add regression tests for long edits, same-block displacement, two-column isolation, headings/footers, unknown-content blocking, sticky font size, undo/redo, save/reopen, and narrow-toolbar behavior. Run the full PDF/repo test/check/package gates, manually exercise the visible editing loop where possible, and open one clean PR against latest `main`.
