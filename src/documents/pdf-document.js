@@ -331,20 +331,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
-  const wrappedSourceEditIds=new Set(wrapEdits.map(edit=>edit.sourceEditId).filter(Boolean));
-  const maskEdits=edits.filter(edit=>!wrappedSourceEditIds.has(normalizePdfEdit(edit).id));
-  const sourceMaskEdits=[
-    ...maskEdits.filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement"),
-    ...wrapEdits
-  ];
-  const fieldMasks=maskEdits
-    .filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement")
-    .flatMap(replacementMasksForEdit)
-    .filter(mask=>mask.maskRole==="field");
-  const visibleMasks = [
-    ...semanticLiveSourceMasks(pageLayout,sourceMaskEdits,pageNumber),
-    ...fieldMasks
-  ];
+  const visibleMasks=pdfPageMaskPlan(pageLayout,edits,wrapEdits,pageNumber);
   for (const mask of visibleMasks) {
     const raw = pdfRectToViewport(viewport, mask);
     const left = Math.max(0, Math.min(viewport.width, raw[0]));
@@ -483,13 +470,28 @@ export function replacementMasksForEdit(edit) {
   ];
 }
 
-/** Saved PDFs begin from pristine source bytes. Erase only the source glyphs
- * owned by the edit unless a future, explicitly collision-checked operation
- * requests destination-field erasure. */
-export function serializationMasksForEdit(edit) {
-  const source={...padPdfRect(sourceMaskForEdit(edit)),maskRole:"source",maskIndex:edit.index};
-  if(edit?.eraseUnderField!==true||(edit.kind||"replacement")==="wrap")return [source];
-  return replacementMasksForEdit(edit);
+/**
+ * One mask plan for both the live editor and native serialization.
+ *
+ * This is the WYSIWYG boundary: if the live editor hides old source glyphs or a
+ * stale replacement field, Save must apply the exact same PDF-space rectangles
+ * before drawing current replacement text/images.
+ */
+export function pdfPageMaskPlan(layout, edits, wrapEdits, pageNumber) {
+  const wrappedSourceEditIds=new Set((wrapEdits||[]).map(edit=>edit.sourceEditId).filter(Boolean));
+  const maskEdits=(edits||[]).filter(edit=>!wrappedSourceEditIds.has(normalizePdfEdit(edit).id));
+  const sourceMaskEdits=[
+    ...maskEdits.filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement"),
+    ...(wrapEdits||[])
+  ];
+  const fieldMasks=maskEdits
+    .filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement")
+    .flatMap(replacementMasksForEdit)
+    .filter(mask=>mask.maskRole==="field");
+  return Object.freeze([
+    ...semanticLiveSourceMasks(layout,sourceMaskEdits,pageNumber),
+    ...fieldMasks
+  ]);
 }
 
 export function clampPdfRectToBox(rect, box) {
@@ -602,18 +604,35 @@ export async function serializeEditedPdf(model, edits) {
   const fonts = new Map();
   const wrapByImage = new Map();
   const wrappedSourceEditIds = new Set();
+  const maskPlanByPage = new Map();
 
+  // Build the same semantic mask plan used by renderPdfPage. Draw every erase
+  // rectangle before any replacement text/images so Save and live preview have
+  // the same old-content visibility.
   for (let pageNumber = 1; pageNumber <= model.pageCount; pageNumber++) {
-    const images = edits.filter(edit => edit.page === pageNumber && edit.kind === "image" && edit.wrapText === true);
-    if (!images.length) continue;
     const page = await model.pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
-    for (const wrap of imageWrapEditsForPage(viewport, content, edits, pageNumber)) {
+    const pageLayout=await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
+    const wrapEdits=imageWrapEditsForPage(viewport,content,edits,pageNumber);
+    for (const wrap of wrapEdits) {
       const list = wrapByImage.get(String(wrap.wrapImageId)) || [];
       list.push(wrap);
       wrapByImage.set(String(wrap.wrapImageId), list);
       if(wrap.sourceEditId)wrappedSourceEditIds.add(wrap.sourceEditId);
+    }
+    maskPlanByPage.set(pageNumber,pdfPageMaskPlan(pageLayout,edits,wrapEdits,pageNumber));
+  }
+
+  for (const [pageNumber,masks] of maskPlanByPage) {
+    const page=output.getPage(pageNumber-1);
+    const fallback=page.getSize();
+    const pageBox=typeof page.getCropBox==="function"
+      ? page.getCropBox()
+      : {x:0,y:0,width:fallback.width,height:fallback.height};
+    for(const rawMask of masks){
+      const mask=clampPdfRectToBox(rawMask,pageBox);
+      if(mask.width>0&&mask.height>0)page.drawRectangle({...mask,color:rgb(1,1,1)});
     }
   }
 
@@ -625,16 +644,6 @@ export async function serializeEditedPdf(model, edits) {
     const edit = layoutPdfText(normalized, font);
     const page = output.getPage(edit.page - 1);
     const size = edit.fontSize;
-    if (edit.kind === "replacement" || edit.kind === "wrap") {
-      const fallback = page.getSize();
-      const pageBox = typeof page.getCropBox === "function"
-        ? page.getCropBox()
-        : { x:0, y:0, width:fallback.width, height:fallback.height };
-      for (const rawMask of serializationMasksForEdit(edit)) {
-        const mask = clampPdfRectToBox(rawMask, pageBox);
-        if (mask.width > 0 && mask.height > 0) page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
-      }
-    }
     edit.lines.forEach((line, index) => page.drawText(line || " ", {
       x: edit.x,
       y: edit.firstBaseline - index * edit.lineHeight,
