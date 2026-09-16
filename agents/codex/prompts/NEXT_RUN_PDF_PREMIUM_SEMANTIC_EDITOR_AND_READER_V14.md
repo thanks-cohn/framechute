@@ -165,6 +165,54 @@ When edited text changes size:
 6. keep unrelated blocks/columns stationary,
 7. never cover unknown or unrelated content.
 
+### Unified text flow around images and other wrap obstacles
+
+This is a P0 requirement.
+
+The current editor can make original/source PDF text react to an inserted image while replacement/newly edited text follows a different path. That produces visibly contradictory behavior: source text may wrap, while replacement text can draw across the image, ignore the wrap, or jump to an awkward unrelated position.
+
+**Old/source text and edited/replacement text in the same semantic flow must obey the same obstacle/wrapping policy.**
+
+Do not maintain one wrapping algorithm for PDF.js source runs and a second ad-hoc algorithm for replacement overlays.
+
+Create or centralize one deterministic semantic text-flow routine that operates on logical text lines/runs and page obstacles. It must be usable for:
+
+- untouched source text participating in FrameChute image wrap,
+- source-text replacements,
+- automatically displaced/redrawn source lines,
+- edited text that grows into additional lines,
+- subsequent lines in the same semantic block.
+
+For an inserted image or other supported obstacle:
+
+- if the obstacle's policy is wrap/avoid, BOTH original and replacement text must avoid it,
+- if the obstacle's policy is intentional overlay/no-wrap, BOTH paths must honor that policy,
+- moving/resizing the image must recompute the affected semantic block consistently,
+- changing replacement text or font size must recompute against the same obstacle geometry,
+- zoom/fit changes must not affect the PDF-space result.
+
+Wrapping should look like ordinary text flow, not object teleportation.
+
+Within a semantic block/column, derive the available horizontal intervals for each line band after subtracting wrap obstacles. Place/wrap text into those available lanes in reading order. Prefer continuing naturally beside the image and then across the full block width below it.
+
+Do **not** solve a collision by arbitrarily moving a replacement line upward, to a distant free rectangle, or to a geometrically nearest but semantically unrelated slot. Vertical displacement is allowed only as part of deterministic forward reading-order flow when there is genuinely no usable horizontal lane at that line.
+
+Example:
+
+```
+paragraph text paragraph | IMAGE |
+paragraph text paragraph | IMAGE |
+paragraph continues normally below
+```
+
+The edited version of that paragraph must use the same lanes as the unedited version.
+
+If an edit spans through the image's vertical range, rewrap the whole affected semantic paragraph/block as one flow problem rather than independently nudging isolated text boxes.
+
+Preserve column/block boundaries and stable semantic identity. Do not let a wrap in the left column borrow space from the right column.
+
+If safe flow cannot be derived because an obstacle is unknown/protected or the region is genuinely exhausted, stop before overlap and expose the existing quiet `Needs more space` state. Never fall back to drawing through the obstacle.
+
 ### Same-block content
 
 If a longer replacement needs more vertical space and the next line belongs to the same semantic block:
