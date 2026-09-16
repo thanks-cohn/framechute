@@ -483,6 +483,15 @@ export function replacementMasksForEdit(edit) {
   ];
 }
 
+/** Saved PDFs begin from pristine source bytes. Erase only the source glyphs
+ * owned by the edit unless a future, explicitly collision-checked operation
+ * requests destination-field erasure. */
+export function serializationMasksForEdit(edit) {
+  const source={...padPdfRect(sourceMaskForEdit(edit)),maskRole:"source",maskIndex:edit.index};
+  if(edit?.eraseUnderField!==true||(edit.kind||"replacement")==="wrap")return [source];
+  return replacementMasksForEdit(edit);
+}
+
 export function clampPdfRectToBox(rect, box) {
   const boxLeft = Number(box?.x) || 0;
   const boxBottom = Number(box?.y) || 0;
@@ -529,19 +538,27 @@ export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) 
     }
     let group=groups.get(line.id);
     if(!group){
-      group={line,indexes:new Set(),sources:[]};
+      group={line,indexes:new Set(),sourceIds:new Set(),sources:[]};
       groups.set(line.id,group);
     }
     group.indexes.add(index);
+    group.sourceIds.add(source.id);
     group.sources.push(source.bounds);
   }
   const masks=[...fallback];
   for(const group of groups.values()){
-    const allChanged=group.indexes.size>=group.line.childIds.length;
-    const left=allChanged
+    const childIds=group.line.childIds||[];
+    const allChanged=group.indexes.size>=childIds.length;
+    const firstChanged=childIds.length>0&&group.sourceIds.has(childIds[0]);
+    const lastChanged=childIds.length>0&&group.sourceIds.has(childIds.at(-1));
+    // Preserve the clean pre-ownership-cell mask behavior, but when the edited
+    // cluster reaches a semantic line edge, claim that edge too. This clears
+    // trailing/leading glyph fragments that otherwise have no later edit to
+    // cover them.
+    const left=(allChanged||firstChanged)
       ? group.line.bounds.x
       : Math.min(...group.sources.map(rect=>rect.x));
-    const right=allChanged
+    const right=(allChanged||lastChanged)
       ? group.line.bounds.x+group.line.bounds.width
       : Math.max(...group.sources.map(rect=>rect.x+rect.width));
     const base={
@@ -613,7 +630,7 @@ export async function serializeEditedPdf(model, edits) {
       const pageBox = typeof page.getCropBox === "function"
         ? page.getCropBox()
         : { x:0, y:0, width:fallback.width, height:fallback.height };
-      for (const rawMask of replacementMasksForEdit(edit)) {
+      for (const rawMask of serializationMasksForEdit(edit)) {
         const mask = clampPdfRectToBox(rawMask, pageBox);
         if (mask.width > 0 && mask.height > 0) page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
       }
