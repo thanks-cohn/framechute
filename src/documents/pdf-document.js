@@ -320,7 +320,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   options.onRenderTask?.(renderTask);
   await renderTask.promise;
   const content = await page.getTextContent();
-  await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
+  const pageLayout=await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
   const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
@@ -333,9 +333,17 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   }
   const wrappedSourceEditIds=new Set(wrapEdits.map(edit=>edit.sourceEditId).filter(Boolean));
   const maskEdits=edits.filter(edit=>!wrappedSourceEditIds.has(normalizePdfEdit(edit).id));
+  const sourceMaskEdits=[
+    ...maskEdits.filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement"),
+    ...wrapEdits
+  ];
+  const fieldMasks=maskEdits
+    .filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement")
+    .flatMap(replacementMasksForEdit)
+    .filter(mask=>mask.maskRole==="field");
   const visibleMasks = [
-    ...sourceMasksForPage(maskEdits, pageNumber),
-    ...wrapEdits.flatMap(replacementMasksForEdit)
+    ...semanticLiveSourceMasks(pageLayout,sourceMaskEdits,pageNumber),
+    ...fieldMasks
   ];
   for (const mask of visibleMasks) {
     const raw = pdfRectToViewport(viewport, mask);
@@ -491,6 +499,62 @@ export function sourceMasksForPage(edits, pageNumber) {
   return edits
     .filter(edit => edit.page === pageNumber && (edit.kind || "replacement") === "replacement")
     .flatMap(replacementMasksForEdit);
+}
+
+/**
+ * Live preview eraser for changed source text.
+ *
+ * The PDF canvas already contains the original glyphs, so masking only the
+ * exact PDF.js item box can leave antialiased fragments at the top/bottom or
+ * between adjacent source runs. For the editor only, promote every changed
+ * source range to the full semantic line band while keeping its horizontal
+ * range bounded to the changed run(s). If every run on that line changed, erase
+ * the entire semantic line. Native Save keeps its existing serializer masks.
+ */
+export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) {
+  const groups=new Map(),fallback=[];
+  const sourceRuns=(layout?.nodes||[]).filter(node=>node.kind==="source-text-run");
+  const sourceByIndex=new Map(sourceRuns.map(node=>[Number(node.metadata?.sourceIndex),node]));
+  for(const edit of edits||[]){
+    const kind=edit?.kind||"replacement";
+    if(Number(edit?.page)!==Number(pageNumber)||!["replacement","wrap"].includes(kind))continue;
+    const index=Number(edit.index);
+    if(!Number.isFinite(index)||index<0)continue;
+    const source=sourceByIndex.get(index);
+    const line=source&&layout?.parent?.(source.id);
+    if(!source||!line){
+      const mask=padPdfRect(sourceMaskForEdit(edit),Math.max(2.5,Number(padding)||0));
+      fallback.push({...mask,maskRole:"source",maskIndex:edit.index});
+      continue;
+    }
+    let group=groups.get(line.id);
+    if(!group){
+      group={line,indexes:new Set(),sources:[]};
+      groups.set(line.id,group);
+    }
+    group.indexes.add(index);
+    group.sources.push(source.bounds);
+  }
+  const masks=[...fallback];
+  for(const group of groups.values()){
+    const allChanged=group.indexes.size>=group.line.childIds.length;
+    const left=allChanged
+      ? group.line.bounds.x
+      : Math.min(...group.sources.map(rect=>rect.x));
+    const right=allChanged
+      ? group.line.bounds.x+group.line.bounds.width
+      : Math.max(...group.sources.map(rect=>rect.x+rect.width));
+    const base={
+      x:left,
+      y:group.line.bounds.y,
+      width:Math.max(0,right-left),
+      height:group.line.bounds.height
+    };
+    const pad=Math.max(Number(padding)||0,group.line.bounds.height*.12,2.5);
+    const mask=padPdfRect(base,pad);
+    masks.push({...mask,maskRole:"source-line",maskIndex:[...group.indexes].join(",")});
+  }
+  return masks;
 }
 
 export function inferPdfSourceFontSize(item, fallback = 12) {
