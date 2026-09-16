@@ -1,111 +1,257 @@
-# Codex Request: PDF Bounded Layout Foundation
+# Codex Request: World-Class PDF Semantic Layout Foundation
 
 ## Mission
 
-Continue FrameChute's PDF elevation by introducing a **page-wide bounded layout model**.
+Continue FrameChute's PDF elevation by building a **canonical semantic page model** for every PDF page.
 
-The purpose is to give the PDF subsystem a reliable understanding of what occupies space on each page so future editing can avoid collisions, accidental erasure, text overwriting, and blind rectangle painting.
+This is the architectural foundation for a world-class PDF reader/editor and for future AI/agent access.
 
-This is infrastructure for a world-class PDF reader/editor. It is not a request to add dozens of visible features at once.
+The goal is not merely to collect rectangles. The goal is to give FrameChute a compact, deterministic, inspectable representation of:
+
+- what exists on a page;
+- where it exists;
+- what it means;
+- what it came from;
+- what owns it;
+- what may safely overlap it;
+- what would be damaged by an edit;
+- what order a human would read it in;
+- what space is occupied, reserved, free, or uncertain;
+- how edits relate back to source PDF content.
+
+This foundation must be strong enough that:
+
+- the human UI can use it;
+- deterministic editor code can use it;
+- future agents can inspect and modify it without guessing from pixels or transient DOM state.
+
+Do **not** turn this into a giant visible feature pass. Build the correct substrate first.
 
 Read this together with:
 
 - `docs/CODEX-PDF-ELEVATION.md`
 - `docs/PDF-ARCHITECTURE.md`
 
-Inspect the current repository before changing anything. Preserve the PDF functionality that already works.
+Inspect the current repository before changing anything. Preserve everything that already works.
 
 ---
 
-# Core idea
+# Core principle
 
-Every meaningful visible or interactive PDF element should be representable as one or more **bounded regions in PDF page space**.
+The PDF page must be modeled as a semantic spatial scene.
 
-Examples:
+Every meaningful visible, interactive, structural, or uncertain element should be representable as a node or bounded region in standard PDF page space.
 
-- source text runs
-- reconstructed text lines
-- reconstructed paragraphs/blocks where confidence permits
-- FrameChute replacement text fields
-- free text
-- inserted images
-- source images
-- vector graphics / drawing regions where detectable
-- annotations
-- links
-- form fields
-- page margins / page boxes
-- crop bounds
-- headers / footers when inferable
-- tables / cells when inferable
-- opaque or unsupported content regions
+Examples include:
 
-The system does not need perfect semantic reconstruction to be useful.
+- source text runs;
+- reconstructed text lines;
+- reconstructed paragraphs/blocks;
+- FrameChute replacement text;
+- free text;
+- inserted images;
+- source images;
+- vector/drawing regions where detectable;
+- annotations;
+- links;
+- form fields;
+- table/cell regions when inferable;
+- headers/footers when inferable;
+- page boxes;
+- crop bounds;
+- margins;
+- gutters;
+- exclusion zones;
+- unknown/opaque content;
+- meaningful free-space regions derived from the above.
 
-It does need a consistent answer to:
+The system does not need perfect semantics before it becomes useful.
 
-> What occupies this rectangle, what owns it, what may overlap it, and what would be damaged if an edit covered it?
+It does need a logically sound answer to questions such as:
+
+> What occupies this rectangle?
+
+> What semantic object owns it?
+
+> What source PDF objects produced it?
+
+> What would I collide with if I enlarge this field?
+
+> Is this overlap expected or destructive?
+
+> What is immediately above/below/left/right?
+
+> Where is the nearest genuinely safe free area?
+
+> What content does this edit replace?
+
+> Where does this text belong in reading order?
+
+> How confident are we in that interpretation?
 
 ---
 
-# Architectural principle
+# Canonical coordinate system
 
-Do not make the PDF editor reason directly from DOM/CSS geometry.
+Do not make editor logic depend on CSS or DOM coordinates.
 
-Use standard PDF page coordinates as the canonical layout space.
+Use standard PDF page coordinates as canonical geometry.
 
-A page layout map should be independent of:
+Canonical geometry must be independent of:
 
-- zoom
-- browser viewport
-- devicePixelRatio
-- FrameChute object size
-- page display scale
+- zoom;
+- browser viewport;
+- devicePixelRatio;
+- FrameChute object size;
+- page display scale.
 
-Rendered CSS rectangles are projections of the page model, not the source of truth.
+Respect:
+
+- PDF points (1/72 inch);
+- MediaBox;
+- CropBox;
+- BleedBox/TrimBox/ArtBox where relevant;
+- page rotation;
+- ordinary PDF affine transforms.
+
+Rendered CSS rectangles are projections of the page model, never the source of truth.
+
+All destructive operations must clamp to the effective page bounds.
 
 ---
 
-# Required page-region model
+# Three orders must remain distinct
 
-Create a compact region representation suitable for indexing and collision checks.
+A PDF can have at least three different notions of order:
 
-A region should carry enough information to support future editing decisions.
+1. **Paint/content-stream order**  
+   The order PDF drawing/text operators execute.
 
-Suggested shape:
+2. **Spatial order**  
+   Where things physically appear on the page.
+
+3. **Semantic reading order**  
+   The order a human, accessibility tool, extractor, or agent should understand the content.
+
+Do not collapse these concepts.
+
+FrameChute currently may append replacement text to a later PDF content stream while visually placing that replacement over source text in the middle of a page.
+
+A naive extractor can therefore produce:
+
+- all original page text first;
+- then FrameChute replacement text at the end of the page.
+
+That is a paint-order artifact, not the semantic truth of the document.
+
+The new architecture must explicitly preserve and expose these orders separately.
+
+A replacement should normally inherit the semantic reading position of the source region it replaces, even if its PDF drawing operators occur later.
+
+---
+
+# Canonical semantic page graph
+
+The page model should behave like a lightweight semantic scene graph.
+
+Do not require a heavyweight graph library.
+
+Use compact plain data structures and stable IDs.
+
+A conceptual node may look like:
 
 ```js
 {
   id,
   page,
   kind,
+
   bounds: { x, y, width, height },
-  source,
+
+  sourceRefs,
   ownerId,
-  zOrder,
+  parentId,
+  childIds,
+
+  paintOrder,
+  readingOrder,
+
+  provenance,
   confidence,
+
   editable,
   protected,
+
   text,
+  style,
   metadata
 }
 ```
 
-Do not copy this shape blindly if a better fit exists in the current architecture.
+Do not copy this exact schema blindly if the existing architecture suggests a better representation.
 
-Important concepts:
+The important thing is that the same logical concepts exist.
 
-## Stable identity
+---
 
-Where possible, regions need stable IDs across rerenders at different zoom levels.
+# Provenance is mandatory
 
-Do not use transient DOM nodes as identity.
+Future agents must be able to distinguish facts from inference.
 
-## Kind
+Every semantic node should make clear whether it is:
 
-At minimum distinguish categories such as:
+- **source** — directly represented by PDF content;
+- **derived** — reconstructed from source geometry;
+- **user-authored** — created by FrameChute;
+- **replacement** — semantically replaces source content;
+- **inferred** — semantic interpretation with confidence;
+- **unknown** — occupied/visible content whose meaning is unresolved.
 
-- `source-text`
+The system should be able to trace:
+
+```
+replacement text
+    -> source line
+        -> source text runs
+            -> PDF page/content references
+```
+
+Likewise:
+
+```
+derived paragraph
+    -> lines
+        -> source runs
+```
+
+Do not make agents reverse-engineer provenance from IDs or array order.
+
+---
+
+# Stable identity
+
+Where feasible, IDs must remain stable across:
+
+- zoom changes;
+- rerenders;
+- FrameChute object resizing;
+- viewer mode changes.
+
+Do not use transient DOM elements as semantic identity.
+
+Source nodes should derive identity from stable page/source information when possible.
+
+User-authored nodes should use stable generated IDs.
+
+Derived nodes may be deterministically generated from their member source IDs.
+
+---
+
+# Required node kinds
+
+At minimum support clear distinctions among concepts such as:
+
+- `source-text-run`
 - `text-line`
 - `text-block`
 - `replacement-text`
@@ -117,495 +263,848 @@ At minimum distinguish categories such as:
 - `form-field`
 - `vector-content`
 - `unknown-content`
+- `page-region`
 
-## Ownership
+Additional kinds may be introduced as needed.
 
-A derived line may own several source text runs.
-
-A replacement field may own:
-
-- its replacement geometry
-- its source erasure region
-- its current field erasure region
-
-An inserted image owns its image rectangle.
-
-This ownership distinction matters when deciding whether an overlap is expected or destructive.
-
-## Confidence
-
-Semantic reconstruction is probabilistic.
-
-Represent confidence rather than pretending every inferred paragraph/table/header is certain.
-
-Low-confidence regions may still be useful for collision warnings while remaining non-editable.
+Do not force uncertain content into a false semantic category.
 
 ---
 
-# Spatial index
+# Every part of the page must be accountable
 
-Provide a page-level query surface.
+"Nothing detected here" must **not** automatically mean "safe blank space."
+
+The page model should conceptually distinguish four spatial states:
+
+1. **occupied**  
+   Known visible/interactive content occupies the area.
+
+2. **reserved / exclusion**  
+   A layout rule, edit, crop, margin, annotation behavior, or semantic relationship says content should not be placed there.
+
+3. **free**  
+   Space derived as safely available from known page geometry.
+
+4. **unknown / uncertain**  
+   The engine cannot confidently determine whether visible/structural content exists there.
+
+This distinction is essential for high-quality editing and future agents.
+
+## Negative space / whitespace
+
+Whitespace is meaningful.
+
+Examples include:
+
+- page margins;
+- column gutters;
+- gaps between paragraphs;
+- gaps between lines;
+- space beside images;
+- space between table cells;
+- clear regions where new content could fit.
+
+However, do **not** materialize every pixel or point as an object.
+
+Represent whitespace analytically.
+
+Preferred strategy:
+
+- store bounded occupied/reserved/unknown regions;
+- derive useful free rectangles/gaps on demand;
+- cache only useful free-space results;
+- invalidate only affected page regions.
+
+Possible conceptual APIs:
+
+```js
+layout.freeSpace(page, constraints)
+layout.gapsBetween(page, regionA, regionB)
+layout.nearestFreeRect(page, rect, options)
+```
+
+A full-page bitmap occupancy grid is out of scope for the baseline.
+
+---
+
+# Spatial query layer
+
+Provide a deterministic page query API.
 
 At minimum support:
 
-- regions intersecting rectangle
-- regions contained by rectangle
-- nearest region above
-- nearest region below
-- nearest region left
-- nearest region right
-- horizontal overlap
-- vertical overlap
-- distance between regions
-- collision classification
+- regions intersecting a rectangle;
+- regions contained by a rectangle;
+- regions containing a point;
+- nearest region above;
+- nearest region below;
+- nearest region left;
+- nearest region right;
+- horizontal overlap;
+- vertical overlap;
+- distance;
+- owned overlap;
+- collision classification;
+- free-space lookup;
+- semantic parent/children;
+- provenance/source lookup;
+- reading-order predecessor/successor.
 
-The first implementation can use a simple array scan if performance is acceptable.
-
-Do not prematurely add a complicated tree dependency.
-
-Design the API so an R-tree / interval index could replace the implementation later without changing editing code.
-
-Example conceptual calls:
+Conceptual API:
 
 ```js
+layout.get(id)
 layout.intersections(page, rect)
+layout.containing(page, point)
 layout.neighbors(page, rect)
-layout.classifyOverlap(regionA, regionB)
+layout.classifyOverlap(a, b)
+layout.sourceLineage(id)
+layout.readingOrder(page)
+layout.nextInReadingOrder(id)
+layout.freeSpace(page, constraints)
 ```
+
+Exact API names may differ.
+
+Start with compact arrays/scans if performance is sufficient.
+
+Design the interface so a future R-tree/interval index can replace the implementation without rewriting callers.
+
+Do not add a heavy spatial dependency prematurely.
 
 ---
 
-# Reconstruct text hierarchy conservatively
+# Text reconstruction
 
-PDF text often arrives as positioned runs rather than paragraphs.
+PDF text commonly arrives as positioned runs rather than paragraphs.
 
-Build a conservative hierarchy:
+Build conservative hierarchy:
 
 ```
-glyph/run -> line -> block
+source run -> line -> block
 ```
-
-Start with reliable spatial heuristics.
 
 ## Line reconstruction
 
-Group source text items into a line when they have compatible:
+Group source runs into a line based on compatible:
 
-- baseline
-- orientation
-- font size
-- vertical overlap
-- horizontal spacing
+- baseline;
+- orientation;
+- font size;
+- vertical overlap;
+- horizontal distance;
+- transform.
 
-Account for rotated pages/text.
+Account for rotated text.
+
+Whitespace between runs must be considered.
+
+If geometry strongly indicates a space between two runs, the semantic line should preserve that separation even if no literal space character exists in the PDF text operator.
+
+Do not produce:
+
+```
+This PDF isthreepages long.
+```
+
+when geometry clearly represents:
+
+```
+This PDF is three pages long.
+```
 
 ## Block reconstruction
 
-Group lines only when spacing/alignment strongly suggests a common block.
+Group lines only when geometry strongly suggests a common block.
 
-Useful signals:
+Signals may include:
 
-- similar left edge
-- similar right edge
-- consistent line spacing
-- compatible font metrics
-- small vertical gaps
+- similar left edge;
+- similar right edge;
+- consistent line spacing;
+- compatible typography;
+- indentation;
+- small vertical gaps.
 
 Do not merge across:
 
-- columns
-- tables
-- large gaps
-- unrelated headings
-- sidebars
+- columns;
+- table boundaries;
+- large gaps;
+- headings/body boundaries;
+- sidebars;
+- unrelated regions.
 
 False separation is preferable to destructive false merging.
 
-## Preserve source mapping
+## Preserve exact source mapping
 
-Every inferred line/block must retain references to the underlying source PDF text items.
+Every inferred line/block must retain its underlying source-run references.
 
 Future editing must always be able to answer:
 
-> Which original source regions does this semantic region represent?
+> Which original PDF runs are represented by this semantic line or block?
+
+---
+
+# Reading-order reconstruction
+
+Reading order is a first-class output of the page model.
+
+Do not derive it from:
+
+- creation time;
+- edit-array order;
+- DOM order;
+- raw PDF content-stream order alone.
+
+Use semantic/spatial reconstruction.
+
+At minimum account for:
+
+- line membership;
+- block membership;
+- columns;
+- headings;
+- page position;
+- baseline;
+- margins;
+- rotation;
+- source ownership.
+
+Do not use a naive global `y then x` ordering when it would interleave columns incorrectly.
+
+Keep confidence for uncertain reading-order relationships.
+
+## Replacement semantics
+
+When source text is replaced:
+
+- replacement text inherits the source semantic position;
+- replaced source text is suppressed from edit-aware logical extraction;
+- replacement text appears where the source text belonged;
+- later creation/paint order must not append the replacement to the end of semantic extraction;
+- visual movement of the replacement field should not silently change its semantic reading position unless there is an explicit operation to detach/reclassify it as independent text.
+
+## Free text
+
+New free text without source ownership should receive a reading position from spatial/block context when confidence permits.
+
+If uncertain:
+
+- mark the reading order as inferred/low-confidence;
+- do not silently use "created last" as the semantic rule.
+
+---
+
+# Extract Text must become semantic
+
+FrameChute's Extract Text should consume the semantic page model.
+
+It should not simply concatenate:
+
+- raw PDF.js text items;
+- edit arrays;
+- content-stream order.
+
+Provide an edit-aware extraction path such as:
+
+```js
+layout.extractText(page, { applyEdits: true })
+```
+
+or equivalent.
+
+Expected behavior:
+
+- reconstructed spaces;
+- conservative line breaks;
+- conservative paragraph breaks;
+- correct column ordering;
+- source text omitted when replaced;
+- replacement inserted at source semantic position;
+- free text inserted according to inferred spatial reading order.
+
+## Required regression for current observed failure
+
+Create a fixture equivalent to the current FrameChute case:
+
+1. original page text exists in an early PDF content stream;
+2. FrameChute creates a white replacement mask and replacement text in a later stream;
+3. visually the replacement occurs in the middle of the page;
+4. raw paint-order extraction would append replacement text at the end.
+
+FrameChute semantic extraction must instead return the replacement at the original source line's logical position.
+
+Paint order must remain available for rendering/debugging and must not be overwritten by semantic ordering.
+
+---
+
+# Native PDF extraction versus FrameChute extraction
+
+Do not confuse FrameChute's semantic model with the physical structure of the PDF content streams.
+
+For this milestone:
+
+- make FrameChute reading order correct;
+- make FrameChute Extract Text correct;
+- preserve normal interoperable PDF save behavior;
+- retain provenance between source and replacement content.
+
+Later, a separate serializer improvement may safely rewrite/tag PDF structure so third-party extractors also observe improved reading order.
+
+Do **not** perform risky whole-page content-stream rewriting merely to satisfy this foundation milestone.
 
 ---
 
 # Collision model
 
-Add a first-class concept of collision.
+Collision is a first-class concept.
 
 Not all overlap is bad.
 
 Examples:
 
-- replacement text overlapping its own erase mask: expected
-- inserted image overlapping text with Wrap Text OFF: intentional
-- inserted image overlapping text with Wrap Text ON: requires layout response
-- replacement mask overlapping neighboring source text: potentially destructive
-- annotation highlight overlapping source text: expected
-- two editable replacement fields overlapping: likely conflict
+- replacement text over its own erase mask -> owned/expected;
+- annotation highlight over source text -> expected;
+- image with Wrap Text OFF over source text -> intentional overlay;
+- image with Wrap Text ON over source text -> layout response needed;
+- replacement field over neighboring unrelated text -> potentially destructive;
+- two independent editable fields overlapping -> likely conflict.
 
-Provide classifications such as:
+Provide classifications equivalent to:
 
 - `owned`
 - `intentional-overlay`
 - `safe`
 - `warning`
 - `destructive`
+- `unknown`
 
-The names may change, but the distinction must exist.
-
-Editing code should ask the layout model instead of blindly deciding from raw rectangles.
+Editing code should query this model instead of inventing its own rectangle rules.
 
 ---
 
-# Replacement-text behavior
+# Replacement-text architecture
 
-This stage should directly improve the architecture behind FrameChute's core PDF text-editing feature.
+Preserve the current core behavior:
 
-Current desired behavior remains:
+- detect source text;
+- infer initial font size once;
+- let the user control font size explicitly;
+- never silently resize font because the box changed;
+- erase source content cleanly;
+- render replacement text;
+- save a normal PDF.
 
-- detect original source text
-- infer initial font size once
-- let the user control font size explicitly
-- never silently resize font because the box changed
-- erase original source content cleanly
-- render replacement text
-- save a normal interoperable PDF
-
-The new layout model must make this safer.
+The semantic layout model should make replacement safer.
 
 ## Source ownership
 
-When editing a text item/line:
+Editing a source line must expose:
 
-- identify its source region(s)
-- know neighboring regions above/below/left/right
-- distinguish owned source text from unrelated neighbors
+- source run IDs;
+- line ID;
+- block ID if known;
+- original bounds;
+- neighboring semantic regions;
+- reading-order position.
 
-## Erasure
+## Erasure safety
 
-A replacement field must not accidentally erase neighboring text solely because its field grew.
+The editor currently uses explicit source/field masks.
 
-For the initial bounded-layout milestone:
+Keep that behavior while introducing collision awareness.
 
-- retain the current explicit replacement masks
-- detect collisions with unrelated source regions
-- expose those collisions to editing logic
-- avoid silently expanding destructive erasure into unrelated regions
+The model must be able to identify:
 
-Do not implement automatic paragraph reflow unless the layout model is strong enough.
+- erase area owned by this edit;
+- neighboring source lines;
+- unrelated objects under an expanded field;
+- uncertain content under the mask.
 
-A warning/constraint is better than corrupting content.
+For this milestone:
 
-## Future-ready behavior
+- detect potentially destructive overlaps;
+- expose them to editing logic;
+- do not silently erase unrelated semantic regions simply because the field grew.
 
-The architecture should make these later improvements possible without another rewrite:
+Do not implement aggressive automatic reflow until the model is trustworthy.
 
-- protect neighboring lines
-- restore covered source regions
-- push/reflow neighboring lines
-- paragraph-aware text replacement
-- column-aware reflow
-- table-aware editing
+A conservative warning/constraint is preferable to corruption.
+
+## Future-ready reflow
+
+The architecture must support later:
+
+- restoration of neighboring source regions;
+- protected neighboring lines;
+- paragraph reflow;
+- pushing lines;
+- column-aware reflow;
+- table-aware editing;
+- semantic resize constraints.
 
 Do not implement all of those now.
 
-Set the stage correctly.
-
 ---
 
-# Image behavior
+# Image architecture
 
-Inserted images must participate in the same region system.
+Images participate in the same page graph.
 
 Each image needs:
 
-- PDF-space bounds
-- stable ID
-- page
-- wrap state
-- ownership
-- collision query support
+- stable ID;
+- page;
+- PDF-space bounds;
+- provenance;
+- wrap state;
+- ownership;
+- collision relations.
 
 ## Wrap Text ON
 
-The current line-level Wrap Text behavior should become layout-driven.
+Use layout queries to determine which text lines intersect the image.
 
-The engine should be able to query:
-
-> Which text lines intersect this image region?
-
-and derive wrap edits only from those regions.
-
-Do not rely on random DOM overlap checks.
+Do not rely on transient DOM overlap checks.
 
 ## Wrap Text OFF
 
-Overlap is intentional.
+Text/image overlap is intentional.
 
-The layout model should classify it as such rather than treating it as an error.
+The collision system must classify it accordingly.
 
 ---
 
-# Unknown content matters
+# Unknown content is still content
 
-A world-class editor must know when it does **not** understand something.
+A premium editor must know when it does not know.
 
 PDF pages may contain:
 
-- vector lettering
-- flattened text
-- scanned images
-- masks
-- patterns
-- clipping paths
-- complex groups
-- unusual transforms
+- vector lettering;
+- flattened text;
+- scans;
+- clipping paths;
+- masks;
+- patterns;
+- complex groups;
+- transformed graphics;
+- unusual drawing operators.
 
-Where exact semantics are unavailable, create conservative occupied regions when feasible.
+Where exact semantics are not available, create conservative occupied/unknown regions when feasible.
 
-The purpose is not to edit everything immediately.
+Never assume an area is free merely because no PDF.js text item exists there.
 
-The purpose is to avoid assuming blank space where visible content actually exists.
+If bounds cannot be inferred cheaply and reliably:
 
-If the renderer cannot cheaply infer those bounds yet, document the limitation rather than inventing confidence.
+- mark that limitation;
+- preserve the content;
+- do not invent false confidence.
 
 ---
 
-# Page boundaries
+# Agent-addressable contract
 
-Every spatial operation must respect:
+The semantic page model must be suitable for future agent tools.
 
-- MediaBox
-- CropBox
-- page rotation
-- current page coordinate transform
+Agents should not receive raw DOM as their primary representation.
 
-No region or destructive edit may extend beyond the effective page bounds after clamping.
+A future agent-facing layer should be able to expose structured queries such as:
 
-Keep all canonical geometry in PDF points.
+```
+get page 1 semantic tree
+get text block block:17
+get source lineage for replacement:42
+find free region near paragraph:8 at least 120x80 pt
+find collisions if image:3 moves to {x,y,w,h}
+get next semantic node in reading order
+get all low-confidence nodes on page 2
+```
+
+The architecture implemented now does not need to expose a network API.
+
+It does need stable internal semantics so such an API can be added later without rebuilding PDF understanding from scratch.
+
+## Determinism
+
+Given the same PDF bytes, page, and edit state, semantic reconstruction should be deterministic.
+
+Avoid model behavior that depends on:
+
+- pointer history;
+- DOM creation timing;
+- random ordering;
+- asynchronous render completion order.
+
+Stable deterministic semantics are essential for agents, undo/redo, testing, and debugging.
+
+---
+
+# Lightweight implementation requirement
+
+This architecture must remain usable on small computers.
+
+A 4 GB machine is an important target.
+
+Correctness does **not** justify a huge always-resident page graph.
+
+## Required strategies
+
+- build semantic layout lazily per page;
+- retain only lightweight metadata for inactive pages;
+- cache only recently used page layouts;
+- allow inactive derived layouts to be discarded and rebuilt;
+- invalidate only pages/regions affected by edits;
+- do not rebuild an entire document on pointermove;
+- do not create one object per pixel/glyph unless genuinely necessary;
+- prefer source-run references over duplicating full source data;
+- avoid copying large PDF byte arrays during layout operations;
+- avoid full-page raster analysis in the baseline;
+- preserve PDF.js render-task cancellation;
+- use compact IDs/references rather than duplicating nested objects everywhere.
+
+## Free-space efficiency
+
+Do not store a giant occupancy grid.
+
+Derive free rectangles from:
+
+- page bounds;
+- occupied intervals;
+- margins/gutters;
+- exclusion regions.
+
+Cache only useful results.
+
+## Scalability
+
+The design should allow later optimization such as:
+
+- interval indexes;
+- R-trees;
+- packed arrays;
+- compact numeric IDs;
+- per-page LRU caches;
+
+without changing the semantic API.
+
+Do not prematurely implement those optimizations unless profiling proves they are needed.
 
 ---
 
 # Reader/editor separation
 
-The layout map belongs to the document/page model, not the viewer UI.
+The semantic layout belongs to the PDF model layer.
 
-Reader functions can consume it for:
+Reader features may consume it for:
 
-- text selection
-- search result highlighting
-- link hit testing
-- future accessibility/navigation
+- semantic Extract Text;
+- text selection;
+- reconstructed spacing;
+- search highlighting;
+- reading-order navigation;
+- link hit testing;
+- accessibility.
 
-Editor functions can consume it for:
+Editor features may consume it for:
 
-- collision checking
-- replacement ownership
-- image wrapping
-- erasure safety
-- selection
-- snapping
-- alignment
+- collision checking;
+- source ownership;
+- erasure safety;
+- Wrap Text;
+- selection;
+- snapping;
+- alignment;
+- future reflow.
 
-Do not build two competing region systems.
-
----
-
-# Visual debugging mode
-
-Add a developer-only way to inspect the inferred page map.
-
-This can be:
-
-- a debug flag
-- console helper
-- temporary developer overlay
-
-It should be able to visualize region rectangles and kinds without shipping permanent visual clutter to normal users.
-
-This is important because spatial inference bugs are difficult to reason about from serialized data alone.
-
-Do not expose debug labels in normal PDFs.
-
----
-
-# Performance
-
-FrameChute must remain usable on low-memory machines.
-
-Requirements:
-
-- build layout lazily per page
-- cache by page/document revision
-- invalidate only pages affected by edits
-- do not rebuild all pages on every pointermove
-- collision queries during drag/resize must remain lightweight
-- avoid full-page bitmap analysis in the baseline implementation
-- preserve PDF.js render-task cancellation behavior
+Do not create separate competing reader/editor interpretations of the page.
 
 ---
 
 # Persistence
 
-The canonical PDF file should remain standards-based.
+The saved PDF must remain a normal interoperable PDF.
 
-Do not write FrameChute's layout index into the PDF as a proprietary requirement.
+Do not write FrameChute's semantic graph into the PDF as a proprietary dependency.
 
-Derived layout can be:
+Derived semantic state may be:
 
-- recomputed from the PDF
-- cached transiently
-- persisted in FrameChute workspace state only when useful and versioned
+- recomputed from the PDF;
+- cached transiently;
+- optionally persisted/versioned in FrameChute workspace state if beneficial.
 
-The saved PDF must stand alone.
+Source PDF + edit state remain authoritative.
+
+The semantic graph is a deterministic interpretation layer.
 
 ---
 
 # Suggested module boundary
 
-Do not force this exact name if the current architecture suggests something better, but prefer a dedicated subsystem such as:
+Prefer a dedicated subsystem, for example:
 
 ```
 src/documents/pdf-layout.js
 ```
 
-Possible responsibilities:
+or a small group of PDF layout modules if cleaner.
 
-- region creation
-- text-line reconstruction
-- block reconstruction
-- page spatial index
-- overlap classification
-- neighbor lookup
-- ownership queries
-- cache/invalidation
+Responsibilities may include:
 
-Keep viewport conversion in the existing geometry layer.
+- region/node creation;
+- provenance;
+- text-line reconstruction;
+- text-block reconstruction;
+- reading-order reconstruction;
+- edit-aware extraction;
+- spatial queries;
+- collision classification;
+- free-space derivation;
+- semantic parent/child relationships;
+- cache/invalidation.
 
-Keep serialization in the PDF document/write layer.
+Keep:
 
-Keep UI interactions out of the layout module.
+- viewport conversion in the PDF geometry layer;
+- byte serialization in the PDF document/write layer;
+- UI interactions outside the semantic model.
+
+---
+
+# Developer inspection/debugging
+
+Add a developer-only inspection path.
+
+Useful capabilities:
+
+- draw semantic bounds;
+- distinguish node kinds;
+- show IDs;
+- show reading-order sequence;
+- show collision classifications;
+- show occupied/free/unknown regions;
+- inspect provenance.
+
+This may be a debug flag, helper, or temporary overlay.
+
+Do not expose debug labels in normal PDFs.
 
 ---
 
 # Required tests
 
-Add deterministic tests before wiring aggressive behavior into the editor.
+Add deterministic tests before using the model for destructive automatic behavior.
 
-## Region geometry
+## Geometry
 
-- rectangle intersection
-- containment
-- nearest above/below/left/right
-- page-bound clamping
-- rotated-page coordinates
+Test:
+
+- intersection;
+- containment;
+- point lookup;
+- nearest above/below/left/right;
+- page-bound clamping;
+- rotated-page geometry;
+- free-space derivation.
 
 ## Text reconstruction
 
 Fixtures for:
 
-- one normal paragraph
-- two columns
-- heading + body
-- widely separated text
-- varied font sizes
-- rotated text
+- ordinary paragraph;
+- separately positioned runs requiring inferred spaces;
+- heading + body;
+- two columns;
+- varied font sizes;
+- large gaps;
+- rotated text;
+- table-like layout.
 
-Verify lines/blocks are not merged across obvious boundaries.
+Verify lines/blocks do not merge across obvious semantic boundaries.
 
-## Ownership
+## Reading order
 
-- one source line maps to its original PDF text items
-- replacement region identifies owned source content
-- unrelated neighboring text remains unrelated
+Test:
+
+- normal top-to-bottom text;
+- two columns without incorrect line-by-line interleaving;
+- heading then body;
+- rotated regions;
+- out-of-order PDF source runs;
+- free text spatial insertion;
+- low-confidence ordering.
+
+## Replacement reading-order regression
+
+Explicitly test:
+
+- original text appears in an earlier content stream;
+- replacement is painted later;
+- replacement visually belongs in the middle of a page;
+- source text is suppressed from semantic extraction;
+- replacement appears at source reading position;
+- it is not appended to page end.
+
+## Spacing extraction
+
+Test that geometric gaps produce sensible spaces when confidence is high.
+
+Examples:
+
+```
+"This PDF is" + positioned gap + "three" + positioned gap + "pages"
+```
+
+must extract as:
+
+```
+This PDF is three pages
+```
+
+not:
+
+```
+This PDF isthreepages
+```
+
+## Provenance
+
+Test:
+
+- line -> source runs;
+- block -> lines;
+- replacement -> source line;
+- replacement -> source runs through lineage;
+- derived free-space result -> page/obstacle revision.
 
 ## Collision classification
 
 Test:
 
-- replacement vs own source
-- replacement vs neighboring line
-- image wrap ON vs text
-- image wrap OFF vs text
-- annotation vs text
-- two edit fields overlapping
+- replacement vs own source;
+- replacement vs neighboring line;
+- image Wrap Text ON vs text;
+- image Wrap Text OFF vs text;
+- annotation vs source text;
+- edit field vs edit field;
+- known region vs unknown region.
+
+## Determinism
+
+Build the same page semantic model twice from the same source/edit state.
+
+IDs, hierarchy, reading order, and collision classifications must be stable.
+
+## Performance sanity
+
+Include at least lightweight checks/fixtures demonstrating that:
+
+- only requested pages are constructed;
+- pointermove does not rebuild all page semantics;
+- inactive page layouts can be discarded/rebuilt;
+- layout code does not rasterize the whole document.
 
 ## Regression
 
 Existing PDF behavior must remain intact:
 
-- render
-- search
-- zoom
-- page navigation
-- text replacement
-- user-controlled font size
-- replacement masks
-- inserted images
-- Wrap Text
-- save/reopen
-- page operations
+- rendering;
+- navigation;
+- search;
+- zoom/fits;
+- text replacement;
+- user-controlled font size;
+- replacement masks;
+- image insertion;
+- Wrap Text;
+- undo/redo;
+- save/reopen;
+- page operations;
+- native PDF interoperability.
 
 ---
 
 # Milestone definition
 
-This task is successful when FrameChute can build a trustworthy page-level map and editing code can ask questions such as:
+This milestone is successful when FrameChute can build a deterministic semantic page model capable of answering:
 
-- What text line owns this point?
-- What regions are under this replacement field?
-- Would enlarging this erase another line?
-- Which text lines collide with this image?
-- What is immediately below this field?
-- Does this overlap belong to the same edit or another object?
+- What is at this point?
+- What semantic object owns this rectangle?
+- What PDF source runs produced it?
+- What was replaced here?
+- What is the reading-order position?
+- What comes next/previous semantically?
+- What is directly above/below/left/right?
+- What collides with this proposed edit?
+- Is that collision owned, intentional, destructive, or uncertain?
+- Which page regions are safely free?
+- Which regions are unknown rather than blank?
+- What text should Extract Text return after applying edits?
 
-The first milestone does **not** need perfect automatic reflow.
+The milestone does **not** require perfect paragraph reflow.
 
-It needs the architectural truth required to implement perfect reflow later.
+It requires the architectural truth from which premium reflow and agentic editing can later be built.
 
 ---
 
-# Premium PDF direction
+# Premium direction enabled by this foundation
 
-This model should become the foundation for later premium-grade behavior including:
+Later capabilities should become incremental rather than requiring another rewrite:
 
-- paragraph-aware reflow
-- collision-free replacement editing
-- automatic restoration of neighboring source text
-- intelligent text-box expansion
-- multi-column awareness
-- table-aware editing
-- guides/snapping/alignment
-- image text flow
-- semantic selection
-- accessibility structure
-- OCR integration
-- vector-content awareness
-- richer annotations
-- professional layout editing
+- paragraph-aware reflow;
+- collision-free replacement editing;
+- automatic restoration of neighboring text;
+- intelligent field expansion;
+- column-aware reflow;
+- table-aware editing;
+- semantic image wrapping;
+- snapping/guides/alignment;
+- better accessibility;
+- OCR integration;
+- vector-content awareness;
+- professional extraction;
+- semantic copy/paste;
+- agent-directed editing;
+- agent scene understanding;
+- agent-safe document transformation.
 
-Do not implement those features merely to satisfy this section.
+Do not implement all of these merely because they are listed.
 
-Design the bounded-region system so they become incremental features rather than future rewrites.
+Build the foundation so they become possible.
 
 ---
 
 # Instructions to Codex
 
 1. Read this file, `docs/CODEX-PDF-ELEVATION.md`, and `docs/PDF-ARCHITECTURE.md`.
-2. Inspect the current PDF code on the branch you are given. The implementation has evolved since the original elevation brief.
-3. Produce a short architecture plan based on the actual current code.
-4. Implement the bounded page-region/layout foundation in small coherent commits.
-5. Add tests before enabling any new destructive automatic behavior.
-6. Integrate existing replacement text and inserted-image logic with the layout model where it is safe to do so.
-7. Do not regress current PDF text editing, user-controlled font size, replacement masks, Wrap Text, reader controls, DOCX, FrameChute object movement, or native PDF save behavior.
-8. Prefer conservative detection and preservation over clever destructive guesses.
-9. Keep the saved PDF standards-based and interoperable.
-10. Run the focused PDF tests explicitly as well as the repository validation.
+2. Inspect the actual current PDF code first; it has evolved since the original elevation brief.
+3. Produce a short architecture plan grounded in the current implementation.
+4. Treat the result as a canonical semantic page model, not just collision rectangles.
+5. Separate paint order, spatial order, and semantic reading order.
+6. Model provenance/source ownership explicitly.
+7. Account for occupied, reserved, free, and unknown space without a heavyweight pixel grid.
+8. Implement deterministic page-level semantics suitable for future agent access.
+9. Keep it lazy, compact, and viable on a 4 GB machine.
+10. Add tests before enabling destructive automatic behavior.
+11. Integrate current replacement text and inserted-image behavior only where safe.
+12. Do not regress:
+    - PDF text editing;
+    - explicit user-controlled font sizes;
+    - replacement masks;
+    - image Wrap Text;
+    - Quick Actions;
+    - reader controls;
+    - DOCX;
+    - FrameChute object movement/viewport behavior;
+    - native PDF save behavior.
+13. Keep saved PDFs standards-based and interoperable.
+14. Do not perform risky whole-page content-stream rewriting in this milestone.
+15. Run focused PDF tests explicitly in addition to normal repository validation.
+16. Use small coherent commits.
 
-The goal is not "more features."
+The goal is not "more PDF buttons."
 
-The goal is to give FrameChute a **correct spatial understanding of the PDF page** so every future premium editing feature has a trustworthy foundation.
+The goal is to give FrameChute a **compact, logically sound semantic understanding of the entire PDF page** so humans, editor code, and future agents can all operate on the same trustworthy foundation.
