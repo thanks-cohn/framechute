@@ -138,7 +138,7 @@ test("live PDF masks use non-colliding semantic ownership rectangles",()=>{
   assert.equal(partial.length,1);
   const partialTop=partial[0].y+partial[0].height;
   assert.ok(partial[0].y>=97&&partialTop<=115,"vertical ownership cell stops between adjacent lines instead of clipping them");
-  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<95,"partial edit stops before the untouched sibling run");
+  assert.ok(partial[0].x<=20&&partial[0].x+partial[0].width<=94,"partial edit consumes the inter-run gap but keeps a guard before the untouched sibling");
 
   const full=semanticLiveSourceMasks(layout,[
     {kind:"replacement",page:1,index:0,sourceX:20,sourceY:101,sourceWidth:70,sourceHeight:9},
@@ -161,27 +161,28 @@ test("PDF replacement masks clamp to page/CropBox bounds",()=>{
 });
 
 
-test("PDF replacement erases both original source and current field without bridging between them",()=>{
+test("PDF replacement erases only its owned source by default",()=>{
   const masks=replacementMasksForEdit({
     kind:"replacement",index:7,
+    sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
+    x:120,y:90,width:100,height:24
+  });
+  assert.equal(masks.length,1);
+  assert.equal(masks[0].maskRole,"source");
+  assert.ok(masks[0].x<10 && masks[0].x+masks[0].width>50);
+});
+
+test("destination-field erasure requires explicit opt in",()=>{
+  const masks=replacementMasksForEdit({
+    kind:"replacement",index:7,eraseUnderField:true,
     sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
     x:120,y:90,width:100,height:24
   });
   assert.equal(masks.length,2);
   const source=masks.find(mask=>mask.maskRole==="source");
   const field=masks.find(mask=>mask.maskRole==="field");
-  assert.ok(source.x<10 && source.x+source.width>50);
-  assert.ok(field.x<120 && field.x+field.width>220);
-  assert.ok(source.x+source.width<field.x, "separate masks must not erase the strip between moved source and field");
-});
-
-test("resizing a PDF replacement field enlarges its erasure region",()=>{
-  const small=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:30,height:10})
-    .find(mask=>mask.maskRole==="field");
-  const large=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:160,height:36})
-    .find(mask=>mask.maskRole==="field");
-  assert.ok(large.width>small.width);
-  assert.ok(large.height>small.height);
+  assert.ok(source.x+source.width<field.x,"opt-in field erasure still does not bridge source and destination");
+  assert.ok(field.x<120&&field.x+field.width>220);
 });
 
 
