@@ -376,6 +376,13 @@ export function sourceMasksForPage(edits, pageNumber) {
     .flatMap(replacementMasksForEdit);
 }
 
+export function inferPdfSourceFontSize(item, fallback = 12) {
+  const transform = Array.isArray(item?.transform) ? item.transform : [];
+  const inferred = Math.hypot(Number(transform[2]) || 0, Number(transform[3]) || 0);
+  const value = Number.isFinite(inferred) && inferred > 0 ? inferred : Number(fallback) || 12;
+  return Math.max(4, Math.min(144, value));
+}
+
 /** Normalize legacy replacements and new fields behind one PDF edit-object contract. */
 export function normalizePdfEdit(edit) {
   const kind = edit.kind || "replacement";
