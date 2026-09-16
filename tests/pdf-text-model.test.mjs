@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, clampPdfRectToBox, replacementMasksForEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -95,4 +95,28 @@ test("PDF replacement masks clamp to page/CropBox bounds",()=>{
     clampPdfRectToBox({x:30,y:40,width:50,height:60},{x:20,y:30,width:100,height:100}),
     {x:30,y:40,width:50,height:60}
   );
+});
+
+
+test("PDF replacement erases both original source and current field without bridging between them",()=>{
+  const masks=replacementMasksForEdit({
+    kind:"replacement",index:7,
+    sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
+    x:120,y:90,width:100,height:24
+  });
+  assert.equal(masks.length,2);
+  const source=masks.find(mask=>mask.maskRole==="source");
+  const field=masks.find(mask=>mask.maskRole==="field");
+  assert.ok(source.x<10 && source.x+source.width>50);
+  assert.ok(field.x<120 && field.x+field.width>220);
+  assert.ok(source.x+source.width<field.x, "separate masks must not erase the strip between moved source and field");
+});
+
+test("resizing a PDF replacement field enlarges its erasure region",()=>{
+  const small=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:30,height:10})
+    .find(mask=>mask.maskRole==="field");
+  const large=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:160,height:36})
+    .find(mask=>mask.maskRole==="field");
+  assert.ok(large.width>small.width);
+  assert.ok(large.height>small.height);
 });
