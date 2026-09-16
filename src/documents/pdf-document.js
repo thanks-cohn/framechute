@@ -2,6 +2,7 @@ import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
 import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from "./pdf-layout.js";
+import { createOwnedMask, currentPdfEdits, ensurePdfEditIdentity } from "./pdf-observability.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -308,6 +309,7 @@ export async function extractSemanticPdfText(model, edits=[], {pageNumber=null, 
 }
 
 export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits = [], options = {}) {
+  edits=currentPdfEdits(edits);
   const page = await model.pdf.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
   const scale = options.scale || Math.max(.5, Math.min(2.5, (textLayer.parentElement.clientWidth - 20) / base.width || 1));
@@ -344,6 +346,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     element.setAttribute("aria-hidden", "true");
     if (mask.maskIndex !== undefined) element.dataset.maskIndex = String(mask.maskIndex);
     if (mask.maskRole) element.dataset.maskRole = mask.maskRole;
+    if (mask.id) element.dataset.objectId = mask.id;
+    if (mask.ownerEditId) element.dataset.ownerEditId = mask.ownerEditId;
+    if (mask.sourceObjectIds) element.dataset.sourceObjectIds = mask.sourceObjectIds.join(" ");
     Object.assign(element.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px` });
     textLayer.append(element);
   }
@@ -356,6 +361,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = wrapped || explicit;
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
+    span.dataset.objectId=saved?.id||`source:p${pageNumber}:text:${index}`;
+    span.dataset.sourceObjectId=`source:p${pageNumber}:text:${index}`;
+    if(saved?.id)span.dataset.ownerEditId=saved.id;
     if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
     if (saved) {
@@ -412,6 +420,17 @@ export async function searchPdfDocument(model, query) {
   return matches;
 }
 
+/** Search the active semantic document. Superseded source runs and historical
+ * edits are excluded by the page model rather than hidden in presentation. */
+export async function searchCurrentPdfDocument(model, edits, query) {
+  const needle=String(query||"").trim().toLocaleLowerCase();if(!needle)return [];
+  const matches=[];
+  for(let page=1;page<=model.pageCount;page++){
+    const text=await extractSemanticPdfText(model,currentPdfEdits(edits),{pageNumber:page});
+    let from=0,at;while((at=text.toLocaleLowerCase().indexOf(needle,from))!==-1){matches.push({page,offset:at,text:text.slice(at,at+needle.length)});from=at+Math.max(1,needle.length);}
+  }return matches;
+}
+
 export async function pdfDocumentProperties(model, pageNumber = 1) {
   const [metadata, page] = await Promise.all([model.pdf.getMetadata().catch(() => ({})), model.pdf.getPage(pageNumber)]);
   const viewport = page.getViewport({ scale: 1 });
@@ -454,8 +473,11 @@ export function sourceMaskForEdit(edit) {
  * and destination when a field is moved.
  */
 export function replacementMasksForEdit(edit) {
+  edit=ensurePdfEditIdentity(edit);
+  const sourceObjectId=edit.sourceObjectId||`source:p${edit.page}:text:${edit.index}`;
   if ((edit.kind || "replacement") === "wrap") {
-    return [{ ...padPdfRect(sourceMaskForEdit(edit)), maskRole:"source", maskIndex:edit.index }];
+    const pdfRect=padPdfRect(sourceMaskForEdit(edit));
+    return [{...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"source",pdfRect}),...pdfRect,maskIndex:edit.index}];
   }
   const source = padPdfRect(sourceMaskForEdit(edit));
   const field = padPdfRect({
@@ -465,8 +487,8 @@ export function replacementMasksForEdit(edit) {
     height: Math.max(Number(edit.height) || 0, 2)
   });
   return [
-    { ...source, maskRole:"source", maskIndex:edit.index },
-    { ...field, maskRole:"field", maskIndex:edit.index }
+    {...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"source",pdfRect:source}),...source,maskIndex:edit.index},
+    {...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"field",pdfRect:field}),...field,maskIndex:edit.index}
   ];
 }
 
@@ -478,6 +500,7 @@ export function replacementMasksForEdit(edit) {
  * before drawing current replacement text/images.
  */
 export function pdfPageMaskPlan(layout, edits, wrapEdits, pageNumber) {
+  edits=currentPdfEdits(edits);
   const wrappedSourceEditIds=new Set((wrapEdits||[]).map(edit=>edit.sourceEditId).filter(Boolean));
   const maskEdits=(edits||[]).filter(edit=>!wrappedSourceEditIds.has(normalizePdfEdit(edit).id));
   const sourceMaskEdits=[
@@ -535,7 +558,8 @@ export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) 
     const line=source&&layout?.parent?.(source.id);
     if(!source||!line){
       const mask=padPdfRect(sourceMaskForEdit(edit),Math.max(2.5,Number(padding)||0));
-      fallback.push({...mask,maskRole:"source",maskIndex:edit.index});
+      const normalized=ensurePdfEditIdentity(edit),sourceId=normalized.sourceObjectId||`source:p${pageNumber}:text:${edit.index}`;
+      fallback.push({...createOwnedMask({ownerEditId:normalized.id,sourceObjectIds:[sourceId],maskRole:"source",pdfRect:mask}),...mask,maskIndex:edit.index});
       continue;
     }
     let group=groups.get(line.id);
@@ -571,7 +595,9 @@ export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) 
     };
     const pad=Math.max(Number(padding)||0,group.line.bounds.height*.12,2.5);
     const mask=padPdfRect(base,pad);
-    masks.push({...mask,maskRole:"source-line",maskIndex:[...group.indexes].join(",")});
+    const owners=(edits||[]).filter(edit=>group.indexes.has(Number(edit.index))).map(ensurePdfEditIdentity).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    const owner=owners[0];
+    if(owner)masks.push({...createOwnedMask({id:`mask:${owner.id}:source-line`,ownerEditId:owner.id,sourceObjectIds:[...group.sourceIds],maskRole:"source-line",pdfRect:mask}),...mask,maskIndex:[...group.indexes].join(","),contributingEditIds:owners.map(edit=>edit.id)});
   }
   return masks;
 }
@@ -585,8 +611,9 @@ export function inferPdfSourceFontSize(item, fallback = 12) {
 
 /** Normalize legacy replacements and new fields behind one PDF edit-object contract. */
 export function normalizePdfEdit(edit) {
+  ensurePdfEditIdentity(edit);
   const kind = edit.kind || "replacement";
-  return { ...edit, kind, id: edit.id || `${kind}:${edit.page}:${edit.index ?? "new"}`, text: edit.text ?? edit.replacement ?? "",
+  return { ...edit, kind, id: edit.id, text: edit.text ?? edit.replacement ?? "",
     width: Math.max(2, Number(edit.width) || 2), height: Math.max(2, Number(edit.height) || Number(edit.fontSize) * 1.2 || 14.4),
     fontFamily: edit.fontFamily || "Helvetica", fontSize: Math.max(4, Number(edit.fontSize) || 12), rotation: Number(edit.rotation) || 0 };
 }
@@ -600,6 +627,7 @@ export function layoutPdfText(edit, font) {
 }
 
 export async function serializeEditedPdf(model, edits) {
+  edits=currentPdfEdits(edits);
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
   const fonts = new Map();
   const wrapByImage = new Map();

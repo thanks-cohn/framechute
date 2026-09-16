@@ -30,6 +30,7 @@ import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from 
 import { createObjectDragSession } from "./object-drag-space.js";
 import { isViewportFixed } from "./viewport-fix.js";
 import { fitOpenedBlock } from "./initial-open-fit.js";
+import { createPdfEditId, ensurePdfEditIdentity } from "./documents/pdf-observability.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -661,7 +662,7 @@ window.addEventListener("framechute:pdf-context-command", event => {
   } else if(!edit && action==="delete" && event.detail.selected?.matches(".pdf-text-item")){
     const span=event.detail.selected,index=Number(span.dataset.index),original=runtime.pageData.content.items[index];if(!original)return;
     const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);pushPdfHistory(runtime);
-    runtime.edits.push({kind:"replacement",page:Number(block.dataset.currentPage),index,original:original.str,replacement:"",...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:Math.max(4,geometry.height*.8),rotation:0});
+    runtime.edits.push(ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),page:Number(block.dataset.currentPage),index,original:original.str,replacement:"",...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:Math.max(4,geometry.height*.8),rotation:0}));
   } else if(!edit)return;
   else if(action==="delete"){pushPdfHistory(runtime);runtime.edits.splice(runtime.edits.indexOf(edit),1);}
   else if(action==="duplicate"){pushPdfHistory(runtime);runtime.edits.push({...structuredClone(edit),id:`text:${crypto.randomUUID?.()||Date.now()}`,index:-Date.now(),x:edit.x+8,y:edit.y-8});}
@@ -956,7 +957,7 @@ registerBlockType("pdf", {
       else {
         const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);
         const fontSize=Math.max(4,Math.min(144,Number(text.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
-        runtime.edits.push({page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0});
+        runtime.edits.push(ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0}));
       }
       const committed=runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
       if(committed)reflowPdfTextEditGeometry(committed);
