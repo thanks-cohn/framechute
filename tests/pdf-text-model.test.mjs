@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, serializationMasksForEdit, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -139,6 +139,42 @@ test("live PDF masks erase the full semantic line band for changed source ranges
   ],1,0);
   assert.equal(full.length,1);
   assert.ok(full[0].x<20&&full[0].x+full[0].width>200,"when every source run changed, the live eraser covers the entire semantic line");
+});
+
+test("live PDF mask claims the semantic line tail when the last source run is edited",()=>{
+  const line={id:"line:tail",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1","run:2"]};
+  const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:45,height:9},metadata:{sourceIndex:0}};
+  const run1={id:"run:1",kind:"source-text-run",bounds:{x:70,y:101,width:45,height:9},metadata:{sourceIndex:1}};
+  const run2={id:"run:2",kind:"source-text-run",bounds:{x:120,y:101,width:55,height:9},metadata:{sourceIndex:2}};
+  const parents=new Map([["run:0",line],["run:1",line],["run:2",line]]);
+  const layout={nodes:[run0,run1,run2,line],parent:id=>parents.get(id)||null};
+  const masks=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:2,sourceX:120,sourceY:101,sourceWidth:55,sourceHeight:9}],1,0);
+  assert.equal(masks.length,1);
+  assert.ok(masks[0].x<=120,"terminal edit starts at its owned run");
+  assert.ok(masks[0].x+masks[0].width>200,"terminal edit clears through the semantic line edge plus safety");
+});
+
+test("live PDF mask does not claim the line tail when an untouched source run follows",()=>{
+  const line={id:"line:middle",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1","run:2"]};
+  const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:45,height:9},metadata:{sourceIndex:0}};
+  const run1={id:"run:1",kind:"source-text-run",bounds:{x:70,y:101,width:45,height:9},metadata:{sourceIndex:1}};
+  const run2={id:"run:2",kind:"source-text-run",bounds:{x:120,y:101,width:55,height:9},metadata:{sourceIndex:2}};
+  const parents=new Map([["run:0",line],["run:1",line],["run:2",line]]);
+  const layout={nodes:[run0,run1,run2,line],parent:id=>parents.get(id)||null};
+  const masks=semanticLiveSourceMasks(layout,[{kind:"replacement",page:1,index:1,sourceX:70,sourceY:101,sourceWidth:45,sourceHeight:9}],1,0);
+  assert.equal(masks.length,1);
+  assert.ok(masks[0].x+masks[0].width<120,"middle edit stays bounded before the untouched terminal run");
+});
+
+test("saved-PDF masks erase only owned source text by default",()=>{
+  const masks=serializationMasksForEdit({
+    kind:"replacement",index:7,
+    sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
+    x:120,y:90,width:100,height:24
+  });
+  assert.equal(masks.length,1);
+  assert.equal(masks[0].maskRole,"source");
+  assert.ok(masks[0].x<10&&masks[0].x+masks[0].width>50);
 });
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
