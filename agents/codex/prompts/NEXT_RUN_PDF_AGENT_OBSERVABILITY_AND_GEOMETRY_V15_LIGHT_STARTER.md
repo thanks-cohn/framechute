@@ -18,6 +18,9 @@ A CSS box being correct is not enough. Distinguish the text container from the a
 
 Add stable IDs to source runs, semantic lines/blocks, edits, masks, images, wraps, and generated lines. Add a JSON-serializable one-page diagnostic snapshot plus structured invariant validation. The snapshot must let ChatGPT/Codex answer exactly what object is wrong, where it should be, where it actually appears, what owns it, what it collides with, what changes on hover/edit, and what Save will erase/draw.
 
+
+**Treat the current saved document as a hard version boundary.** FrameChute may keep undo/history data internally, but historical/superseded text must be completely inert in the active document. After Save + reopen, the PDF must be a clean current-version slate that looks exactly like the user remembers: no old dead text may reappear on hover, selection, rerender, zoom, edit mode, search, or extraction. Old source runs, replacement fields, masks, and overlays must not remain renderable or hit-testable. If prior states are retained, expose them only through an explicit **Previous Versions** / version-history path. Undo data likewise remains inert until Undo/Redo is explicitly invoked. Add diagnostics and tests that fail if superseded objects participate in current rendering or return after Save + reopen.
+
 Live and Save must be directly comparable from the same diagnostics. If text is hidden live but reappears after Save, diagnostics should identify the exact source object/mask mismatch. If something looks different only on hover, the state snapshot should reveal the CSS/geometry/layer change without needing a screenshot.
 
 Add an advanced/debug action such as **Copy Page Diagnostics** and optionally **Show Geometry Overlay**, without cluttering normal users. Keep diagnostics cheap/on-demand and do not make observed DOM geometry canonical.
