@@ -217,7 +217,12 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
   for (const mask of [...sourceMasksForPage(edits, pageNumber), ...wrapEdits.map(sourceMaskForEdit)]) {
-    const [left, top, right, bottom] = pdfRectToViewport(viewport, mask);
+    const raw = pdfRectToViewport(viewport, mask);
+    const left = Math.max(0, Math.min(viewport.width, raw[0]));
+    const top = Math.max(0, Math.min(viewport.height, raw[1]));
+    const right = Math.max(left, Math.min(viewport.width, raw[2]));
+    const bottom = Math.max(top, Math.min(viewport.height, raw[3]));
+    if (right <= left || bottom <= top) continue;
     const element = document.createElement("div");
     element.className = "pdf-source-mask";
     element.setAttribute("aria-hidden", "true");
@@ -312,6 +317,18 @@ export function sourceMaskForEdit(edit) {
   };
 }
 
+export function clampPdfRectToBox(rect, box) {
+  const boxLeft = Number(box?.x) || 0;
+  const boxBottom = Number(box?.y) || 0;
+  const boxRight = boxLeft + Math.max(0, Number(box?.width) || 0);
+  const boxTop = boxBottom + Math.max(0, Number(box?.height) || 0);
+  const left = Math.max(boxLeft, Number(rect?.x) || 0);
+  const bottom = Math.max(boxBottom, Number(rect?.y) || 0);
+  const right = Math.min(boxRight, (Number(rect?.x) || 0) + Math.max(0, Number(rect?.width) || 0));
+  const top = Math.min(boxTop, (Number(rect?.y) || 0) + Math.max(0, Number(rect?.height) || 0));
+  return { x:left, y:bottom, width:Math.max(0,right-left), height:Math.max(0,top-bottom) };
+}
+
 export function sourceMasksForPage(edits, pageNumber) {
   return edits.filter((edit) => edit.page === pageNumber && (edit.kind || "replacement") === "replacement").map(sourceMaskForEdit);
 }
@@ -359,7 +376,12 @@ export async function serializeEditedPdf(model, edits) {
     const page = output.getPage(edit.page - 1);
     const size = edit.fontSize;
     if (edit.kind === "replacement" || edit.kind === "wrap") {
-      page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
+      const fallback = page.getSize();
+      const pageBox = typeof page.getCropBox === "function"
+        ? page.getCropBox()
+        : { x:0, y:0, width:fallback.width, height:fallback.height };
+      const mask = clampPdfRectToBox(sourceMaskForEdit(edit), pageBox);
+      if (mask.width > 0 && mask.height > 0) page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
     }
     edit.lines.forEach((line, index) => page.drawText(line || " ", {
       x: edit.x,
