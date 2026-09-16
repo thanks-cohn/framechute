@@ -50,6 +50,133 @@ export function repositionPdfImage(edit, geometry) {
   return edit;
 }
 
+function pdfRectsIntersect(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x &&
+    a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/**
+ * Choose a conservative line-level placement for source text that would be
+ * covered by an inserted image. PDF source text is fixed-position rather than
+ * paragraph-flow content, so FrameChute relocates only intersecting text items
+ * into the nearest clear horizontal region and preserves the original source
+ * rectangle as the mask.
+ */
+export function wrapPdfTextBoxAroundImage(textBox, imageBox, gap = 6) {
+  if (!pdfRectsIntersect(textBox, imageBox)) return null;
+  const gutter = Math.max(0, Number(gap) || 0);
+  const pageWidth = Math.max(
+    Number(textBox.pageWidth) || 0,
+    textBox.x + textBox.width,
+    imageBox.x + imageBox.width
+  );
+  const leftEdge = Math.max(0, imageBox.x - gutter);
+  const rightEdge = Math.min(pageWidth, imageBox.x + imageBox.width + gutter);
+  const leftAvailable = Math.max(0, leftEdge - textBox.x);
+  const rightStart = Math.max(textBox.x, rightEdge);
+  const rightAvailable = Math.max(0, textBox.x + textBox.width - rightStart);
+
+  if (leftAvailable >= Math.min(textBox.width, 18) || rightAvailable >= Math.min(textBox.width, 18)) {
+    const useLeft = leftAvailable >= rightAvailable;
+    const width = Math.max(2, Math.min(textBox.width, useLeft ? leftAvailable : rightAvailable));
+    return {
+      x: useLeft ? Math.max(0, leftEdge - width) : rightStart,
+      y: textBox.y,
+      width,
+      height: textBox.height
+    };
+  }
+
+  // A source item sitting almost entirely beneath the image has no useful
+  // horizontal lane. Move it to the nearest vertical edge instead of silently
+  // hiding it underneath the image.
+  const aboveY = imageBox.y + imageBox.height + gutter;
+  const belowY = Math.max(0, imageBox.y - gutter - textBox.height);
+  const sourceCenter = textBox.y + textBox.height / 2;
+  const imageCenter = imageBox.y + imageBox.height / 2;
+  return {
+    x: textBox.x,
+    y: sourceCenter >= imageCenter ? aboveY : belowY,
+    width: textBox.width,
+    height: textBox.height
+  };
+}
+
+function sourceTextBoxForItem(viewport, item, index) {
+  if (!item?.str?.trim()) return null;
+  const scale = viewport.scale || 1;
+  const [, , , , x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
+  const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
+  const display = {
+    left: x,
+    top: y - height,
+    width: Math.max(item.width * scale, 8),
+    height: height * 1.25
+  };
+  const rect = viewportRectToPdf(viewport, display);
+  return {
+    ...rect,
+    index,
+    text: item.str,
+    fontSize: Math.max(4, rect.height * .8),
+    pageWidth: viewport.width / scale
+  };
+}
+
+/**
+ * Derive transient standard-PDF text replacement edits for wrapped images.
+ * These are not stored as proprietary file state; they are recomputed from the
+ * source PDF text plus image geometry on render/save.
+ */
+export function imageWrapEditsForPage(viewport, content, edits, pageNumber) {
+  const explicitIndexes = new Set(
+    edits.filter(edit => edit.page === pageNumber && edit.kind !== "image" && Number.isFinite(Number(edit.index)))
+      .map(edit => Number(edit.index))
+  );
+  const claimed = new Set();
+  const wraps = [];
+  const images = edits.filter(edit => edit.page === pageNumber && edit.kind === "image" && edit.wrapText === true);
+
+  for (const image of images) {
+    const obstacle = {
+      x: image.x,
+      y: image.y,
+      width: image.width,
+      height: image.height
+    };
+    content.items.forEach((item, index) => {
+      if (claimed.has(index) || explicitIndexes.has(index)) return;
+      const source = sourceTextBoxForItem(viewport, item, index);
+      if (!source || !pdfRectsIntersect(source, obstacle)) return;
+      const target = wrapPdfTextBoxAroundImage(source, obstacle, 6);
+      if (!target) return;
+      claimed.add(index);
+      wraps.push({
+        kind: "wrap",
+        id: `wrap:${image.id || image.index}:${index}`,
+        wrapImageId: image.id || String(image.index),
+        page: pageNumber,
+        index,
+        original: item.str,
+        replacement: item.str,
+        text: item.str,
+        x: target.x,
+        y: target.y,
+        width: target.width,
+        height: target.height,
+        sourceX: source.x,
+        sourceY: source.y,
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+        fontFamily: "Helvetica",
+        fontSize: source.fontSize,
+        rotation: 0
+      });
+    });
+  }
+  return wraps;
+}
+
 /** Keep a free-text edit's semantic model synchronized without replacing its identity or geometry. */
 export function updatePdfFreeText(edit, text) {
   if (!edit || edit.kind !== "text") return false;
@@ -79,16 +206,17 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   options.onRenderTask?.(renderTask);
   await renderTask.promise;
   const content = await page.getTextContent();
+  const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
     const [left, top, right, bottom] = pdfRectToViewport(viewport, edit);
-    const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index);
+    const element = document.createElement("div"); element.className = "pdf-text-item pdf-text-edit pdf-image-edit"; element.dataset.index = String(edit.index); element.dataset.wrapText = edit.wrapText === true ? "on" : "off";
     const image = document.createElement("img"); image.src = `data:${edit.mime};base64,${edit.base64}`; image.alt = "Inserted PDF image"; image.draggable = true;
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
-  for (const mask of sourceMasksForPage(edits, pageNumber)) {
+  for (const mask of [...sourceMasksForPage(edits, pageNumber), ...wrapEdits.map(sourceMaskForEdit)]) {
     const [left, top, right, bottom] = pdfRectToViewport(viewport, mask);
     const element = document.createElement("div");
     element.className = "pdf-source-mask";
@@ -100,7 +228,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     if (!item.str?.trim()) return;
     const [, , , d, x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
     const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
-    const saved = edits.find((edit) => edit.page === pageNumber && edit.index === index);
+    const explicit = edits.find((edit) => edit.page === pageNumber && edit.index === index && edit.kind !== "image");
+    const wrapped = wrapEdits.find(edit => edit.index === index);
+    const saved = explicit || wrapped;
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
     if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
@@ -111,9 +241,13 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       const previewWeight = saved.fontFamily?.includes("Bold") ? "700" : "400";
       const previewStyle = /Oblique|Italic/.test(saved.fontFamily || "") ? "italic" : "normal";
       Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px`, fontSize: `${saved.fontSize * scale}px`, fontFamily: previewFamily, fontWeight: previewWeight, fontStyle: previewStyle });
-      span.classList.add("pdf-text-edit");
-      const move = document.createElement("button"); move.type="button"; move.className="pdf-move-handle"; move.title="Drag replacement"; move.textContent="↕"; span.append(move);
-      const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
+      if (saved.kind === "wrap") {
+        span.classList.add("pdf-wrapped-source");
+      } else {
+        span.classList.add("pdf-text-edit");
+        const move = document.createElement("button"); move.type="button"; move.className="pdf-move-handle"; move.title="Drag replacement"; move.textContent="↕"; span.append(move);
+        const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
+      }
     } else {
       Object.assign(span.style, { left: `${x}px`, top: `${y - height}px`, width: `${Math.max(item.width * scale, 8)}px`, height: `${height * 1.25}px`, fontSize: `${height}px` });
     }
@@ -201,25 +335,56 @@ export function layoutPdfText(edit, font) {
 export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
   const fonts = new Map();
-  for (const rawEdit of edits) {
-    const normalized = normalizePdfEdit(rawEdit);
-    if (normalized.kind === "image") {
-      const page = output.getPage(normalized.page - 1);
-      const bytes = Uint8Array.from(atob(normalized.base64), character => character.charCodeAt(0));
-      const embedded = normalized.mime === "image/png" ? await output.embedPng(bytes) : await output.embedJpg(bytes);
-      page.drawImage(embedded, { x: normalized.x, y: normalized.y, width: normalized.width, height: normalized.height });
-      continue;
+  const wrapByImage = new Map();
+
+  for (let pageNumber = 1; pageNumber <= model.pageCount; pageNumber++) {
+    const images = edits.filter(edit => edit.page === pageNumber && edit.kind === "image" && edit.wrapText === true);
+    if (!images.length) continue;
+    const page = await model.pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    for (const wrap of imageWrapEditsForPage(viewport, content, edits, pageNumber)) {
+      const list = wrapByImage.get(String(wrap.wrapImageId)) || [];
+      list.push(wrap);
+      wrapByImage.set(String(wrap.wrapImageId), list);
     }
+  }
+
+  const drawTextEdit = async rawEdit => {
+    const normalized = normalizePdfEdit(rawEdit);
     const fontName = resolvePdfStandardFont(normalized.fontFamily);
     let font = fonts.get(fontName);
     if (!font) { font = await output.embedFont(fontName); fonts.set(fontName, font); }
     const edit = layoutPdfText(normalized, font);
     const page = output.getPage(edit.page - 1);
     const size = edit.fontSize;
-    // V1 visual replacement: cover the source glyph area and draw the edit.
-    // This preserves every unedited page and keeps the replacement searchable.
-    if (edit.kind === "replacement") page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
-    edit.lines.forEach((line, index) => page.drawText(line || " ", { x: edit.x, y: edit.firstBaseline - index * edit.lineHeight, size, font, color: rgb(0, 0, 0), rotate: degrees(edit.rotation), maxWidth: edit.width }));
+    if (edit.kind === "replacement" || edit.kind === "wrap") {
+      page.drawRectangle({ ...sourceMaskForEdit(edit), color: rgb(1, 1, 1) });
+    }
+    edit.lines.forEach((line, index) => page.drawText(line || " ", {
+      x: edit.x,
+      y: edit.firstBaseline - index * edit.lineHeight,
+      size,
+      font,
+      color: rgb(0, 0, 0),
+      rotate: degrees(edit.rotation),
+      maxWidth: edit.width
+    }));
+  };
+
+  for (const rawEdit of edits) {
+    const normalized = normalizePdfEdit(rawEdit);
+    if (normalized.kind === "image") {
+      for (const wrap of wrapByImage.get(String(normalized.id || normalized.index)) || []) {
+        await drawTextEdit(wrap);
+      }
+      const page = output.getPage(normalized.page - 1);
+      const bytes = Uint8Array.from(atob(normalized.base64), character => character.charCodeAt(0));
+      const embedded = normalized.mime === "image/png" ? await output.embedPng(bytes) : await output.embedJpg(bytes);
+      page.drawImage(embedded, { x: normalized.x, y: normalized.y, width: normalized.width, height: normalized.height });
+      continue;
+    }
+    await drawTextEdit(normalized);
   }
   return new Blob([await output.save()], { type: "application/pdf" });
 }
