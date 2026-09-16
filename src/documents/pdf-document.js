@@ -216,7 +216,11 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
-  for (const mask of [...sourceMasksForPage(edits, pageNumber), ...wrapEdits.map(sourceMaskForEdit)]) {
+  const visibleMasks = [
+    ...sourceMasksForPage(edits, pageNumber),
+    ...wrapEdits.flatMap(replacementMasksForEdit)
+  ];
+  for (const mask of visibleMasks) {
     const raw = pdfRectToViewport(viewport, mask);
     const left = Math.max(0, Math.min(viewport.width, raw[0]));
     const top = Math.max(0, Math.min(viewport.height, raw[1]));
@@ -226,6 +230,8 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const element = document.createElement("div");
     element.className = "pdf-source-mask";
     element.setAttribute("aria-hidden", "true");
+    if (mask.maskIndex !== undefined) element.dataset.maskIndex = String(mask.maskIndex);
+    if (mask.maskRole) element.dataset.maskRole = mask.maskRole;
     Object.assign(element.style, { left: `${left}px`, top: `${top}px`, width: `${right-left}px`, height: `${bottom-top}px` });
     textLayer.append(element);
   }
@@ -307,7 +313,19 @@ export async function pdfDocumentProperties(model, pageNumber = 1) {
   };
 }
 
-/** Return the fixed cover used by both the live preview and PDF serialization. */
+const PDF_REPLACEMENT_MASK_PAD = 1.5;
+
+function padPdfRect(rect, amount = PDF_REPLACEMENT_MASK_PAD) {
+  const pad = Math.max(0, Number(amount) || 0);
+  return {
+    x: (Number(rect?.x) || 0) - pad,
+    y: (Number(rect?.y) || 0) - pad,
+    width: Math.max(0, Number(rect?.width) || 0) + pad * 2,
+    height: Math.max(0, Number(rect?.height) || 0) + pad * 2
+  };
+}
+
+/** Return the original source-text cover for a replacement/wrap edit. */
 export function sourceMaskForEdit(edit) {
   return {
     x: edit.sourceX ?? edit.x,
@@ -315,6 +333,29 @@ export function sourceMaskForEdit(edit) {
     width: Math.max(edit.sourceWidth ?? edit.width, 2),
     height: Math.max(edit.sourceHeight ?? edit.height, 2)
   };
+}
+
+/**
+ * A replacement owns two erase regions: its original source glyph box and its
+ * current replacement field box. This makes resizing the field a deliberate
+ * "erase underneath here" operation without erasing the strip between source
+ * and destination when a field is moved.
+ */
+export function replacementMasksForEdit(edit) {
+  if ((edit.kind || "replacement") === "wrap") {
+    return [{ ...padPdfRect(sourceMaskForEdit(edit)), maskRole:"source", maskIndex:edit.index }];
+  }
+  const source = padPdfRect(sourceMaskForEdit(edit));
+  const field = padPdfRect({
+    x: edit.x,
+    y: edit.y,
+    width: Math.max(Number(edit.width) || 0, 2),
+    height: Math.max(Number(edit.height) || 0, 2)
+  });
+  return [
+    { ...source, maskRole:"source", maskIndex:edit.index },
+    { ...field, maskRole:"field", maskIndex:edit.index }
+  ];
 }
 
 export function clampPdfRectToBox(rect, box) {
@@ -330,7 +371,9 @@ export function clampPdfRectToBox(rect, box) {
 }
 
 export function sourceMasksForPage(edits, pageNumber) {
-  return edits.filter((edit) => edit.page === pageNumber && (edit.kind || "replacement") === "replacement").map(sourceMaskForEdit);
+  return edits
+    .filter(edit => edit.page === pageNumber && (edit.kind || "replacement") === "replacement")
+    .flatMap(replacementMasksForEdit);
 }
 
 /** Normalize legacy replacements and new fields behind one PDF edit-object contract. */
@@ -380,8 +423,10 @@ export async function serializeEditedPdf(model, edits) {
       const pageBox = typeof page.getCropBox === "function"
         ? page.getCropBox()
         : { x:0, y:0, width:fallback.width, height:fallback.height };
-      const mask = clampPdfRectToBox(sourceMaskForEdit(edit), pageBox);
-      if (mask.width > 0 && mask.height > 0) page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
+      for (const rawMask of replacementMasksForEdit(edit)) {
+        const mask = clampPdfRectToBox(rawMask, pageBox);
+        if (mask.width > 0 && mask.height > 0) page.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
+      }
     }
     edit.lines.forEach((line, index) => page.drawText(line || " ", {
       x: edit.x,
