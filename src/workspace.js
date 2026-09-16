@@ -624,6 +624,32 @@ function createPdfLiveEditMask(textLayer, span) {
   return mask;
 }
 
+function syncPdfReplacementFieldMask(textLayer, edit, display, viewport) {
+  if (!textLayer || !edit || (edit.kind || "replacement") !== "replacement") return;
+  const pad = Math.max(1, 1.5 * (viewport?.scale || 1));
+  const layerWidth = textLayer.clientWidth;
+  const layerHeight = textLayer.clientHeight;
+  const left = Math.max(0, Math.min(layerWidth, display.left - pad));
+  const top = Math.max(0, Math.min(layerHeight, display.top - pad));
+  const right = Math.max(left, Math.min(layerWidth, display.left + display.width + pad));
+  const bottom = Math.max(top, Math.min(layerHeight, display.top + display.height + pad));
+  let mask = textLayer.querySelector(`.pdf-source-mask[data-mask-index="${CSS.escape(String(edit.index))}"][data-mask-role="field"]`);
+  if (!mask) {
+    mask = document.createElement("div");
+    mask.className = "pdf-source-mask";
+    mask.dataset.maskIndex = String(edit.index);
+    mask.dataset.maskRole = "field";
+    mask.setAttribute("aria-hidden", "true");
+    textLayer.append(mask);
+  }
+  Object.assign(mask.style, {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${right-left}px`,
+    height: `${bottom-top}px`
+  });
+}
+
 window.addEventListener("framechute:pdf-context-command", event => {
   const { block, action, value }=event.detail||{},runtime=runtimeSources.get(block);if(!runtime?.pageData)return;
   if (!pdfEditEnabled(block)) { setStatus("PDF editing is off. Turn EDIT [ ON ] to modify the document."); return; }
@@ -929,7 +955,7 @@ registerBlockType("pdf", {
       if (!pdfEditEnabled(block)) return;
       const handle=event.target.closest(".pdf-move-handle,.pdf-resize-handle"),span=handle?.closest(".pdf-text-edit"),runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!handle||!span||!edit)return;
       event.preventDefault();event.stopPropagation();const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};pushPdfHistory(runtime);handle.setPointerCapture(event.pointerId);
-      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle"),display={left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))};Object.assign(edit,viewportRectToPdf(runtime.pageData.viewport,display));Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});};
+      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle"),display={left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))};Object.assign(edit,viewportRectToPdf(runtime.pageData.viewport,display));Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});syncPdfReplacementFieldMask(textLayer,edit,display,runtime.pageData.viewport);};
       handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
