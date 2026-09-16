@@ -171,13 +171,28 @@ export function semanticWrapTarget(textBox, imageBox, {text="",fontSize=null,gap
   });
   if(!flow.lines.length)return null;
   const first=flow.lines[0];
-  const laneLines=flow.lines.filter(line=>Math.abs(line.x-first.x)<.01&&Math.abs(line.width-first.width)<.01);
+  // A replacement field is still one rectangular PDF object. Once a readable
+  // lane is selected, size that rectangle for the complete text at that lane
+  // width so live preview/save can never clip the tail merely because the
+  // semantic flow would regain full width below the image.
+  const laneFlow=layoutSemanticFlow({
+    region:{x:first.x,y:0,width:first.width,height:100000},
+    blocks:[{
+      id:"image-wrap-lane",
+      leading,
+      paragraphSpacing:0,
+      style:{fontSize:size},
+      runs:[{id:"image-wrap-lane:run",text,provenance:"replacement"}]
+    }],
+    options:{gutter:gap,minimumMeasure:Math.min(minimumMeasure,first.width),paragraphSpacing:0}
+  });
+  const lineHeight=laneFlow.lines[0]?.height||first.height;
   return {
     x:first.x,
-    y:Math.min(...laneLines.map(line=>line.y)),
+    y:first.y-Math.max(0,laneFlow.lines.length-1)*lineHeight,
     width:first.width,
-    height:Math.max(Number(textBox.height)||first.height,laneLines.reduce((sum,line)=>sum+line.height,0)),
-    status:flow.status
+    height:Math.max(Number(textBox.height)||first.height,laneFlow.lines.length*lineHeight),
+    status:laneFlow.status
   };
 }
 
