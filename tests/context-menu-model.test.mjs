@@ -83,3 +83,13 @@ test("PDF edit mode keeps existing source-text editing explicit",()=>{
   assert.equal(off.find(item=>item.id==="toggle-edit")?.label,"EDIT [ OFF ]");
   assert.equal(off.some(item=>item.id==="edit-text"),false);
 });
+
+
+test("PDF image context exposes Wrap Text state",()=>{
+  const onSelected={dataset:{wrapText:"on"},classList:{contains:name=>name==="pdf-image-edit"}};
+  const offSelected={dataset:{wrapText:"off"},classList:{contains:name=>name==="pdf-image-edit"}};
+  const on=commandsForEditorContext({editorKind:"pdf",selectionKind:"image",selected:onSelected,block:{dataset:{pdfEditMode:"on"}}});
+  const off=commandsForEditorContext({editorKind:"pdf",selectionKind:"image",selected:offSelected,block:{dataset:{pdfEditMode:"on"}}});
+  assert.equal(on.find(item=>item.id==="toggle-wrap")?.label,"Wrap Text  [ ON ]");
+  assert.equal(off.find(item=>item.id==="toggle-wrap")?.label,"Wrap Text  [ OFF ]");
+});
