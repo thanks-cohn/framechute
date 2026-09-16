@@ -564,7 +564,7 @@ function setPdfEditMode(block, enabled = true) {
   if (button) {
     button.textContent = `EDIT [ ${active ? "ON" : "OFF"} ]`;
     button.setAttribute("aria-pressed", String(active));
-    button.title = active ? "PDF editing is on" : "PDF editing is off";
+    button.title = active ? "Edit existing PDF text and added objects" : "PDF is in reader mode; existing text will not be changed";
   }
   if (!active) {
     block.querySelectorAll('.pdf-edit-text[contenteditable="true"]').forEach(text => text.blur());
