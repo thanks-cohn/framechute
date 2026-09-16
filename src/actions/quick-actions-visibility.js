@@ -191,6 +191,13 @@ if (!workspace || !bar || !actions?.selection) {
     applyBarVisibility();
     if (status) status.textContent = `Quick Actions are now ${quickActionsEnabled ? "on" : "off"} everywhere.`;
   });
+  window.addEventListener("framechute:quick-actions-object-changed", event => {
+    const block = event.detail?.block;
+    if (!isObjectBlock(block)) return;
+    if (event.detail?.show) selection.replace(block);
+    applyBarVisibility();
+    if (status) status.textContent = `Quick Actions ${event.detail?.hidden ? "hidden" : "shown"} for this object.`;
+  });
 
   const barObserver = new MutationObserver(() => applyBarVisibility());
   barObserver.observe(bar, { attributes: true, attributeFilter: ["hidden"] });
