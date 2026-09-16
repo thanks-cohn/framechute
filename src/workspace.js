@@ -593,6 +593,37 @@ function selectPdfEdit(block, span) {
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
 
+function removePdfLiveEditMask(textLayer) {
+  textLayer?.querySelectorAll(".pdf-live-edit-mask").forEach(mask => mask.remove());
+}
+
+function createPdfLiveEditMask(textLayer, span) {
+  removePdfLiveEditMask(textLayer);
+  if (!textLayer || !span) return null;
+  const layerWidth = textLayer.clientWidth;
+  const layerHeight = textLayer.clientHeight;
+  const rawLeft = Number.parseFloat(span.style.left) || 0;
+  const rawTop = Number.parseFloat(span.style.top) || 0;
+  const rawWidth = Math.max(0, Number.parseFloat(span.style.width) || 0);
+  const rawHeight = Math.max(0, Number.parseFloat(span.style.height) || 0);
+  const left = Math.max(0, Math.min(layerWidth, rawLeft));
+  const top = Math.max(0, Math.min(layerHeight, rawTop));
+  const right = Math.max(left, Math.min(layerWidth, rawLeft + rawWidth));
+  const bottom = Math.max(top, Math.min(layerHeight, rawTop + rawHeight));
+  if (right <= left || bottom <= top) return null;
+  const mask = document.createElement("div");
+  mask.className = "pdf-live-edit-mask";
+  mask.setAttribute("aria-hidden", "true");
+  Object.assign(mask.style, {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${right-left}px`,
+    height: `${bottom-top}px`
+  });
+  textLayer.append(mask);
+  return mask;
+}
+
 window.addEventListener("framechute:pdf-context-command", event => {
   const { block, action, value }=event.detail||{},runtime=runtimeSources.get(block);if(!runtime?.pageData)return;
   if (!pdfEditEnabled(block)) { setStatus("PDF editing is off. Turn EDIT [ ON ] to modify the document."); return; }
@@ -846,6 +877,11 @@ registerBlockType("pdf", {
       }
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
+      const runtime = runtimeSources.get(block);
+      const index = Number(span.dataset.index);
+      const page = Number(block.dataset.currentPage || 1);
+      const existing = runtime?.edits?.find(edit => edit.page === page && edit.index === index && edit.kind !== "image");
+      if (!existing && index >= 0) createPdfLiveEditMask(textLayer, span);
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
       text.focus();
       const range = document.createRange(); range.selectNodeContents(text);
@@ -874,6 +910,7 @@ registerBlockType("pdf", {
       if (!text) return;
       text.removeAttribute("contenteditable");
       text.closest(".pdf-text-item")?.classList.remove("is-editing");
+      removePdfLiveEditMask(textLayer);
       if(text.dataset.cancel){delete text.dataset.cancel;return;}
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
       const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
