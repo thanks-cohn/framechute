@@ -5,6 +5,7 @@ import { saveBlobAs } from "./native-save.js";
 import { zipSync } from "../vendor/fflate.mjs";
 import { PDFDocument } from "../vendor/pdf-lib.mjs";
 import { compareText, replaceAllText, extractDocxText, createSimpleDocx, textToPdf, readableText } from "./document-operations.js";
+import { copyContentToClipboard } from "./content-copy.js";
 import { enterPaintMode, isPaintEditing, leavePaintMode, paintOverlayFor, syncPaintOverlay } from "../image-edit/paint-runtime.js";
 
 const workspace = document.querySelector("#workspace");
@@ -85,6 +86,13 @@ register({ id: "object.duplicate", label: "Clone", appliesTo: (s) => s.length > 
   for (const item of items) await window.FrameChuteWorkspace.duplicateBlock(item);
   announce(`${items.length} non-destructive workspace cop${items.length === 1 ? "y" : "ies"} created.`);
 } });
+register({id:"object.copy",label:"Copy",appliesTo:(s)=>s.length===1,async run({selection:[item]}){
+  try{
+    const image=imageOf(item),blob=image?await transformed(item,{format:"png"}):await window.FrameChuteWorkspace.sourceBlob(item);
+    const text=isTextDocument(item)?await textOf(item):"";
+    const result=await copyContentToClipboard({blob,text});announce(result.message);
+  }catch(error){console.error(error);announce(`Copy failed: ${error?.message||"the clipboard rejected the content"}.`);}
+}});
 register({id:"object.copy-to",label:"Copy To…",appliesTo:(s)=>s.length>0&&typeof window.showDirectoryPicker==="function",async run({selection:items}){let directory;try{directory=await window.showDirectoryPicker({mode:"readwrite"});}catch(error){if(error.name==="AbortError")return;throw error;}let copied=0,excluded=[];for(const item of items){const blob=imageOf(item)?await transformed(item,{format:"png"}):await window.FrameChuteWorkspace.sourceBlob(item);if(!blob){excluded.push(nameOf(item));continue;}const filename=imageOf(item)?`${nameOf(item).replace(/\.[^.]+$/,"")}.png`:nameOf(item),handle=await directory.getFileHandle(filename,{create:true}),writer=await handle.createWritable();await writer.write(blob);await writer.close();copied++;}announce(`${copied} file(s) copied. Originals were not deleted.${excluded.length?` Unsupported: ${excluded.join(", ")}.`:""}`);}});
 register({ id: "image.rotate-left", label: "↶ Rotate", appliesTo: applies("image"), async run({ selection: items }) { items.forEach((item) => updateTransform(item, { rotate: (transforms.get(item)?.rotate || 0) - 90 })); } });
 register({ id: "image.paint", label: "Image Editing", appliesTo: applies("image", { max: 1 }), async run({ selection: [item] }) { if(isPaintEditing(item)){leavePaintMode(item);announce("Image editing is OFF. Edits are preserved and normal object controls are restored.");}else{await enterPaintMode(item);announce("Image editing is ON. Draw on the object; turning it off preserves your edits.");} } });

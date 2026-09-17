@@ -29,11 +29,18 @@ import {
 
 test("canonical interactive rectangles correct shifted and oversized DOM boxes without changing PDF truth",()=>{
   const source={x:10,y:700,width:80,height:12,space:"pdf-points"};
-  const resolved=resolvePdfInteractiveTextRect({objectId:"source:1",sourceRect:source,expectedViewportRect:{x:20,y:40,width:160,height:24,space:"pdf-viewport-css"},domRect:{x:120,y:65,width:160,height:60,space:"client-css"},glyphInkRect:{x:120,y:90,width:158,height:20,space:"client-css"}});
-  assert.equal(resolved.derivationMethod,"observed-glyph-ink");
-  assert.deepEqual(resolved.interactiveRect,{x:119,y:89,width:160,height:22,space:"client-css"});
+  const resolved=resolvePdfInteractiveTextRect({objectId:"source:1",presentationTruthKind:"canvas-source-text",sourceRect:source,sourceProjectionRect:{x:20,y:40,width:160,height:24,space:"client-css"},domRect:{x:120,y:65,width:160,height:60,space:"client-css"},glyphInkRect:{x:120,y:90,width:158,height:20,space:"client-css"}});
+  assert.equal(resolved.derivationMethod,"pdfjs-source-projection");
+  assert.equal(resolved.interactionAuthority,"pdfjs-source-projection");
+  assert.deepEqual(resolved.interactiveRect,{x:19,y:39,width:162,height:26,space:"client-css"});
   assert.deepEqual(resolved.canonicalSourceRect,source);
-  assert.equal(compareVisualRectangles(resolved.observedGlyphInkRect,resolved.interactiveRect).coverageOfA,1);
+  assert.deepEqual(resolved.domGlyphDelta,{dx:100,dy:50,dw:-2,dh:-4,maxAbs:100});
+});
+
+test("DOM-painted replacement text keeps visible glyph authority",()=>{
+  const resolved=resolvePdfInteractiveTextRect({objectId:"edit:1",presentationTruthKind:"dom-replacement-text",sourceProjectionRect:{x:20,y:40,width:160,height:24},domRect:{x:20,y:40,width:160,height:24},glyphInkRect:{x:24,y:43,width:90,height:17},padding:1});
+  assert.equal(resolved.interactionAuthority,"visible-dom-glyphs");
+  assert.deepEqual(resolved.interactiveRect,{x:23,y:42,width:92,height:19,space:"client-css"});
 });
 
 test("visual hit resolution chooses the glyph under the pointer instead of an overlapping neighboring line",()=>{

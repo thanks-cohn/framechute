@@ -399,9 +399,12 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const wrapped = wrapEdits.find(edit => edit.index === index);
     const saved = wrapped || explicit;
     const span = document.createElement("span");
-    span.className = "pdf-text-item"; span.dataset.index = String(index);
+    span.className = "pdf-text-item"; span.dataset.index = String(index);span.dataset.viewportScale=String(scale);
+    const nextItem=content.items.slice(index+1).find(candidate=>candidate.str?.trim());
+    span.dataset.terminalFragment=String(!nextItem||Math.abs((Number(nextItem.transform?.[5])||0)-(Number(item.transform?.[5])||0))>Math.max(1,Math.abs(Number(item.transform?.[3])||0)*.35));
     const reopenedObject=reopenedCurrentByPaintOrder.get(index);
     span.dataset.objectId=saved?.id||reopenedObject?.replacementObjectId||`source:p${pageNumber}:text:${index}`;
+    span.dataset.presentationTruthKind=saved?(saved.kind==="wrap"?"dom-wrapped-text":"dom-replacement-text"):"canvas-source-text";
     span.dataset.sourceObjectId=saved?.sourceObjectId||reopenedObject?.sourceObjectId||`source:p${pageNumber}:text:${index}`;
     if(saved?.id)span.dataset.ownerEditId=saved.id;
     if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
@@ -433,7 +436,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   });
   edits.filter(edit => edit.page === pageNumber && edit.kind === "text").forEach(edit => {
     const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
-    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);
+    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);span.dataset.presentationTruthKind="dom-free-text";span.dataset.objectId=saved.id;span.dataset.ownerEditId=saved.id;
     const text=document.createElement("span");text.className="pdf-edit-text";text.textContent=saved.text;span.append(text);
     const markDirty=()=>{const block=text.closest?.(".block");if(block)block.dataset.documentDirty="true";};
     text.addEventListener("input",()=>{if(updatePdfFreeText(edit,text.innerText))markDirty();});
