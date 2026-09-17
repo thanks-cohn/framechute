@@ -169,13 +169,6 @@ document.addEventListener("click", (event) => {
   void copyPdfDocument(block, copy);
 }, true);
 
-// Keep the visible reconnect label deterministic even if remembered-source
-// refreshes rewrite it after a focus change.
-document.addEventListener("pointerover", (event) => {
-  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
-  if (block) normalizePdfControls(block);
-}, { passive: true });
-
 document.addEventListener("pointerup", (event) => {
   const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
   if (block) requestAnimationFrame(() => normalizePdfControls(block));
