@@ -24,7 +24,8 @@ export const PDF_GEOMETRY_ISSUE_CODES=Object.freeze([
   "EDIT_FIELD_CHANGED_ON_FOCUS","EDIT_FIELD_CHANGED_ON_SELECTION","TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN","SEARCH_BAR_CHANGED_PAGE_COORDINATE_ORIGIN",
   "TEXT_LAYER_SCROLL_DESYNCHRONIZED","UNACCOUNTED_CSS_TRANSFORM","UNEXPECTED_GEOMETRY_MUTATION","HOVER_BOX_GLYPH_MISMATCH",
   "SOURCE_DOM_SHOULD_COVER_SOURCE_GLYPH","HOVER_BOX_SHOULD_COVER_HIT_GLYPH","SELECTED_FIELD_SHOULD_REMAIN_ANCHORED_TO_SOURCE",
-  "EDITABLE_FIELD_SHOULD_REMAIN_ANCHORED_TO_SELECTED_FIELD","SOURCE_MASK_SHOULD_COVER_SUPERSEDED_SOURCE_GLYPH","REPLACEMENT_GLYPH_SHOULD_FIT_REPLACEMENT_FIELD"
+  "EDITABLE_FIELD_SHOULD_REMAIN_ANCHORED_TO_SELECTED_FIELD","SOURCE_MASK_SHOULD_COVER_SUPERSEDED_SOURCE_GLYPH","REPLACEMENT_GLYPH_SHOULD_FIT_REPLACEMENT_FIELD",
+  "PDF_INTERACTIVE_RECT_GLYPH_MISMATCH"
 ]);
 const STATE_NAMES=Object.freeze(["idle","hover","selected","editing","committed","rerendered","saved","reopened","pointerdown","mousedown","click","dblclick","before-focus","after-focus","before-contenteditable","after-contenteditable","selection-created","editing-active","focusout","rerender-start","rerender-complete"]);
 const round=(n,digits=3)=>Number.isFinite(Number(n))?Math.round(Number(n)*10**digits)/10**digits:null;
@@ -33,6 +34,38 @@ const stableStrings=values=>[...new Set((values||[]).filter(Boolean).map(String)
 const namedRect=(rect,space)=>rect?{rect:clientRectRecord(rect),space}:null;
 const distanceToRect=(point,rect)=>Math.hypot(Math.max(rect.x-point.x,0,point.x-(rect.x+rect.width)),Math.max(rect.y-point.y,0,point.y-(rect.y+rect.height)));
 const rawNamedRect=value=>value?.rect?value.rect:value;
+
+/** One presentation-space authority for every interactive projection of a text
+ * run.  PDF geometry remains immutable; an observed glyph rectangle may refine
+ * the transient client hit rectangle, but is never suitable for serialization. */
+export function resolvePdfInteractiveTextRect({objectId,sourceRect=null,expectedViewportRect=null,glyphInkRect=null,domRect=null,padding=1,maxPadding=2}={}){
+  const glyph=rawNamedRect(glyphInkRect),expected=rawNamedRect(expectedViewportRect),dom=rawNamedRect(domRect);
+  const finite=rect=>rect&&[rect.x,rect.y,rect.width,rect.height].every(Number.isFinite)&&rect.width>0&&rect.height>0;
+  const safePadding=Math.max(0,Math.min(Number(padding)||0,maxPadding));
+  let chosen,derivationMethod,confidence;
+  if(finite(glyph)){
+    chosen={x:glyph.x-safePadding,y:glyph.y-safePadding,width:glyph.width+safePadding*2,height:glyph.height+safePadding*2};
+    derivationMethod="observed-glyph-ink";confidence="high";
+  }else if(finite(dom)){
+    chosen={x:dom.x,y:dom.y,width:dom.width,height:dom.height};derivationMethod="normalized-dom-layout";confidence="medium";
+  }else if(finite(expected)){
+    chosen={x:expected.x,y:expected.y,width:expected.width,height:expected.height};derivationMethod="expected-viewport";confidence="medium";
+  }else return {objectId:objectId||null,coordinateSpace:"client-css",canonicalSourceRect:sourceRect,expectedViewportRect,observedGlyphInkRect:glyphInkRect,interactiveRect:null,derivationMethod:"unresolved",confidence:"none",tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
+  return {objectId:objectId||null,coordinateSpace:glyphInkRect?.space||domRect?.space||expectedViewportRect?.space||"client-css",canonicalSourceRect:sourceRect,expectedViewportRect,observedGlyphInkRect:glyphInkRect,interactiveRect:{...chosen,space:glyphInkRect?.space||domRect?.space||expectedViewportRect?.space||"client-css"},derivationMethod,confidence,tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
+}
+
+/** Deterministic visual hit resolution. Containment is deliberately strict so
+ * adjacent lines cannot acquire one another's clicks. */
+export function resolvePdfVisualTarget(point,candidates=[]){
+  const ranked=candidates.map((candidate,paintOrder)=>{
+    const interactive=rawNamedRect(candidate.interactiveRect),glyph=rawNamedRect(candidate.glyphInkRect);
+    return {...candidate,paintOrder,interactiveDistance:finiteDistance(point,interactive),glyphDistance:finiteDistance(point,glyph)};
+  }).filter(candidate=>Number.isFinite(candidate.interactiveDistance)).sort((a,b)=>(a.interactiveDistance>0)-(b.interactiveDistance>0)||(a.glyphDistance>0)-(b.glyphDistance>0)||a.glyphDistance-b.glyphDistance||b.paintOrder-a.paintOrder||String(a.objectId).localeCompare(String(b.objectId)));
+  const chosen=ranked[0];
+  if(!chosen||chosen.interactiveDistance>0)return {objectId:null,reason:"no-interactive-rect",distance:null,competingCandidateIds:ranked.slice(0,5).map(item=>item.objectId)};
+  return {objectId:chosen.objectId,reason:chosen.glyphDistance===0?"glyph-contained-pointer":"interactive-rect-contained-pointer",distance:chosen.glyphDistance,competingCandidateIds:ranked.slice(1,6).map(item=>item.objectId)};
+}
+function finiteDistance(point,rect){return rect&&[rect.x,rect.y,rect.width,rect.height,point?.x,point?.y].every(Number.isFinite)?distanceToRect(point,rect):Infinity;}
 
 /** Compare two projections in the same coordinate space. The record is kept
  * deliberately redundant enough that an agent never has to recalculate IoU,
@@ -415,17 +448,21 @@ export function capturePdfVisualScene(block,runtime={},options={}){
   const mode=options.mode||getPdfDiagnosticMode(block);if(mode===PDF_DIAGNOSTIC_MODES.OFF)return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,mode,page:Number(block?.dataset?.currentPage||1),objects:[],relationships:[],issues:[]};
   const deep=mode===PDF_DIAGNOSTIC_MODES.DEEP,root=block?.querySelector?.(".pdf-text-layer"),geometry=options.pageGeometry||capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport,getComputedStyle:options.getComputedStyle});
   const observations=options.observations||capturePdfPageDomObservations(root,{state:"idle",getComputedStyle:options.getComputedStyle,createRange:deep?options.createRange:()=>null,createCanvas:deep?options.createCanvas:()=>null});
+  const sharedHoverOutline=root?.querySelector?.(".pdf-interactive-outline:not([hidden])");
   const elements=new Map([...(root?.querySelectorAll?.("[data-pdf-object-id],[data-object-id]")||[])].map(element=>[String(element.dataset?.pdfObjectId||element.dataset?.objectId),element]));
   const objects=observations.map(observation=>{
     const element=elements.get(String(observation.objectId)),styleReader=options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis),computed=element?styleReader?.(element)||{}:{},hovered=options.hoveredObjectId!=null?String(options.hoveredObjectId)===String(observation.objectId):Boolean(element?.matches?.(":hover")),selected=options.selectedObjectId!=null?String(options.selectedObjectId)===String(observation.objectId):Boolean(element?.classList?.contains?.("is-selected")),editing=Boolean(element?.querySelector?.('[contenteditable="true"]'));
-    const projections={expectedViewport:observation.expectedViewportRect?namedRect(observation.expectedViewportRect,"pdf-viewport-css"):null,domLayout:namedRect(rawNamedRect(observation.clientRect),"client-css"),glyphInk:observation.inkUnion?namedRect(rawNamedRect(observation.inkUnion),"glyph-ink-client-css"):null,hitTarget:namedRect(rawNamedRect(observation.clientRect),"client-css"),hoverOutline:hovered?outlineProjection(observation,computed):null,selectedField:selected?namedRect(rawNamedRect(observation.clientRect),"client-css"):null,editableField:observation.editableRect?namedRect(rawNamedRect(observation.editableRect),"client-css"):null,sourceMask:null,replacementField:observation.ownerEditId?namedRect(rawNamedRect(observation.clientRect),"client-css"):null};
-    const record={objectId:observation.objectId,sourceObjectId:observation.sourceObjectId,ownerEditId:observation.ownerEditId,page:Number(block?.dataset?.currentPage||1),text:cleanText(element?.textContent),semantic:{kind:observation.ownerEditId?"replacement-text":"source-text-run"},projections,visualState:{hovered,selected,editing,visible:observation.display!=="none"&&observation.visibility!=="hidden"&&observation.opacity!=="0",clipped:false,pointerReachable:observation.pointerEvents!=="none",zIndex:observation.zIndex},visualAncestry:deep?compactVisualAncestry(element,options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis)):undefined};
+    const authority=resolvePdfInteractiveTextRect({objectId:observation.objectId,expectedViewportRect:observation.expectedViewportRect,glyphInkRect:observation.inkUnion,domRect:observation.clientRect,padding:1});
+    const interactive=authority.interactiveRect?namedRect(authority.interactiveRect,"client-css"):namedRect(rawNamedRect(observation.clientRect),"client-css");
+    const domProjection=namedRect(rawNamedRect(observation.clientRect),"client-css");
+    const projections={expectedViewport:observation.expectedViewportRect?namedRect(observation.expectedViewportRect,"pdf-viewport-css"):null,domLayout:domProjection,glyphInk:observation.inkUnion?namedRect(rawNamedRect(observation.inkUnion),"glyph-ink-client-css"):null,interactiveRect:interactive,hitTarget:domProjection,hoverOutline:hovered&&sharedHoverOutline?namedRect(sharedHoverOutline.getBoundingClientRect(),"hover-outline-client-css"):hovered?outlineProjection(observation,computed):null,selectedField:selected?domProjection:null,editableField:observation.editableRect?namedRect(rawNamedRect(observation.editableRect),"client-css"):null,sourceMask:null,replacementField:observation.ownerEditId?domProjection:null};
+    const record={objectId:observation.objectId,sourceObjectId:observation.sourceObjectId,ownerEditId:observation.ownerEditId,page:Number(block?.dataset?.currentPage||1),text:cleanText(element?.textContent),semantic:{kind:observation.ownerEditId?"replacement-text":"source-text-run"},interactiveGeometry:authority,visualState:{hovered,selected,editing,visible:observation.display!=="none"&&observation.visibility!=="hidden"&&observation.opacity!=="0",clipped:false,pointerReachable:observation.pointerEvents!=="none",zIndex:observation.zIndex},visualAncestry:deep?compactVisualAncestry(element,options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis)):undefined,projections};
     return record;
   });
   const relationships=[],issues=[...evaluatePageAlignment(geometry)];
   for(const object of objects){
     for(const [projection,reference,type] of [["hitTarget","glyphInk","hit-to-glyph"],["hoverOutline","glyphInk","hover-to-glyph"],["editableField","glyphInk","edit-to-glyph"],["selectedField","glyphInk","selected-to-glyph"]])if(object.projections[projection]&&object.projections[reference])relationships.push({from:object.objectId,to:`${projection}:${object.objectId}`,type,metrics:compareVisualRectangles(object.projections[reference],object.projections[projection],{a:reference,b:projection})});
-    const checks=[["hoverOutline","glyphInk","HOVER_BOX_GLYPH_MISMATCH"],["editableField","glyphInk","EDIT_FIELD_TELEPORTED_FROM_SOURCE"],["selectedField","glyphInk","SELECTED_FIELD_SHOULD_REMAIN_ANCHORED_TO_SOURCE"]];
+    const checks=[["hitTarget","glyphInk","PDF_INTERACTIVE_RECT_GLYPH_MISMATCH"],["hoverOutline","glyphInk","HOVER_BOX_SHOULD_COVER_HIT_GLYPH"],["editableField","selectedField","EDITABLE_FIELD_SHOULD_REMAIN_ANCHORED_TO_SELECTED_FIELD"],["selectedField","glyphInk","SELECTED_FIELD_SHOULD_REMAIN_ANCHORED_TO_SOURCE"]];
     for(const check of checks){const issue=projectionIssue(object,...check);if(issue)issues.push(issue);}
   }
   const pointer=options.pointer||runtime.telemetry?.lastPointer||null;
