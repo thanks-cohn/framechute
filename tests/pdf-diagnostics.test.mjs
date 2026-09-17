@@ -4,11 +4,15 @@ import { PDFDocument, StandardFonts } from "../src/vendor/pdf-lib.mjs";
 import { createPdfPageDiagnostics, extractSemanticPdfText, openPdfDocument, searchCurrentPdfDocument, serializeEditedPdf } from "../src/documents/pdf-document.js";
 import {
   buildPdfDiagnosticSnapshot,
+  compareVisualRectangles,
+  compareObjectProjection,
   capturePointerHitTest,
   capturePdfElementState,
   compareGeometryFingerprints,
   createBoundedGeometryJournal,
   createGeometryTransformChain,
+  firstProjectionDivergence,
+  getPdfDiagnosticMode,
   comparePdfSnapshots,
   createOwnedMask,
   currentPdfEdits,
@@ -16,9 +20,44 @@ import {
   pdfRectThroughViewportTransform,
   reconcileReopenedPdfObjects,
   rectangleDelta,
+  setPdfDiagnosticMode,
   transformPointThroughChain,
   verifyTransformRoundTrip
 } from "../src/documents/pdf-observability.js";
+
+test("visual relationships classify aligned, shifted, oversized, disjoint, and zoom-equivalent projections",()=>{
+  const glyph={x:100,y:100,width:80,height:16,space:"client-css"};
+  assert.equal(compareVisualRectangles(glyph,{...glyph},{a:"glyphInk",b:"hoverOutline"}).classification,"aligned");
+  const shifted=compareVisualRectangles(glyph,{x:108,y:112,width:80,height:16,space:"client-css"},{a:"glyphInk",b:"hoverOutline"});
+  assert.equal(shifted.classification,"near-but-misaligned");
+  assert.deepEqual(shifted.centerDelta,{x:8,y:12});
+  assert.equal(compareVisualRectangles(glyph,{x:90,y:70,width:100,height:80,space:"client-css"},{a:"glyphInk",b:"hitTarget"}).classification,"oversized-hitbox");
+  assert.equal(compareVisualRectangles(glyph,{x:100,y:50,width:80,height:16,space:"client-css"}).classification,"disjoint");
+  for(const zoom of [.5,1,2]){
+    const scale=rect=>Object.fromEntries(Object.entries(rect).map(([key,value])=>[key==="space"?key:key,typeof value==="number"?value*zoom:value]));
+    assert.equal(compareVisualRectangles(scale(glyph),scale({...glyph})).iou,1);
+  }
+});
+
+test("scene queries compare projections and divergence identifies the first unequal transform stage",()=>{
+  const scene={objects:[{objectId:"source:1",projections:{glyphInk:{rect:{x:10,y:10,width:40,height:10},space:"client-css"},hitTarget:{rect:{x:14,y:10,width:40,height:10},space:"client-css"}}}]};
+  assert.equal(compareObjectProjection(scene,"source:1","glyphInk","hitTarget").centerDelta.x,4);
+  const expected={rect:{x:10,y:10,width:40,height:10},space:"client-css",transformChain:createGeometryTransformChain("viewport","client",[{kind:"page-origin",matrix:[1,0,0,1,100,50]}])};
+  const actual={rect:{x:10,y:22,width:40,height:10},space:"client-css",transformChain:createGeometryTransformChain("viewport","client",[{kind:"page-origin",matrix:[1,0,0,1,100,62]}])};
+  const divergence=firstProjectionDivergence(expected,actual);
+  assert.equal(divergence.stage,"page-origin -> page-origin");
+  assert.deepEqual(divergence.delta,{x:0,y:12});
+});
+
+test("diagnostic modes default off and require explicit bounded activation",()=>{
+  const block={dataset:{}};
+  assert.equal(getPdfDiagnosticMode(block),"off");
+  assert.equal(setPdfDiagnosticMode(block,"debug"),"debug");
+  assert.equal(getPdfDiagnosticMode(block),"debug");
+  assert.equal(setPdfDiagnosticMode(block,"deep"),"deep");
+  assert.throws(()=>setPdfDiagnosticMode(block,"always"),/Unknown PDF diagnostic mode/);
+  setPdfDiagnosticMode(block,"off");assert.equal(getPdfDiagnosticMode(block),"off");
+});
 
 test("edit identity never aliases its source and current boundary quarantines A/B",()=>{
   let n=0;const make=text=>ensurePdfEditIdentity({kind:"replacement",page:1,index:0,replacement:text,x:20,y:200,width:80,height:14,fontSize:12},{idFactory:()=>`edit:${++n}`});
