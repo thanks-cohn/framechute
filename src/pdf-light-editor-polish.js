@@ -1,137 +1,33 @@
+import { copyContentToClipboard } from "./actions/content-copy.js";
+
 const workspace = document.querySelector("#workspace");
 const status = document.querySelector("#status");
-const PDF_COMPACT_CONTROLS = "framechute-pdf-source-controls";
 const TERMINAL_MASK_CLASS = "pdf-terminal-bleed-polish";
+const NORMALIZE_DELAYS = [0, 80, 260, 900, 1400];
 
 function setStatus(message) {
   if (status) status.textContent = message;
 }
 
-function cleanSourceLabel(value) {
-  const text = String(value || "").trim();
-  return text.replace(/^Local\s+(?:file|folder):\s*/i, "").trim();
-}
-
-function rememberedPdfSource(block, footer = null) {
-  const footerValue = footer?.querySelector(".framechute-source-location-value")?.value?.trim();
-  if (footerValue) return footerValue;
-
-  const remembered = String(block?.dataset?.framechuteSourceAddress || "").trim();
-  if (remembered) return remembered;
-
-  const displayName = String(block?.dataset?.sourceDisplayName || "").trim();
-  if (displayName) return displayName;
-
-  const localLink = cleanSourceLabel(block?.querySelector(".local-source-link")?.textContent);
-  if (localLink && localLink.toLowerCase() !== "reconnect") return localLink;
-
-  return "";
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.append(textarea);
-    textarea.select();
-    const copied = document.execCommand("copy");
-    textarea.remove();
-    return copied;
-  }
-}
-
-function ensureCompactPdfControls(block, address) {
-  const toolbar = block.querySelector(".pdf-toolbar");
-  if (!toolbar) return;
-
-  const legacyGroups = [...toolbar.querySelectorAll(".local-source-controls")];
-  if (legacyGroups.length) {
-    const keeper = legacyGroups.shift();
-    for (const duplicate of legacyGroups) duplicate.remove();
-
-    const reconnect = keeper.querySelector(".local-source-link");
-    const copy = keeper.querySelector(".local-source-copy");
-    if (reconnect) {
-      reconnect.textContent = "Reconnect";
-      reconnect.title = "Reconnect this PDF to its remembered source";
-      reconnect.setAttribute("aria-label", "Reconnect PDF source");
-    }
-    if (copy) {
-      copy.textContent = "Copy";
-      copy.title = "Copy remembered PDF source";
-    }
-    toolbar.querySelector(`.${PDF_COMPACT_CONTROLS}`)?.remove();
-    return;
-  }
-
-  let controls = toolbar.querySelector(`.${PDF_COMPACT_CONTROLS}`);
-  if (!address) {
-    controls?.remove();
-    return;
-  }
-
-  if (!controls) {
-    controls = document.createElement("span");
-    controls.className = PDF_COMPACT_CONTROLS;
-
-    const reconnect = document.createElement("button");
-    reconnect.type = "button";
-    reconnect.className = "framechute-pdf-reconnect";
-    reconnect.textContent = "Reconnect";
-    reconnect.title = "Reconnect this PDF to its remembered source";
-    reconnect.addEventListener("click", () => {
-      const nativeReconnect = block.querySelector(".reconnect-source");
-      if (!nativeReconnect) {
-        setStatus("This PDF has no reconnectable source control.");
-        return;
-      }
-      nativeReconnect.click();
-    });
-
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "framechute-pdf-copy-source";
-    copy.textContent = "Copy";
-    copy.title = "Copy remembered PDF source";
-    copy.addEventListener("click", async () => {
-      const current = rememberedPdfSource(block);
-      if (!current) {
-        setStatus("No remembered PDF source to copy.");
-        return;
-      }
-      await copyText(current);
-      setStatus(`Copied PDF source: ${current}`);
-    });
-
-    controls.append(reconnect, copy);
-    toolbar.append(controls);
-  }
-}
-
 function terminalIndexes(textLayer) {
   return new Set(
     [...textLayer.querySelectorAll('.pdf-text-item[data-terminal-fragment="true"][data-index]')]
-      .map(span => String(span.dataset.index || "").trim())
+      .map((span) => String(span.dataset.index || "").trim())
       .filter(Boolean)
   );
 }
 
 function polishTerminalMasks(block) {
-  const textLayer = block.querySelector(".pdf-text-layer");
+  const textLayer = block?.querySelector(".pdf-text-layer");
   if (!textLayer) return;
 
   const terminals = terminalIndexes(textLayer);
   for (const mask of textLayer.querySelectorAll('.pdf-source-mask[data-mask-role="source-line"]')) {
     const indexes = String(mask.dataset.maskIndex || "")
       .split(",")
-      .map(value => value.trim())
+      .map((value) => value.trim())
       .filter(Boolean);
-    mask.classList.toggle(TERMINAL_MASK_CLASS, indexes.some(index => terminals.has(index)));
+    mask.classList.toggle(TERMINAL_MASK_CLASS, indexes.some((index) => terminals.has(index)));
   }
 
   const selectedIndex = String(block.dataset.selectedPdfIndex || "").trim();
@@ -139,38 +35,91 @@ function polishTerminalMasks(block) {
     || (selectedIndex
       ? textLayer.querySelector(`.pdf-text-item[data-index="${CSS.escape(selectedIndex)}"][data-terminal-fragment="true"]`)
       : null);
+
   for (const mask of textLayer.querySelectorAll(".pdf-live-edit-mask")) {
     mask.classList.toggle(TERMINAL_MASK_CLASS, Boolean(editingTerminal));
   }
 }
 
-function normalizePdfBlock(block) {
+function normalizePdfControls(block) {
   if (!(block instanceof HTMLElement) || !block.classList.contains("pdf-block")) return;
 
-  let address = rememberedPdfSource(block);
-  const footers = [...block.querySelectorAll(":scope > .framechute-source-location")];
-  for (const footer of footers) {
-    const footerAddress = rememberedPdfSource(block, footer);
-    if (footerAddress) {
-      address = footerAddress;
-      block.dataset.framechuteSourceAddress = footerAddress;
-    }
-    footer.remove();
+  // The advanced source-location footer duplicates the PDF's compact source
+  // controls. PDFs own their reconnect/copy pair in the toolbar, so suppress
+  // the footer instead of letting focus refreshes add another visible row.
+  for (const footer of block.querySelectorAll(":scope > .framechute-source-location")) footer.remove();
+
+  const toolbar = block.querySelector(".pdf-toolbar");
+  if (!toolbar) {
+    polishTerminalMasks(block);
+    return;
   }
 
-  ensureCompactPdfControls(block, address);
+  // Remove leftovers from the earlier experimental implementation.
+  toolbar.querySelectorAll(".framechute-pdf-source-controls").forEach((node) => node.remove());
+
+  const groups = [...toolbar.querySelectorAll(".local-source-controls")];
+  const keeper = groups.shift() || null;
+  for (const duplicate of groups) duplicate.remove();
+
+  if (keeper) {
+    const reconnect = keeper.querySelector(".local-source-link");
+    const copy = keeper.querySelector(".local-source-copy");
+    if (reconnect) {
+      reconnect.textContent = "Reconnect";
+      reconnect.title = "Reconnect this PDF to its source";
+      reconnect.setAttribute("aria-label", "Reconnect PDF source");
+    }
+    if (copy) {
+      copy.textContent = "Copy";
+      copy.title = "Copy this PDF document";
+      copy.setAttribute("aria-label", "Copy PDF document");
+    }
+  }
+
   polishTerminalMasks(block);
 }
 
 function normalizeAllPdfs() {
-  for (const block of workspace?.querySelectorAll(".pdf-block") || []) normalizePdfBlock(block);
+  for (const block of workspace?.querySelectorAll(".pdf-block") || []) normalizePdfControls(block);
 }
 
 function scheduleNormalize(block = null) {
-  queueMicrotask(() => {
-    if (block?.isConnected) normalizePdfBlock(block);
-    else normalizeAllPdfs();
-  });
+  for (const delay of NORMALIZE_DELAYS) {
+    setTimeout(() => {
+      if (block?.isConnected) normalizePdfControls(block);
+      else normalizeAllPdfs();
+    }, delay);
+  }
+}
+
+async function copyPdfDocument(block, button) {
+  if (!block) return;
+  button.disabled = true;
+  try {
+    const blob = await window.FrameChuteWorkspace?.sourceBlob?.(block);
+    let text = "";
+    try {
+      text = await window.FrameChuteWorkspace?.extractText?.(block) || "";
+    } catch {
+      text = "";
+    }
+
+    if (!blob && !text) {
+      setStatus("Copy failed: this PDF has no copyable document content.");
+      return;
+    }
+
+    const result = await copyContentToClipboard({ blob, text });
+    if (result.ok && result.kind === "blob") setStatus("Copied PDF document.");
+    else setStatus(result.message);
+  } catch (error) {
+    console.error("Could not copy PDF document:", error);
+    setStatus(`Copy failed: ${error?.message || "the clipboard rejected the PDF"}.`);
+  } finally {
+    button.disabled = false;
+    scheduleNormalize(block);
+  }
 }
 
 function installStyle() {
@@ -178,7 +127,10 @@ function installStyle() {
   const style = document.createElement("style");
   style.dataset.framechutePdfLightPolish = "true";
   style.textContent = `
-    .${PDF_COMPACT_CONTROLS},
+    .pdf-block > .framechute-source-location {
+      display: none !important;
+    }
+
     .pdf-toolbar .local-source-controls {
       display: inline-flex;
       align-items: center;
@@ -186,7 +138,6 @@ function installStyle() {
       flex: 0 0 auto;
     }
 
-    .${PDF_COMPACT_CONTROLS} > button,
     .pdf-toolbar .local-source-controls > button {
       min-height: 30px;
       padding: 0 9px;
@@ -195,44 +146,64 @@ function installStyle() {
       font-weight: 700;
     }
 
+    /* Live-editor only: extend the deleting cover past the previous final
+       source object so tiny terminal glyph fragments cannot peek through. */
     .pdf-source-mask.${TERMINAL_MASK_CLASS},
     .pdf-live-edit-mask.${TERMINAL_MASK_CLASS} {
-      box-shadow: 4px 0 0 #fff;
+      box-shadow: 10px 0 0 #fff;
     }
   `;
   document.head.append(style);
 }
 
-if (workspace) {
-  new MutationObserver((mutations) => {
-    const blocks = new Set();
-    for (const mutation of mutations) {
-      const owner = mutation.target instanceof Element ? mutation.target.closest?.(".pdf-block") : null;
-      if (owner) blocks.add(owner);
-      for (const node of mutation.addedNodes) {
-        if (!(node instanceof HTMLElement)) continue;
-        const block = node.matches?.(".pdf-block") ? node : node.closest?.(".pdf-block");
-        if (block) blocks.add(block);
-        for (const nested of node.querySelectorAll?.(".pdf-block") || []) blocks.add(nested);
-      }
-    }
-    for (const block of blocks) scheduleNormalize(block);
-  }).observe(workspace, { childList: true, subtree: true });
-}
+// Intercept the PDF toolbar Copy control before the legacy source-name handler.
+// It now copies the actual current PDF document, matching the normal object Copy action.
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const copy = target?.closest?.(".pdf-block .local-source-copy");
+  if (!copy) return;
 
-window.addEventListener("focus", () => setTimeout(normalizeAllPdfs, 0));
-workspace?.addEventListener("flashframe:workspace-changed", () => scheduleNormalize());
-window.addEventListener("flashframe:archive-imported", () => scheduleNormalize());
-
-document.addEventListener("pointerup", event => {
-  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
-  if (block) requestAnimationFrame(() => normalizePdfBlock(block));
+  const block = copy.closest(".pdf-block");
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void copyPdfDocument(block, copy);
 }, true);
 
-document.addEventListener("input", event => {
+// Keep the visible reconnect label deterministic even if remembered-source
+// refreshes rewrite it after a focus change.
+document.addEventListener("pointerover", (event) => {
+  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
+  if (block) normalizePdfControls(block);
+}, { passive: true });
+
+document.addEventListener("pointerup", (event) => {
+  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
+  if (block) requestAnimationFrame(() => normalizePdfControls(block));
+}, true);
+
+document.addEventListener("input", (event) => {
   const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
   if (block) requestAnimationFrame(() => polishTerminalMasks(block));
 }, true);
 
+workspace?.addEventListener("flashframe:workspace-changed", () => scheduleNormalize());
+window.addEventListener("focus", () => scheduleNormalize());
+window.addEventListener("flashframe:archive-imported", () => scheduleNormalize());
+
+// Observe only direct workspace children. Unlike the previous version, this
+// never watches the PDF text layer, so opening a PDF cannot trigger thousands
+// of normalization rescans while PDF.js builds glyph nodes.
+if (workspace) {
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.classList.contains("pdf-block")) scheduleNormalize(node);
+        for (const block of node.querySelectorAll?.(".pdf-block") || []) scheduleNormalize(block);
+      }
+    }
+  }).observe(workspace, { childList: true, subtree: false });
+}
+
 installStyle();
-normalizeAllPdfs();
+scheduleNormalize();
