@@ -168,8 +168,17 @@ function updateControls(block) {
 
   const sourceButton = controls.querySelector(".local-source-link");
   if (sourceButton) {
-    sourceButton.textContent = sourceLabel(block, source);
-    sourceButton.title = `Restore ${source.displayName}`;
+    if (block.dataset.blockType === "pdf") {
+      // PDFs intentionally keep a compact fixed-width source control. Reconnect
+      // refreshes must never replace this with "Local file: <long filename>",
+      // which can force the PDF toolbar into an ugly extra row.
+      sourceButton.textContent = "Reconnect";
+      sourceButton.title = `Reconnect ${source.displayName}`;
+      sourceButton.setAttribute("aria-label", "Reconnect PDF source");
+    } else {
+      sourceButton.textContent = sourceLabel(block, source);
+      sourceButton.title = `Restore ${source.displayName}`;
+    }
   }
 }
 
