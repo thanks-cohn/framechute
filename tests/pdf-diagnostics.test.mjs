@@ -2,7 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "../src/vendor/pdf-lib.mjs";
 import { createPdfPageDiagnostics, extractSemanticPdfText, openPdfDocument, searchCurrentPdfDocument, serializeEditedPdf } from "../src/documents/pdf-document.js";
-import { buildPdfDiagnosticSnapshot, comparePdfSnapshots, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "../src/documents/pdf-observability.js";
+import {
+  buildPdfDiagnosticSnapshot,
+  capturePdfElementState,
+  comparePdfSnapshots,
+  createOwnedMask,
+  currentPdfEdits,
+  ensurePdfEditIdentity,
+  pdfRectThroughViewportTransform,
+  reconcileReopenedPdfObjects,
+  rectangleDelta
+} from "../src/documents/pdf-observability.js";
 
 test("edit identity never aliases its source and current boundary quarantines A/B",()=>{
   let n=0;const make=text=>ensurePdfEditIdentity({kind:"replacement",page:1,index:0,replacement:text,x:20,y:200,width:80,height:14,fontSize:12},{idFactory:()=>`edit:${++n}`});
@@ -29,6 +39,72 @@ test("correspondence uses semantics and geometry, reports drift and ambiguity",(
   result=comparePdfSnapshots(live,{objects:[1,2].map(n=>({id:`candidate:${n}`,kind:"replacement",page:1,text:"Current",pdfRect:{x:10,y:20,width:50,height:12},fontSize:10}))});
   assert.equal(result.records[0].classification,"ambiguous-correspondence");
   assert.ok(result.issues.some(issue=>issue.code==="AMBIGUOUS_CORRESPONDENCE"));
+});
+
+test("correspondence cannot hide historical or superseded reopened objects behind its active candidate filter",()=>{
+  const live={objects:[{id:"edit:current",kind:"replacement",page:1,text:"C",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10}]};
+  const reopened={objects:[
+    {id:"edit:current",kind:"replacement",page:1,text:"C",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10,versionState:"current"},
+    {id:"source:old",kind:"text",page:1,text:"A",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10,versionState:"historical"},
+    {id:"edit:old",kind:"replacement",page:1,text:"B",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10,versionState:"superseded",supersededBy:"edit:current"}
+  ]};
+  const result=comparePdfSnapshots(live,reopened);
+  assert.equal(result.records.find(record=>record.liveObjectId==="edit:current")?.classification,"exact-identity-match");
+  assert.deepEqual(result.issues.filter(issue=>issue.code==="RESURRECTED_HISTORICAL_OBJECT").map(issue=>issue.objectId).sort(),["edit:old","source:old"]);
+  assert.deepEqual(result.records.filter(record=>record.classification==="resurrected-historical-object").map(record=>record.reopenedObjectId).sort(),["edit:old","source:old"]);
+});
+
+test("unmatched legitimate reopened current objects are classified separately from historical resurrection",()=>{
+  const live={objects:[{id:"edit:current",kind:"replacement",page:1,text:"C",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10}]};
+  const reopened={objects:[
+    {id:"edit:current",kind:"replacement",page:1,text:"C",pdfRect:{x:10,y:20,width:30,height:12},fontSize:10,versionState:"current"},
+    {id:"edit:extra",kind:"free-text",page:1,text:"note",pdfRect:{x:60,y:20,width:30,height:12},fontSize:10,versionState:"current"}
+  ]};
+  const result=comparePdfSnapshots(live,reopened);
+  assert.equal(result.records.find(record=>record.reopenedObjectId==="edit:extra")?.classification,"unexpected-current-object");
+  assert.ok(result.issues.some(issue=>issue.code==="UNEXPECTED_CURRENT_OBJECT"&&issue.objectId==="edit:extra"));
+  assert.equal(result.issues.some(issue=>issue.code==="RESURRECTED_HISTORICAL_OBJECT"&&issue.objectId==="edit:extra"),false);
+});
+
+test("DOM observation distinguishes layout geometry, glyph ink, identity and text metrics",()=>{
+  const element={
+    dataset:{objectId:"edit:7",sourceObjectId:"source:p1:text:2",ownerEditId:"edit:7",versionState:"current"},
+    classList:["pdf-text-item"],
+    textContent:"Coffee",
+    querySelector:()=>null,
+    getBoundingClientRect:()=>({left:110,top:220,width:80,height:20})
+  };
+  const style={
+    getPropertyValue:name=>({display:"block",visibility:"visible",opacity:"1",transform:"none",position:"absolute","z-index":"2","pointer-events":"auto",overflow:"visible","clip-path":"none","font-family":"Helvetica","font-size":"12px","line-height":"14px","font-weight":"400","font-style":"normal",font:"12px Helvetica"}[name]||"")
+  };
+  const range={selectNodeContents(){},getClientRects:()=>[{left:112,top:223,width:54,height:11},{left:112,top:234,width:22,height:9}]};
+  const context={font:"",measureText:()=>({width:53.5,actualBoundingBoxAscent:8,actualBoundingBoxDescent:2,actualBoundingBoxLeft:0,actualBoundingBoxRight:53})};
+  const observation=capturePdfElementState(element,{state:"idle",viewportRect:{left:100,top:200,width:600,height:800},getComputedStyle:()=>style,createRange:()=>range,createCanvas:()=>({getContext:()=>context})});
+  assert.equal(observation.objectId,"edit:7");
+  assert.equal(observation.sourceObjectId,"source:p1:text:2");
+  assert.deepEqual(observation.layoutRect,{space:"viewport-css-pixels",x:10,y:20,width:80,height:20});
+  assert.equal(observation.inkRects.length,2);
+  assert.deepEqual(observation.inkUnion,{space:"glyph-ink-viewport",x:12,y:23,width:54,height:20});
+  assert.equal(observation.textMetrics.width,53.5);
+  assert.equal(observation.textMetrics.actualBoundingBoxAscent,8);
+  assert.equal(observation.font.size,"12px");
+  assert.equal(observation.pointerEvents,"auto");
+});
+
+test("diagnostics quantify expected viewport versus observed layout and ink deltas",()=>{
+  const transform=[2,0,0,-2,0,600];
+  assert.deepEqual(pdfRectThroughViewportTransform({x:10,y:20,width:30,height:10},transform),{space:"viewport-css-pixels",x:20,y:540,width:60,height:20});
+  assert.deepEqual(rectangleDelta({x:20,y:540,width:60,height:20},{x:23,y:538,width:62,height:20}),{dx:3,dy:-2,dw:2,dh:0,maxAbs:3});
+  const snapshot=buildPdfDiagnosticSnapshot({
+    page:1,
+    viewport:{transform},
+    objects:[{id:"edit:1",kind:"replacement",page:1,text:"C",pdfRect:{x:10,y:20,width:30,height:10},coordinateSpace:"pdf-points"}],
+    observations:[{objectId:"edit:1",layoutRect:{space:"viewport-css-pixels",x:23,y:538,width:62,height:20},inkUnion:{space:"glyph-ink-viewport",x:24,y:539,width:58,height:18}}]
+  });
+  const observation=snapshot.observations[0];
+  assert.deepEqual(observation.layoutDelta,{dx:3,dy:-2,dw:2,dh:0,maxAbs:3});
+  assert.ok(snapshot.issues.some(issue=>issue.code==="OBSERVED_LAYOUT_DRIFT"&&issue.objectId==="edit:1"));
+  assert.ok(snapshot.issues.some(issue=>issue.code==="OBSERVED_INK_DRIFT"&&issue.objectId==="edit:1"));
 });
 
 test("production Save/fresh-open/search/diagnostics path preserves only C",async()=>{
