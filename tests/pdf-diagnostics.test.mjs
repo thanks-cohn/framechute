@@ -4,14 +4,20 @@ import { PDFDocument, StandardFonts } from "../src/vendor/pdf-lib.mjs";
 import { createPdfPageDiagnostics, extractSemanticPdfText, openPdfDocument, searchCurrentPdfDocument, serializeEditedPdf } from "../src/documents/pdf-document.js";
 import {
   buildPdfDiagnosticSnapshot,
+  capturePointerHitTest,
   capturePdfElementState,
+  compareGeometryFingerprints,
+  createBoundedGeometryJournal,
+  createGeometryTransformChain,
   comparePdfSnapshots,
   createOwnedMask,
   currentPdfEdits,
   ensurePdfEditIdentity,
   pdfRectThroughViewportTransform,
   reconcileReopenedPdfObjects,
-  rectangleDelta
+  rectangleDelta,
+  transformPointThroughChain,
+  verifyTransformRoundTrip
 } from "../src/documents/pdf-observability.js";
 
 test("edit identity never aliases its source and current boundary quarantines A/B",()=>{
@@ -82,9 +88,11 @@ test("DOM observation distinguishes layout geometry, glyph ink, identity and tex
   const observation=capturePdfElementState(element,{state:"idle",viewportRect:{left:100,top:200,width:600,height:800},getComputedStyle:()=>style,createRange:()=>range,createCanvas:()=>({getContext:()=>context})});
   assert.equal(observation.objectId,"edit:7");
   assert.equal(observation.sourceObjectId,"source:p1:text:2");
-  assert.deepEqual(observation.layoutRect,{space:"viewport-css-pixels",x:10,y:20,width:80,height:20});
+  assert.deepEqual(observation.layoutRect,{space:"pdf-viewport-css",x:10,y:20,width:80,height:20});
   assert.equal(observation.inkRects.length,2);
-  assert.deepEqual(observation.inkUnion,{space:"glyph-ink-viewport",x:12,y:23,width:54,height:20});
+  assert.deepEqual(observation.clientRect,{space:"client-css",x:110,y:220,width:80,height:20});
+  assert.deepEqual(observation.inkUnion,{space:"glyph-ink-client-css",x:112,y:223,width:54,height:20});
+  assert.deepEqual(observation.inkViewportUnion,{space:"pdf-viewport-css",x:12,y:23,width:54,height:20});
   assert.equal(observation.textMetrics.width,53.5);
   assert.equal(observation.textMetrics.actualBoundingBoxAscent,8);
   assert.equal(observation.font.size,"12px");
@@ -93,7 +101,7 @@ test("DOM observation distinguishes layout geometry, glyph ink, identity and tex
 
 test("diagnostics quantify expected viewport versus observed layout and ink deltas",()=>{
   const transform=[2,0,0,-2,0,600];
-  assert.deepEqual(pdfRectThroughViewportTransform({x:10,y:20,width:30,height:10},transform),{space:"viewport-css-pixels",x:20,y:540,width:60,height:20});
+  assert.deepEqual(pdfRectThroughViewportTransform({x:10,y:20,width:30,height:10},transform),{space:"pdf-viewport-css",x:20,y:540,width:60,height:20});
   assert.deepEqual(rectangleDelta({x:20,y:540,width:60,height:20},{x:23,y:538,width:62,height:20}),{dx:3,dy:-2,dw:2,dh:0,maxAbs:3});
   const snapshot=buildPdfDiagnosticSnapshot({
     page:1,
@@ -105,6 +113,35 @@ test("diagnostics quantify expected viewport versus observed layout and ink delt
   assert.deepEqual(observation.layoutDelta,{dx:3,dy:-2,dw:2,dh:0,maxAbs:3});
   assert.ok(snapshot.issues.some(issue=>issue.code==="OBSERVED_LAYOUT_DRIFT"&&issue.objectId==="edit:1"));
   assert.ok(snapshot.issues.some(issue=>issue.code==="OBSERVED_INK_DRIFT"&&issue.objectId==="edit:1"));
+});
+
+test("explicit transform chains round trip and bounded journals discard old events",()=>{
+  const chain=createGeometryTransformChain("pdf-points","client-css",[
+    {kind:"pdf-viewport",matrix:[2,0,0,-2,0,600]},
+    {kind:"text-layer-origin",matrix:[1,0,0,1,100,40]}
+  ]);
+  assert.deepEqual(transformPointThroughChain({x:10,y:20},chain),{x:120,y:600});
+  assert.equal(verifyTransformRoundTrip({x:10,y:20},chain,1e-8).ok,true);
+  const journal=createBoundedGeometryJournal(2);journal.record("pointerdown");journal.record("click");journal.record("dblclick");
+  assert.deepEqual(journal.snapshot().map(entry=>entry.event),["click","dblclick"]);
+});
+
+test("geometry fingerprints distinguish shared chrome translation from desynchronization",()=>{
+  const geometry=(canvasY,textY)=>({canvas:{clientRect:{rect:{x:10,y:canvasY,width:600,height:800}}},textLayer:{clientRect:{rect:{x:10,y:textY,width:600,height:800}}},surface:{scrollLeft:0,scrollTop:0},chrome:{toolbar:{rect:{x:0,y:0,width:800,height:40}},reader:{rect:{x:0,y:40,width:800,height:900}}},alignment:{originDelta:{x:0,y:textY-canvasY},widthDelta:0,heightDelta:0}});
+  assert.equal(compareGeometryFingerprints(geometry(50,50),geometry(87,87),{cause:"toolbar-expanded"}).classification,"EXPECTED_SHARED_LAYOUT_SHIFT");
+  const broken=compareGeometryFingerprints(geometry(50,50),geometry(87,50),{cause:"toolbar-expanded"});
+  assert.equal(broken.classification,"CANVAS_ONLY_SHIFT");
+  assert.ok(broken.issues.some(issue=>issue.code==="TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN"));
+});
+
+test("hit-test dossier reports when chosen DOM object is farther than visible glyph",()=>{
+  const target={tagName:"SPAN",classList:[],dataset:{objectId:"far"},closest(){return this;}};
+  const dossier=capturePointerHitTest({type:"dblclick",clientX:15,clientY:15,target},null,{document:{elementFromPoint:()=>target,elementsFromPoint:()=>[target]},observations:[
+    {objectId:"near",inkUnion:{x:10,y:10,width:10,height:10}},
+    {objectId:"far",inkUnion:{x:100,y:100,width:10,height:10}}
+  ]});
+  assert.equal(dossier.candidatePdfObjects[0].objectId,"near");
+  assert.ok(dossier.issues.some(issue=>issue.code==="POINTER_TARGET_DOES_NOT_MATCH_VISIBLE_GLYPH"));
 });
 
 test("production Save/fresh-open/search/diagnostics path preserves only C",async()=>{

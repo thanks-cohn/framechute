@@ -1,19 +1,47 @@
 import { validateFiniteRect } from "./pdf-geometry.js";
 
-export const PDF_DIAGNOSTIC_SCHEMA_VERSION="1.1.0";
+export const PDF_DIAGNOSTIC_SCHEMA_VERSION="2.0.0";
 export const PDF_COORDINATE_SPACES=Object.freeze({
   PDF_POINTS:"pdf-points",
   SEMANTIC_PDF_POINTS:"semantic-pdf-points",
-  VIEWPORT_CSS_PIXELS:"viewport-css-pixels",
-  CLIENT_CSS_PIXELS:"client-css-pixels",
+  VIEWPORT_CSS_PIXELS:"pdf-viewport-css",
+  SURFACE_LOCAL_CSS:"pdf-surface-local-css",
+  TEXT_LAYER_LOCAL_CSS:"pdf-text-layer-local-css",
+  BLOCK_LOCAL_CSS:"block-local-css",
+  WORKSPACE_CSS:"workspace-css",
+  CLIENT_CSS_PIXELS:"client-css",
+  DOCUMENT_CSS:"document-css",
   DEVICE_PIXELS:"device-pixels",
-  GLYPH_INK_VIEWPORT:"glyph-ink-viewport",
+  CANVAS_BACKING_PIXELS:"canvas-backing-pixels",
+  GLYPH_INK_VIEWPORT:"glyph-ink-client-css",
+  EDITABLE_FIELD_CLIENT_CSS:"editable-field-client-css",
   SERIALIZED_PDF_POINTS:"serialized-pdf-points"
 });
-const STATE_NAMES=Object.freeze(["idle","hover","selected","editing","committed","rerendered","saved","reopened"]);
+export const PDF_GEOMETRY_ISSUE_CODES=Object.freeze([
+  "PDF_CANVAS_TEXT_LAYER_ORIGIN_MISMATCH","PDF_CANVAS_TEXT_LAYER_SIZE_MISMATCH","PDF_VIEWPORT_SURFACE_TRANSFORM_MISMATCH","PDF_VIEWPORT_TRANSFORM_MISMATCH",
+  "PDF_OBJECT_DOM_RECT_MISMATCH","PDF_OBJECT_GLYPH_RECT_MISMATCH","POINTER_TARGET_DOES_NOT_MATCH_VISIBLE_GLYPH","EDIT_FIELD_TELEPORTED_FROM_SOURCE",
+  "EDIT_FIELD_CHANGED_ON_FOCUS","EDIT_FIELD_CHANGED_ON_SELECTION","TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN","SEARCH_BAR_CHANGED_PAGE_COORDINATE_ORIGIN",
+  "TEXT_LAYER_SCROLL_DESYNCHRONIZED","UNACCOUNTED_CSS_TRANSFORM","UNEXPECTED_GEOMETRY_MUTATION"
+]);
+const STATE_NAMES=Object.freeze(["idle","hover","selected","editing","committed","rerendered","saved","reopened","pointerdown","mousedown","click","dblclick","before-focus","after-focus","before-contenteditable","after-contenteditable","selection-created","editing-active","focusout","rerender-start","rerender-complete"]);
 const round=(n,digits=3)=>Number.isFinite(Number(n))?Math.round(Number(n)*10**digits)/10**digits:null;
 const cleanText=value=>String(value??"").replace(/\s+/g," ").trim().slice(0,500);
 const stableStrings=values=>[...new Set((values||[]).filter(Boolean).map(String))].sort();
+const namedRect=(rect,space)=>rect?{rect:clientRectRecord(rect),space}:null;
+const distanceToRect=(point,rect)=>Math.hypot(Math.max(rect.x-point.x,0,point.x-(rect.x+rect.width)),Math.max(rect.y-point.y,0,point.y-(rect.y+rect.height)));
+
+/** A serializable, invertible chain. Matrices use DOM/CSS [a,b,c,d,e,f]. */
+export function createGeometryTransformChain(from,to,steps=[]){
+  const normalized=steps.map(step=>({...step,matrix:[...(step.matrix||[1,0,0,1,0,0])]}));
+  return Object.freeze({from,to,steps:Object.freeze(normalized.map(Object.freeze))});
+}
+const applyMatrix=(point,[a,b,c,d,e,f])=>({x:a*point.x+c*point.y+e,y:b*point.x+d*point.y+f});
+const invertMatrix=([a,b,c,d,e,f])=>{const det=a*d-b*c;if(!Number.isFinite(det)||Math.abs(det)<1e-12)return null;return [d/det,-b/det,-c/det,a/det,(c*f-d*e)/det,(b*e-a*f)/det];};
+export function transformPointThroughChain(point,chain,{inverse=false}={}){
+  const steps=inverse?[...chain.steps].reverse():chain.steps;let value={x:Number(point.x),y:Number(point.y)};
+  for(const step of steps){const matrix=inverse?invertMatrix(step.matrix):step.matrix;if(!matrix)return null;value=applyMatrix(value,matrix);}return value;
+}
+export function verifyTransformRoundTrip(point,chain,tolerance=.01){const client=transformPointThroughChain(point,chain),back=client&&transformPointThroughChain(client,chain,{inverse:true});const error=back?Math.hypot(back.x-point.x,back.y-point.y):Infinity;return {ok:error<=tolerance,tolerance,error:round(error,6),from:{...point},through:client,back};}
 
 let sequence=0;
 export function createPdfEditId(prefix="edit") {
@@ -229,9 +257,13 @@ export function capturePdfElementState(element,{state="idle",viewportRect,inkRec
     createsStackingContext:transform&&transform!=="none"||opacity&&opacity!=="1"||(styleValue(computed,"position")!=="static"&&styleValue(computed,"z-index")!=="auto"),
     font:{family:styleValue(computed,"font-family"),size:styleValue(computed,"font-size"),lineHeight:styleValue(computed,"line-height"),weight:styleValue(computed,"font-weight"),style:styleValue(computed,"font-style")},
     textMetrics:textMetricsForElement(element,computed,{createCanvas}),
+    clientRect:{space:PDF_COORDINATE_SPACES.CLIENT_CSS_PIXELS,...Object.fromEntries(Object.entries(rawLayout).map(([key,value])=>[key,round(value)]))},
+    editableRect:(()=>{const editable=element.matches?.('[contenteditable="true"]')?element:element.querySelector?.('[contenteditable="true"]');if(!editable?.getBoundingClientRect)return null;return {space:PDF_COORDINATE_SPACES.EDITABLE_FIELD_CLIENT_CSS,...Object.fromEntries(Object.entries(clientRectRecord(editable.getBoundingClientRect())).map(([key,value])=>[key,round(value)]))};})(),
     layoutRect:{space:PDF_COORDINATE_SPACES.VIEWPORT_CSS_PIXELS,...Object.fromEntries(Object.entries(local).map(([key,value])=>[key,round(value)]))},
-    inkRects:localInk.map(rect=>({space:PDF_COORDINATE_SPACES.GLYPH_INK_VIEWPORT,...Object.fromEntries(Object.entries(rect).map(([key,value])=>[key,round(value)]))})),
-    inkUnion:(()=>{const union=unionRects(localInk);return union?{space:PDF_COORDINATE_SPACES.GLYPH_INK_VIEWPORT,...Object.fromEntries(Object.entries(union).map(([key,value])=>[key,round(value)]))}:null;})(),
+    inkRects:rawInk.map(rect=>({space:PDF_COORDINATE_SPACES.GLYPH_INK_VIEWPORT,...Object.fromEntries(Object.entries(rect).map(([key,value])=>[key,round(value)]))})),
+    inkUnion:(()=>{const union=unionRects(rawInk);return union?{space:PDF_COORDINATE_SPACES.GLYPH_INK_VIEWPORT,...Object.fromEntries(Object.entries(union).map(([key,value])=>[key,round(value)]))}:null;})(),
+    inkViewportRects:localInk.map(rect=>({space:PDF_COORDINATE_SPACES.VIEWPORT_CSS_PIXELS,...Object.fromEntries(Object.entries(rect).map(([key,value])=>[key,round(value)]))})),
+    inkViewportUnion:(()=>{const union=unionRects(localInk);return union?{space:PDF_COORDINATE_SPACES.VIEWPORT_CSS_PIXELS,...Object.fromEntries(Object.entries(union).map(([key,value])=>[key,round(value)]))}:null;})(),
     maskIds
   };
 }
@@ -246,6 +278,57 @@ export function capturePdfPageDomObservations(root,{state="idle",masks=[],getCom
     const observation=capturePdfElementState(element,{state,viewportRect,masks,getComputedStyle,createRange,createCanvas});
     return {...observation,domOrder};
   }).filter(observation=>observation.objectId).sort((a,b)=>String(a.objectId).localeCompare(String(b.objectId))||a.domOrder-b.domOrder);
+}
+
+function elementSummary(element){return element?{tag:String(element.tagName||"").toLowerCase(),classes:[...(element.classList||[])].sort(),objectId:element.dataset?.objectId||element.dataset?.pdfObjectId||null,sourceObjectId:element.dataset?.sourceObjectId||null,editId:element.dataset?.ownerEditId||null}:null;}
+function cssTransform(element,getComputedStyle){const value=getComputedStyle?.(element)?.transform||"none";return value;}
+
+/** Capture the canvas/text-layer contract and surrounding chrome in client CSS.
+ * This reads one active block only and performs no ongoing observation. */
+export function capturePdfPageGeometry(block,{viewport={},getComputedStyle=globalThis.getComputedStyle?.bind(globalThis)}={}){
+  const query=selector=>block?.querySelector?.(selector),canvas=query(".pdf-canvas"),textLayer=query(".pdf-text-layer"),surface=query(".pdf-surface");
+  if(!canvas||!textLayer||!surface)return null;
+  const canvasRect=clientRectRecord(canvas.getBoundingClientRect()),textRect=clientRectRecord(textLayer.getBoundingClientRect()),surfaceRect=clientRectRecord(surface.getBoundingClientRect());
+  const alignment={originDelta:{x:round(textRect.x-canvasRect.x),y:round(textRect.y-canvasRect.y)},widthDelta:round(textRect.width-canvasRect.width),heightDelta:round(textRect.height-canvasRect.height),scaleDelta:{x:round(textRect.width/(canvasRect.width||1)-1,6),y:round(textRect.height/(canvasRect.height||1)-1,6)}};
+  const toolbar=query(".pdf-toolbar"),search=query(".pdf-search-box"),header=query(".block-header"),reader=query(".pdf-reader"),side=query(".pdf-side-panel");
+  const textTransform=cssTransform(textLayer,getComputedStyle);
+  return {
+    spaces:{canvas:"client-css",textLayer:"client-css",surface:"client-css",viewport:"pdf-viewport-css"},
+    canvas:{clientRect:namedRect(canvasRect,"client-css"),cssWidth:canvasRect.width,cssHeight:canvasRect.height,backingWidth:canvas.width,backingHeight:canvas.height},
+    textLayer:{clientRect:namedRect(textRect,"client-css"),cssWidth:textRect.width,cssHeight:textRect.height,transform:textTransform},
+    surface:{clientRect:namedRect(surfaceRect,"client-css"),scrollLeft:surface.scrollLeft||0,scrollTop:surface.scrollTop||0,padding:getComputedStyle?.(surface)?.padding||null},
+    viewport:{width:viewport.width??null,height:viewport.height??null,scale:viewport.scale??null,rotation:viewport.rotation??null,transform:viewport.transform?[...viewport.transform]:null},alignment,
+    chrome:{toolbar:namedRect(toolbar?.getBoundingClientRect?.(),"client-css"),toolbarRowCount:toolbar?new Set([...toolbar.children].filter(child=>!child.hidden).map(child=>round(child.getBoundingClientRect().top))).size:0,search:namedRect(search?.getBoundingClientRect?.(),"client-css"),header:namedRect(header?.getBoundingClientRect?.(),"client-css"),reader:namedRect(reader?.getBoundingClientRect?.(),"client-css"),sidePanel:namedRect(side?.getBoundingClientRect?.(),"client-css")},
+    transformChain:createGeometryTransformChain("pdf-viewport-css","client-css",[{kind:"text-layer-client-origin",matrix:[1,0,0,1,textRect.x,textRect.y],cssTransform:textTransform,scrollLeft:surface.scrollLeft||0,scrollTop:surface.scrollTop||0}])
+  };
+}
+
+export function evaluatePageAlignment(geometry,{tolerance=1}={}){
+  if(!geometry)return [];
+  const issues=[],a=geometry.alignment,v=geometry.viewport,c=geometry.canvas,t=geometry.textLayer;
+  const issue=(code,expected,actual,delta,stage)=>issues.push({severity:"error",code,expected,actual,delta,coordinateSpaces:["client-css","pdf-viewport-css"],probableTransformStage:stage});
+  if(Math.hypot(a.originDelta.x,a.originDelta.y)>tolerance)issue("PDF_CANVAS_TEXT_LAYER_ORIGIN_MISMATCH",c.clientRect,t.clientRect,a.originDelta,"text-layer-origin");
+  if(Math.max(Math.abs(a.widthDelta),Math.abs(a.heightDelta))>tolerance)issue("PDF_CANVAS_TEXT_LAYER_SIZE_MISMATCH",{width:c.cssWidth,height:c.cssHeight},{width:t.cssWidth,height:t.cssHeight},{width:a.widthDelta,height:a.heightDelta},"text-layer-size");
+  if(v?.width!=null&&[c.cssWidth,c.cssHeight,t.cssWidth,t.cssHeight].every(Number.isFinite)&&Math.max(Math.abs(c.cssWidth-v.width),Math.abs(c.cssHeight-v.height),Math.abs(t.cssWidth-v.width),Math.abs(t.cssHeight-v.height))>tolerance)issue("PDF_VIEWPORT_SURFACE_TRANSFORM_MISMATCH",{width:v.width,height:v.height},{canvas:{width:c.cssWidth,height:c.cssHeight},textLayer:{width:t.cssWidth,height:t.cssHeight}},null,"viewport-to-surface");
+  if(t.transform&&!/^(none|matrix\(1, 0, 0, 1, [-\d.]+, [-\d.]+\)|translateX\(-50%\))$/.test(t.transform))issues.push({severity:"warning",code:"UNACCOUNTED_CSS_TRANSFORM",actual:t.transform,probableTransformStage:"text-layer-css-transform"});
+  return issues;
+}
+
+export function capturePointerHitTest(event,root,{observations=[],document=globalThis.document}={}){
+  const point={x:Number(event.clientX),y:Number(event.clientY)},stack=[...(document?.elementsFromPoint?.(point.x,point.y)||[])],direct=document?.elementFromPoint?.(point.x,point.y)||stack[0]||null;
+  const candidates=observations.filter(item=>item.inkUnion).map(item=>({objectId:item.objectId,sourceObjectId:item.sourceObjectId,inkRect:item.inkUnion,distance:round(distanceToRect(point,item.inkUnion))})).sort((a,b)=>a.distance-b.distance||String(a.objectId).localeCompare(String(b.objectId)));
+  const target=event.target?.closest?.("[data-object-id],[data-pdf-object-id]")||event.target,chosenId=target?.dataset?.objectId||target?.dataset?.pdfObjectId||null,chosen=candidates.find(item=>String(item.objectId)===String(chosenId))||null,best=candidates[0]||null;
+  const issues=chosen&&best&&chosen.objectId!==best.objectId&&chosen.distance-best.distance>1?[{severity:"error",code:"POINTER_TARGET_DOES_NOT_MATCH_VISIBLE_GLYPH",objectId:chosen.objectId,expectedObjectId:best.objectId,delta:{distance:round(chosen.distance-best.distance)},interactionEvent:event.type,probableTransformStage:"hit-test"}]:[];
+  return {event:event.type,pointer:{clientX:point.x,clientY:point.y,space:"client-css"},target:elementSummary(target),elementFromPoint:elementSummary(direct),elementsFromPoint:stack.slice(0,12).map(elementSummary),candidatePdfObjects:candidates.slice(0,20),chosenObject:chosen,pointerDeltaFromChosenInk:chosen?{distance:chosen.distance}:null,issues};
+}
+
+export function createBoundedGeometryJournal(limit=40){const entries=[];return {record(event,payload={}){entries.push({sequence:++sequence,event,timestamp:Date.now(),...payload});if(entries.length>limit)entries.splice(0,entries.length-limit);return entries.at(-1);},snapshot(){return entries.map(entry=>({...entry}));},clear(){entries.length=0;}};}
+export function compareGeometryFingerprints(before,after,{cause="unknown",tolerance=.5}={}){
+  if(!before||!after)return {cause,classification:"UNEXPECTED_GEOMETRY_MUTATION",deltas:null};
+  const rectDelta=(a,b)=>rectangleDelta(a?.rect||a,b?.rect||b),deltas={toolbar:rectDelta(before.chrome?.toolbar,after.chrome?.toolbar),reader:rectDelta(before.chrome?.reader,after.chrome?.reader),canvas:rectDelta(before.canvas?.clientRect,after.canvas?.clientRect),textLayer:rectDelta(before.textLayer?.clientRect,after.textLayer?.clientRect),alignment:{before:before.alignment,after:after.alignment},scroll:{x:round(after.surface.scrollLeft-before.surface.scrollLeft),y:round(after.surface.scrollTop-before.surface.scrollTop)}};
+  const cd=deltas.canvas,td=deltas.textLayer,same=cd&&td&&Math.max(Math.abs(cd.dx-td.dx),Math.abs(cd.dy-td.dy),Math.abs(cd.dw-td.dw),Math.abs(cd.dh-td.dh))<=tolerance;
+  let classification=same&&(cd.maxAbs>tolerance||td.maxAbs>tolerance)?"EXPECTED_SHARED_LAYOUT_SHIFT":cd?.maxAbs>tolerance&&!(td?.maxAbs>tolerance)?"CANVAS_ONLY_SHIFT":td?.maxAbs>tolerance&&!(cd?.maxAbs>tolerance)?"TEXT_LAYER_ONLY_SHIFT":Math.abs(deltas.scroll.x)>tolerance||Math.abs(deltas.scroll.y)>tolerance?"SCROLL_ORIGIN_CHANGED":"NO_GEOMETRY_CHANGE";
+  return {cause,classification,deltas,issues:[...evaluatePageAlignment(after),...(!same&&classification!=="NO_GEOMETRY_CHANGE"?[{severity:"error",code:cause.includes("toolbar")?"TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN":cause.includes("search")?"SEARCH_BAR_CHANGED_PAGE_COORDINATE_ORIGIN":"UNEXPECTED_GEOMETRY_MUTATION",probableTransformStage:"layout-mutation",deltas}]:[])]};
 }
 
 // Compatibility bridge for PR #68's existing one-click Copy Page Diagnostics.
@@ -281,14 +364,14 @@ function enrichObservations(observations,objects,viewport,issues){
     if(!canonical)return observation;
     const expectedViewportRect=pdfRectThroughViewportTransform(canonical.pdfRect||canonical.rect||canonical.bounds,viewport?.transform);
     const layoutDelta=rectangleDelta(expectedViewportRect,observation.layoutRect);
-    const inkDelta=rectangleDelta(expectedViewportRect,observation.inkUnion);
+    const inkDelta=rectangleDelta(expectedViewportRect,observation.inkViewportUnion||observation.inkUnion);
     if(layoutDelta?.maxAbs>1)issues.push({severity:"warning",code:"OBSERVED_LAYOUT_DRIFT",objectId:canonical.id,coordinateSpace:PDF_COORDINATE_SPACES.VIEWPORT_CSS_PIXELS,expected:expectedViewportRect,actual:observation.layoutRect,delta:layoutDelta});
     if(inkDelta?.maxAbs>2)issues.push({severity:"warning",code:"OBSERVED_INK_DRIFT",objectId:canonical.id,coordinateSpace:PDF_COORDINATE_SPACES.GLYPH_INK_VIEWPORT,expected:expectedViewportRect,actual:observation.inkUnion,delta:inkDelta});
     return {...observation,expectedViewportRect,layoutDelta,inkDelta};
   });
 }
 
-export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},documentVersionId,objects=[],masks=[],observations=[],invariants=[],issues=[]}) {
+export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},documentVersionId,objects=[],masks=[],observations=[],invariants=[],issues=[],pageGeometry=null,pointerHitTest=null,interactionJournal=[],mutationJournal=[],selectedObjectId=null,editingObjectId=null}) {
   const allIssues=[...issues];
   const normalized=[];
   for(const object of objects){
@@ -303,6 +386,10 @@ export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},docume
   const observed=observations.length?observations:(root?capturePdfPageDomObservations(root,{masks}):[]);
   const enrichedObservations=enrichObservations(observed,normalized,viewport,allIssues);
   const countsByKind=Object.fromEntries([...new Set(normalized.map(o=>o.kind))].sort().map(kind=>[kind,normalized.filter(o=>o.kind===kind).length]));
-  const issueCounts={};for(const issue of allIssues){const key=`${issue.severity}:${issue.code}`;issueCounts[key]=(issueCounts[key]||0)+1;}
-  return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,page,pageBoxes,viewport,documentVersionId:documentVersionId||"unknown",geometryTruthHierarchy:["raw-pdf-source","normalized-canonical-pdf","semantic","expected-viewport","observed-dom","observed-ink"],objectCountsByKind:countsByKind,issueCounts:Object.fromEntries(Object.entries(issueCounts).sort()),objects:normalized.sort((a,b)=>String(a.id).localeCompare(String(b.id))),masks:[...masks].sort((a,b)=>String(a.id).localeCompare(String(b.id))),observations:enrichedObservations,collisions:collisions.sort((a,b)=>a.leftObjectId.localeCompare(b.leftObjectId)||a.rightObjectId.localeCompare(b.rightObjectId)),invariants,issues:allIssues.sort((a,b)=>a.code.localeCompare(b.code)||String(a.objectId||"").localeCompare(String(b.objectId||"")))};
+  const issueCounts={};
+  if(pageGeometry)allIssues.push(...evaluatePageAlignment(pageGeometry));
+  if(pointerHitTest?.issues)allIssues.push(...pointerHitTest.issues);
+  for(const mutation of mutationJournal)if(mutation?.issues)allIssues.push(...mutation.issues);
+  for(const issue of allIssues){const key=`${issue.severity}:${issue.code}`;issueCounts[key]=(issueCounts[key]||0)+1;}
+  return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,page,pageBoxes,viewport,coordinateSpaceRegistry:PDF_COORDINATE_SPACES,documentVersionId:documentVersionId||"unknown",geometryTruthHierarchy:["raw-pdf-source","normalized-canonical-pdf","semantic","expected-viewport","observed-dom","observed-ink","hit-test","editable-field"],pageGeometry,selectedObjectId,editingObjectId,pointerHitTest,interactionJournal,mutationJournal,objectCountsByKind:countsByKind,issueCounts:Object.fromEntries(Object.entries(issueCounts).sort()),objects:normalized.sort((a,b)=>String(a.id).localeCompare(String(b.id))),masks:[...masks].sort((a,b)=>String(a.id).localeCompare(String(b.id))),observations:enrichedObservations,collisions:collisions.sort((a,b)=>a.leftObjectId.localeCompare(b.leftObjectId)||a.rightObjectId.localeCompare(b.rightObjectId)),invariants,issues:allIssues.sort((a,b)=>a.code.localeCompare(b.code)||String(a.objectId||"").localeCompare(String(b.objectId||"")))};
 }

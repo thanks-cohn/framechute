@@ -30,7 +30,7 @@ import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from 
 import { createObjectDragSession } from "./object-drag-space.js";
 import { isViewportFixed } from "./viewport-fix.js";
 import { fitOpenedBlock } from "./initial-open-fit.js";
-import { createPdfEditId, ensurePdfEditIdentity } from "./documents/pdf-observability.js";
+import { capturePdfPageDomObservations, capturePdfPageGeometry, capturePointerHitTest, compareGeometryFingerprints, createBoundedGeometryJournal, createPdfEditId, ensurePdfEditIdentity } from "./documents/pdf-observability.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -57,6 +57,9 @@ const blockTypes = new Map();
 const sourceRecords = new WeakMap();
 const runtimeSources = new WeakMap();
 const objectUrls = new WeakMap();
+function pdfTelemetry(runtime){return runtime.telemetry||=( {interactions:createBoundedGeometryJournal(40),mutations:createBoundedGeometryJournal(20),lastPointer:null} );}
+function recordPdfGeometry(block,runtime,event,object=null){const geometry=capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport});return pdfTelemetry(runtime).interactions.record(event,{page:Number(block.dataset.currentPage||1),objectId:object?.dataset?.objectId||null,pageGeometryFingerprint:geometry,object:object?capturePdfPageDomObservations(block.querySelector(".pdf-text-layer"),{state:event}).find(item=>item.objectId===object.dataset.objectId)||null:null});}
+function recordPdfMutation(block,runtime,cause,before){requestAnimationFrame(()=>{const after=capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport});pdfTelemetry(runtime).mutations.record(cause,compareGeometryFingerprints(before,after,{cause}));});}
 
 workspace.addEventListener("dragstart", event => {
   const image=event.target.closest?.("img"),block=image?.closest(".block"); if(!block)return;
@@ -852,7 +855,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-search-prev").addEventListener("click",()=>stepSearch(-1));block.querySelector(".pdf-search-next").addEventListener("click",()=>stepSearch(1));
     block.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="f"&&!event.target.closest('[contenteditable="true"]')){event.preventDefault();showSearch();}if(event.key==="Escape"&&!searchBox.hidden){event.preventDefault();block.querySelector(".pdf-search-close").click();}if(!event.target.closest("input,textarea,select,[contenteditable=true]")){if(event.key==="PageUp"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)-1);}if(event.key==="PageDown"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)+1);}if(event.key==="Home"){event.preventDefault();void setPdfPage(block,1);}if(event.key==="End"){event.preventDefault();void setPdfPage(block,runtimeSources.get(block)?.model.pageCount);}}});
     block.querySelector(".pdf-properties").addEventListener("click",async event=>{const runtime=runtimeSources.get(block);if(!runtime)return;const data=await pdfDocumentProperties(runtime.model,Number(block.dataset.currentPage));event.currentTarget.closest(".pdf-popdown").querySelector(".pdf-properties-list").replaceChildren(...Object.entries(data).map(([key,value])=>{const row=document.createElement("div");row.innerHTML=`<strong>${key.replace(/[A-Z]/g,m=>` ${m}`).replace(/^./,m=>m.toUpperCase())}</strong><span></span>`;row.lastChild.textContent=value||"—";return row;}));});
-    block.querySelector(".pdf-copy-diagnostics").addEventListener("click",async()=>{const runtime=runtimeSources.get(block);if(!runtime)return;try{const page=Number(block.dataset.currentPage||1),diagnostics=await createPdfPageDiagnostics(runtime.model,runtime.edits,page,{viewport:runtime.pageData?.viewport});await navigator.clipboard.writeText(JSON.stringify(diagnostics,null,2));setStatus(`Copied PDF page ${page} diagnostics (${diagnostics.objects.length} objects, ${diagnostics.issues.length} issues).`);}catch(error){console.error(error);setStatus("Could not copy PDF page diagnostics.");}});
+    block.querySelector(".pdf-copy-diagnostics").addEventListener("click",async()=>{const runtime=runtimeSources.get(block);if(!runtime)return;try{const page=Number(block.dataset.currentPage||1),telemetry=pdfTelemetry(runtime),root=block.querySelector(".pdf-text-layer"),observations=capturePdfPageDomObservations(root,{state:"idle"}),diagnostics=await createPdfPageDiagnostics(runtime.model,runtime.edits,page,{viewport:runtime.pageData?.viewport,observations,pageGeometry:capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport}),pointerHitTest:telemetry.lastPointer,interactionJournal:telemetry.interactions.snapshot(),mutationJournal:telemetry.mutations.snapshot(),selectedObjectId:block.querySelector(".pdf-text-item.is-selected")?.dataset.objectId||null,editingObjectId:block.querySelector('.pdf-text-item .pdf-edit-text[contenteditable="true"]')?.closest(".pdf-text-item")?.dataset.objectId||null});await navigator.clipboard.writeText(JSON.stringify(diagnostics,null,2));setStatus(`Copied PDF page ${page} diagnostics (${diagnostics.objects.length} objects, ${diagnostics.issues.length} issues).`);}catch(error){console.error(error);setStatus("Could not copy PDF page diagnostics.");}});
     block.querySelector(".pdf-thumbnails").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const render=async(canvas,number)=>{if(canvas.dataset.rendered)return;canvas.dataset.rendered="true";const page=await runtime.model.pdf.getPage(number),viewport=page.getViewport({scale:.18}),ratio=devicePixelRatio||1;canvas.width=Math.ceil(viewport.width*ratio);canvas.height=Math.ceil(viewport.height*ratio);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;await page.render({canvasContext:canvas.getContext("2d"),viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]}).promise;};const observer=new IntersectionObserver(entries=>entries.filter(entry=>entry.isIntersecting).forEach(entry=>{void render(entry.target,Number(entry.target.dataset.page));observer.unobserve(entry.target);}),{root:panel,rootMargin:"150px"});for(let number=1;number<=runtime.model.pageCount;number++){const button=document.createElement("button"),canvas=document.createElement("canvas"),label=document.createElement("span");button.type="button";canvas.dataset.page=String(number);canvas.style.aspectRatio=".72";label.textContent=String(number);button.append(canvas,label);button.addEventListener("click",()=>void setPdfPage(block,number));panel.append(button);observer.observe(canvas);}});
     block.querySelector(".pdf-outline").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const outline=await runtime.model.pdf.getOutline();const add=async(items,depth=0)=>{for(const item of items||[]){const button=document.createElement("button");button.type="button";button.textContent=item.title||"Untitled";button.style.paddingInlineStart=`${8+depth*14}px`;button.addEventListener("click",async()=>{let destination=item.dest;if(typeof destination==="string")destination=await runtime.model.pdf.getDestination(destination);if(destination?.[0])void setPdfPage(block,(await runtime.model.pdf.getPageIndex(destination[0]))+1);});panel.append(button);await add(item.items,depth+1);}};await add(outline);if(!outline?.length)panel.textContent="No document outline.";});
     block.querySelector(".pdf-side-close").addEventListener("click",()=>{block.querySelector(".pdf-side-panel").hidden=true;});
@@ -868,6 +871,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-compress").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),blob=await runtime.serialize(),original=new Uint8Array(await blob.arrayBuffer()),candidate=await conservativelyCompressPdf(original),choice=chooseSmallerPdf(original,candidate);if(!choice.changed){setStatus(`No smaller safe PDF was produced (${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes); the current PDF was kept.`);return;}await replacePdfRuntime(block,choice.bytes,Number(block.dataset.currentPage||1));setStatus(`PDF compressed conservatively: ${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes. Embedded images were not recompressed.`);});
 
     const textLayer = block.querySelector(".pdf-text-layer");
+    for(const type of ["pointerdown","mousedown","click"]){textLayer.addEventListener(type,event=>{const runtime=runtimeSources.get(block),object=event.target.closest?.(".pdf-text-item");if(!runtime)return;recordPdfGeometry(block,runtime,type,object);const observations=capturePdfPageDomObservations(textLayer,{state:type});pdfTelemetry(runtime).lastPointer=capturePointerHitTest(event,textLayer,{observations});},true);}
     const claimPdfImage = event => {
       if (!pdfEditEnabled(block)) return false;
       if (!claimDocumentDrop("pdf", event)) return false;
@@ -906,6 +910,9 @@ registerBlockType("pdf", {
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
       const runtime = runtimeSources.get(block);
+      const beforeGeometry=capturePdfPageGeometry(block,{viewport:runtime?.pageData?.viewport});
+      recordPdfGeometry(block,runtime,"dblclick",span);
+      pdfTelemetry(runtime).lastPointer=capturePointerHitTest(event,textLayer,{observations:capturePdfPageDomObservations(textLayer,{state:"dblclick"})});
       const index = Number(span.dataset.index);
       const page = Number(block.dataset.currentPage || 1);
       const existing = runtime?.edits?.find(edit => edit.page === page && edit.index === index && edit.kind !== "image");
@@ -915,13 +922,18 @@ registerBlockType("pdf", {
       const controls = block.querySelector(".pdf-edit-controls");
       const fontSizeInput = controls?.querySelector(".pdf-font-size");
       if (controls) controls.hidden = false;
+      recordPdfMutation(block,runtime,"pdf-edit-controls-revealed",beforeGeometry);
       if (fontSizeInput) fontSizeInput.value = String(Math.round(initialFontSize * 10) / 10);
       span.style.fontSize = `${initialFontSize * (runtime?.pageData?.viewport?.scale || 1)}px`;
       if (!existing && index >= 0) createPdfLiveEditMask(textLayer, span);
+      recordPdfGeometry(block,runtime,"before-contenteditable",span);
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
+      recordPdfGeometry(block,runtime,"after-contenteditable",span);
       text.focus();
+      recordPdfGeometry(block,runtime,"after-focus",span);
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      recordPdfGeometry(block,runtime,"selection-created",span);
     });
     textLayer.addEventListener("keydown", (event) => {
       if (!pdfEditEnabled(block)) return;
