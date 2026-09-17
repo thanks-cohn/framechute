@@ -2,12 +2,31 @@
 
 ## Mission
 
-Continue directly from **PR #68**:
+Use **PR #68 as the immutable implementation foundation**, but do **not** modify PR #68 itself.
 
 - PR: `Harden PDF edit identity, geometry, and save/reopen observability (PR #67 follow-up)`
-- branch: `codex/update-pr-#67-for-pdf-agent-observability`
+- PR #68 branch: `codex/update-pr-#67-for-pdf-agent-observability`
 
-Read the entire PR, its changed files, tests, comments, and current architecture before editing anything.
+First inspect PR #68 in full: its exact head commit, changed files, tests, comments, architecture, and production wiring.
+
+Then create a **new follow-up working branch from the exact current PR #68 head** and implement V15.3 there.
+
+Hard handoff rule:
+
+- do not push V15.3 commits onto the PR #68 branch,
+- do not rewrite or force-push PR #68,
+- do not silently restart from `main`,
+- inherit PR #68's implementation exactly as the starting code,
+- keep the V15.3 work isolated in a new branch,
+- at the end, open a **new stacked follow-up PR** whose base is the PR #68 branch so the new PR shows only the V15.3 delta,
+- clearly state in that new PR that it depends on PR #68,
+- after PR #68 merges, the follow-up PR may be retargeted/rebased onto `main` if needed.
+
+Suggested follow-up branch name:
+
+`codex/pdf-forensic-observability-v15-3`
+
+The exact name may differ if necessary, but the branch must be newly created from PR #68's current head.
 
 This is not a redesign of Substrate's PDF editor.
 
@@ -1275,7 +1294,7 @@ Do not declare this run complete until:
 24. Full repository tests are run.
 25. Extension validation passes.
 26. Chrome Web Store packaging passes.
-27. PR #68 itself is updated with this work.
+27. PR #68 remains unchanged and a new stacked V15.3 follow-up PR is created from PR #68's head.
 
 ---
 
@@ -1306,23 +1325,40 @@ If one unrelated pre-existing test fails, document the exact failure and prove t
 
 ---
 
-# Completion report
+# Completion report and PR handoff
 
-When finished, update PR #68 itself.
+When finished, **do not update PR #68**.
 
-In the PR description/comment summarize:
+Instead:
 
+1. ensure all V15.3 commits live only on the new follow-up branch created from PR #68's exact head,
+2. push that branch,
+3. open a **new stacked follow-up PR**,
+4. set its base to `codex/update-pr-#67-for-pdf-agent-observability` while PR #68 is still open,
+5. state explicitly that the new PR depends on PR #68 and is intentionally stacked on top of it,
+6. make the PR diff contain only the V15.3 forensic-observability work, not a duplicate reimplementation of PR #68,
+7. leave PR #68 itself untouched.
+
+Suggested PR title:
+
+`Add lightweight forensic PDF observability and state tracing (PR #68 follow-up)`
+
+In the new PR description summarize:
+
+- exact PR #68 head used as the foundation,
 - forensic architecture added,
 - bounded-memory strategy,
 - stable diagnostic identity contract,
 - event journal capacity,
 - issue-code registry,
+- before-hover vs during-hover geometry/ink comparison,
 - DOM/ink observation,
 - Save/reopen residue,
 - tests run,
-- any remaining unrelated failure.
+- any remaining unrelated failure,
+- explicit note that the PR is stacked on and depends on PR #68.
 
-Do not create a disconnected replacement PR unless technically unavoidable.
+The final output to the user should provide the new branch name and the new PR number/link so it is a clean handoff.
 
 ---
 
