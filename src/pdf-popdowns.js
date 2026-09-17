@@ -109,3 +109,21 @@ document.addEventListener("pointerdown", event => {
 }, true);
 
 window.addEventListener("resize", () => closeOtherPdfMenus());
+
+// The PDF canvas is the visual source of truth for untouched source text. The
+// transparent text-layer spans exist for hit-testing/edit initiation only. A
+// generic hover rule in workspace.css intentionally reveals normal source text,
+// but that can also resurrect source glyphs which have already been occulted by
+// a live erase mask (most visibly at terminal line fragments such as a trailing
+// "if"). Keep raw source-span text transparent on hover while preserving the
+// hover outline/background and leaving replacements, wrapped text, search hits,
+// and active editing untouched.
+const sourceHoverGuard = document.createElement("style");
+sourceHoverGuard.dataset.pdfSourceHoverGuard = "true";
+sourceHoverGuard.textContent = `
+.pdf-block:not(.pdf-edit-mode-off)
+  .pdf-text-item:not(.pdf-text-edit):not(.pdf-wrapped-source):not(.pdf-search-match):not(.is-editing):hover {
+  color: transparent !important;
+}
+`;
+document.head.append(sourceHoverGuard);

@@ -593,8 +593,9 @@ export function sourceMasksForPage(edits, pageNumber) {
  * exact PDF.js item box can leave antialiased fragments at the top/bottom or
  * between adjacent source runs. For the editor only, promote every changed
  * source range to the full semantic line band while keeping its horizontal
- * range bounded to the changed run(s). If every run on that line changed, erase
- * the entire semantic line. Native Save keeps its existing serializer masks.
+ * range bounded to the changed run(s). When the edited cluster owns the final
+ * run on a semantic line, grant a small bounded right-edge bleed so terminal
+ * glyph overhang/antialiasing cannot survive beyond the nominal PDF.js box.
  */
 export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) {
   const groups=new Map(),fallback=[];
@@ -628,15 +629,21 @@ export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) 
     const allChanged=group.indexes.size>=childIds.length;
     const firstChanged=childIds.length>0&&group.sourceIds.has(childIds[0]);
     const lastChanged=childIds.length>0&&group.sourceIds.has(childIds.at(-1));
-    // Preserve the clean pre-ownership-cell mask behavior, but when the edited
-    // cluster reaches a semantic line edge, claim that edge too. This clears
-    // trailing/leading glyph fragments that otherwise have no later edit to
-    // cover them.
-    const left=(allChanged||firstChanged)
+    const ownsLeftEdge=allChanged||firstChanged;
+    const ownsRightEdge=allChanged||lastChanged;
+    const lineRight=group.line.bounds.x+group.line.bounds.width;
+    // PDF.js item/line boxes can end just before the visible terminal glyph ink.
+    // Only a changed cluster that owns the semantic line's right edge gets this
+    // extra cover; interior edits stay bounded so neighboring current text is
+    // never erased. The ordinary symmetric pad is applied after this bleed.
+    const terminalBleed=ownsRightEdge
+      ? Math.max(4,Math.min(10,Number(group.line.bounds.height)*.5))
+      : 0;
+    const left=ownsLeftEdge
       ? group.line.bounds.x
       : Math.min(...group.sources.map(rect=>rect.x));
-    const right=(allChanged||lastChanged)
-      ? group.line.bounds.x+group.line.bounds.width
+    const right=ownsRightEdge
+      ? lineRight+terminalBleed
       : Math.max(...group.sources.map(rect=>rect.x+rect.width));
     const base={
       x:left,
@@ -648,7 +655,7 @@ export function semanticLiveSourceMasks(layout, edits, pageNumber, padding=2.5) 
     const mask=padPdfRect(base,pad);
     const owners=(edits||[]).filter(edit=>group.indexes.has(Number(edit.index))).map(ensurePdfEditIdentity).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
     const owner=owners[0];
-    if(owner)masks.push({...createOwnedMask({id:`mask:${owner.id}:source-line`,ownerEditId:owner.id,sourceObjectIds:[...group.sourceIds],maskRole:"source-line",pdfRect:mask}),...mask,maskIndex:[...group.indexes].join(","),contributingEditIds:owners.map(edit=>edit.id)});
+    if(owner)masks.push({...createOwnedMask({id:`mask:${owner.id}:source-line`,ownerEditId:owner.id,sourceObjectIds:[...group.sourceIds],maskRole:"source-line",pdfRect:mask}),...mask,maskIndex:[...group.indexes].join(","),contributingEditIds:owners.map(edit=>edit.id),terminalEdge:ownsRightEdge?"right":null,terminalBleed});
   }
   return masks;
 }
