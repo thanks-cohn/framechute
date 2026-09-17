@@ -72,6 +72,20 @@ function bind(details) {
     }
   });
 
+  // Secondary commands stay discoverable without making the toolbar a single
+  // endless row. Click still works normally; a short hover dwell opens desktop
+  // popdowns while touch remains click-only.
+  let hoverTimer = 0;
+  summary.addEventListener("pointerenter", event => {
+    if (event.pointerType === "touch" || details.open) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => { details.open = true; }, 260);
+  });
+  summary.addEventListener("pointerleave", () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = 0;
+  });
+
   block.querySelector(".pdf-toolbar")?.addEventListener("scroll", () => {
     if (details.open) details.open = false;
   }, { passive: true });
@@ -79,12 +93,89 @@ function bind(details) {
 
 function bindAll(root = document) {
   root.querySelectorAll?.(".pdf-toolbar details").forEach(bind);
+  if (root.matches?.(".pdf-toolbar details")) bind(root);
 }
 
-bindAll();
+function makeToolbarMenu(className, label, controls = []) {
+  const details = document.createElement("details");
+  details.className = className;
+  const summary = document.createElement("summary");
+  summary.textContent = label;
+  const panel = document.createElement("div");
+  panel.className = "pdf-popdown";
+  controls.filter(Boolean).forEach(control => panel.append(control));
+  details.append(summary, panel);
+  return details;
+}
+
+function enhancePdfToolbar(block) {
+  const toolbar = block.querySelector(".pdf-toolbar");
+  if (!toolbar || toolbar.dataset.pdfResponsiveToolbar === "true") return;
+  toolbar.dataset.pdfResponsiveToolbar = "true";
+
+  const original = [...toolbar.children];
+  const primary = document.createElement("div");
+  primary.className = "pdf-toolbar-row pdf-toolbar-row-primary";
+  primary.setAttribute("role", "group");
+  primary.setAttribute("aria-label", "PDF essentials");
+  const secondary = document.createElement("div");
+  secondary.className = "pdf-toolbar-row pdf-toolbar-row-secondary";
+  secondary.setAttribute("role", "group");
+  secondary.setAttribute("aria-label", "PDF tools");
+
+  const saveAs = toolbar.querySelector(":scope > .document-save-as");
+  const fileMenu = saveAs ? makeToolbarMenu("pdf-file-menu", "File", [saveAs]) : null;
+  const pageLabel = toolbar.querySelector(".pdf-page")?.closest("label");
+  const zoomLabel = toolbar.querySelector(".pdf-zoom")?.closest("label");
+  const editControls = toolbar.querySelector(":scope > .pdf-edit-controls");
+  const organize = toolbar.querySelector(":scope > .pdf-organize-menu");
+  const more = toolbar.querySelector(":scope > .pdf-more-menu");
+
+  const primaryNodes = [
+    toolbar.querySelector(":scope > .document-save"),
+    toolbar.querySelector(":scope > .pdf-prev"),
+    pageLabel,
+    toolbar.querySelector(":scope > .pdf-count"),
+    toolbar.querySelector(":scope > .pdf-next"),
+    toolbar.querySelector(":scope > .pdf-zoom-out"),
+    zoomLabel,
+    toolbar.querySelector(":scope > .pdf-zoom-in"),
+    toolbar.querySelector(":scope > .pdf-fit"),
+    toolbar.querySelector(":scope > .pdf-search-toggle"),
+    toolbar.querySelector(":scope > .pdf-edit-mode")
+  ].filter(Boolean);
+
+  const moved = new Set(primaryNodes);
+  primaryNodes.forEach(node => primary.append(node));
+
+  if (editControls) { secondary.append(editControls); moved.add(editControls); }
+  if (fileMenu) secondary.append(fileMenu);
+  if (organize) { secondary.append(organize); moved.add(organize); }
+  if (more) { secondary.append(more); moved.add(more); }
+  if (saveAs) moved.add(saveAs);
+
+  // Any future command that is not explicitly classified remains available on
+  // the second row rather than being hidden or lost off the right edge.
+  original.forEach(node => {
+    if (!moved.has(node) && node !== saveAs) secondary.append(node);
+  });
+
+  toolbar.replaceChildren(primary, secondary);
+  bindAll(toolbar);
+}
+
+function enhancePdfChrome(root = document) {
+  const blocks = [];
+  if (root.matches?.(".pdf-block")) blocks.push(root);
+  root.querySelectorAll?.(".pdf-block").forEach(block => blocks.push(block));
+  for (const block of blocks) enhancePdfToolbar(block);
+  bindAll(root);
+}
+
+enhancePdfChrome();
 new MutationObserver(records => records.forEach(record => {
   record.addedNodes.forEach(node => {
-    if (node.nodeType === 1) bindAll(node);
+    if (node.nodeType === 1) enhancePdfChrome(node);
   });
 })).observe(document.body, { childList: true, subtree: true });
 
@@ -127,3 +218,80 @@ sourceHoverGuard.textContent = `
 }
 `;
 document.head.append(sourceHoverGuard);
+
+// Cosmetic PDF chrome only. Do not place anything over the PDF surface and do
+// not change page geometry, edit hit-testing, masks, reflow, or serialization.
+const pdfChromeStyle = document.createElement("style");
+pdfChromeStyle.dataset.pdfResponsiveChrome = "true";
+pdfChromeStyle.textContent = `
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: stretch !important;
+  gap: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  scrollbar-width: none;
+}
+.pdf-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 4px;
+  row-gap: 4px;
+  min-width: 0;
+  padding: 5px 7px;
+}
+.pdf-toolbar-row-secondary {
+  min-height: 38px;
+  padding-top: 4px;
+  padding-bottom: 5px;
+  border-top: 1px solid color-mix(in srgb, CanvasText 9%, transparent);
+  background: color-mix(in srgb, CanvasText 2.5%, Canvas);
+}
+.pdf-toolbar-row > * { flex: 0 0 auto; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] button,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] select,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] input,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] summary {
+  min-height: 29px;
+  font-size: 12px;
+}
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] button,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] summary { padding-inline: 8px; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] label { gap: 3px; font-size: 11px; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-page { width: 50px; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-zoom { width: 52px; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-fit { max-width: 96px; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-zoom-out,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-zoom-in,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-organize-menu,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-more-menu,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-file-menu { display: block !important; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-zoom-out,
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-zoom-in { display: inline-flex !important; }
+.pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-popdown .document-save-as {
+  display: block !important;
+  width: 100%;
+  text-align: left;
+}
+.pdf-toolbar-row-secondary .pdf-edit-controls:not([hidden]) {
+  display: inline-flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding-left: 0;
+  border-left: 0;
+}
+.pdf-toolbar-row-secondary .pdf-edit-controls[hidden] { display: none !important; }
+@container (max-width: 480px) {
+  .pdf-toolbar-row { padding-inline: 5px; gap: 3px; }
+  .pdf-toolbar[data-pdf-responsive-toolbar="true"] button,
+  .pdf-toolbar[data-pdf-responsive-toolbar="true"] summary { padding-inline: 6px; }
+  .pdf-toolbar[data-pdf-responsive-toolbar="true"] .pdf-fit { max-width: 84px; }
+}
+`;
+document.head.append(pdfChromeStyle);
