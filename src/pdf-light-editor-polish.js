@@ -146,11 +146,11 @@ function installStyle() {
       font-weight: 700;
     }
 
-    /* Live-editor only: extend the deleting cover past the previous final
-       source object so tiny terminal glyph fragments cannot peek through. */
+    /* Live-editor only: extend the deleting cover well past the previous final
+       source object so terminal glyph fragments/antialiasing cannot survive. */
     .pdf-source-mask.${TERMINAL_MASK_CLASS},
     .pdf-live-edit-mask.${TERMINAL_MASK_CLASS} {
-      box-shadow: 10px 0 0 #fff;
+      box-shadow: 22px 0 0 #fff;
     }
   `;
   document.head.append(style);
