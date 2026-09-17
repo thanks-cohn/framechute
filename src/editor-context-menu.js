@@ -53,8 +53,6 @@ function run(action,value){const block=context?.block;if(!block)return;const sel
   else if(action==="save"||action==="save-as")block.querySelector(action==="save"?".document-save":".document-save-as")?.click();
   else if(context.editorKind==="pdf"&&action==="settings")pdfSettings.showModal();
   else if(context.editorKind==="pdf"&&action==="toggle-edit")block.querySelector(".pdf-edit-mode")?.click();
-  else if(context.editorKind==="pdf"&&action==="toggle-page-guides")window.dispatchEvent(new CustomEvent("framechute:pdf-toggle-guides",{detail:{block}}));
-  else if(context.editorKind==="pdf"&&action==="reset-page-guides")window.dispatchEvent(new CustomEvent("framechute:pdf-reset-guides",{detail:{block}}));
   else if(action==="quick-actions-object"){
     const globallyEnabled=readQuickActionsEnabled();
     const visible=globallyEnabled&&!isQuickActionsHidden(block);
