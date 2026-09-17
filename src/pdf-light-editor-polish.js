@@ -4,6 +4,7 @@ const workspace = document.querySelector("#workspace");
 const status = document.querySelector("#status");
 const TERMINAL_MASK_CLASS = "pdf-terminal-bleed-polish";
 const NORMALIZE_DELAYS = [0, 80, 260, 900, 1400];
+const TERMINAL_REFRESH_DELAYS = [0, 24, 72, 180, 360];
 
 function setStatus(message) {
   if (status) status.textContent = message;
@@ -41,12 +42,21 @@ function polishTerminalMasks(block) {
   }
 }
 
+function scheduleTerminalPolish(block) {
+  if (!block?.isConnected) return;
+  requestAnimationFrame(() => polishTerminalMasks(block));
+  for (const delay of TERMINAL_REFRESH_DELAYS.slice(1)) {
+    setTimeout(() => {
+      if (block.isConnected) polishTerminalMasks(block);
+    }, delay);
+  }
+}
+
 function normalizePdfControls(block) {
   if (!(block instanceof HTMLElement) || !block.classList.contains("pdf-block")) return;
 
-  // The advanced source-location footer duplicates the PDF's compact source
-  // controls. PDFs own their reconnect/copy pair in the toolbar, so suppress
-  // the footer instead of letting focus refreshes add another visible row.
+  // PDFs own their reconnect/copy pair in the toolbar. The generic advanced
+  // source-location footer must never become a fourth/extra band.
   for (const footer of block.querySelectorAll(":scope > .framechute-source-location")) footer.remove();
 
   const toolbar = block.querySelector(".pdf-toolbar");
@@ -55,7 +65,6 @@ function normalizePdfControls(block) {
     return;
   }
 
-  // Remove leftovers from the earlier experimental implementation.
   toolbar.querySelectorAll(".framechute-pdf-source-controls").forEach((node) => node.remove());
 
   const groups = [...toolbar.querySelectorAll(".local-source-controls")];
@@ -146,18 +155,19 @@ function installStyle() {
       font-weight: 700;
     }
 
-    /* Live-editor only: extend the deleting cover well past the previous final
-       source object so terminal glyph fragments/antialiasing cannot survive. */
+    /* Live-editor only. The previous source line's final glyph can paint a few
+       pixels beyond PDF.js' measured box. Give terminal masks a deliberately
+       generous right-side deleting bleed; interior objects are untouched. */
     .pdf-source-mask.${TERMINAL_MASK_CLASS},
     .pdf-live-edit-mask.${TERMINAL_MASK_CLASS} {
-      box-shadow: 22px 0 0 #fff;
+      box-shadow: 32px 0 0 #fff;
     }
   `;
   document.head.append(style);
 }
 
 // Intercept the PDF toolbar Copy control before the legacy source-name handler.
-// It now copies the actual current PDF document, matching the normal object Copy action.
+// It copies the actual current PDF document, matching the normal object Copy action.
 document.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const copy = target?.closest?.(".pdf-block .local-source-copy");
@@ -174,18 +184,34 @@ document.addEventListener("pointerup", (event) => {
   if (block) requestAnimationFrame(() => normalizePdfControls(block));
 }, true);
 
+// PDF text input can replace/rebuild the live erase mask after the input event.
+// Reapply terminal classification for a few frames after every edit rather than
+// waiting for window focus to refresh the block. This is especially important
+// for Enter, which rebuilds line geometry and used to make the old end glyph
+// briefly reappear until the user left and returned to FrameChute.
 document.addEventListener("input", (event) => {
   const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
-  if (block) requestAnimationFrame(() => polishTerminalMasks(block));
+  if (block) scheduleTerminalPolish(block);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
+  if (block) scheduleTerminalPolish(block);
+}, true);
+
+document.addEventListener("keyup", (event) => {
+  if (event.key !== "Enter") return;
+  const block = event.target instanceof Element ? event.target.closest?.(".pdf-block") : null;
+  if (block) scheduleTerminalPolish(block);
 }, true);
 
 workspace?.addEventListener("flashframe:workspace-changed", () => scheduleNormalize());
 window.addEventListener("focus", () => scheduleNormalize());
 window.addEventListener("flashframe:archive-imported", () => scheduleNormalize());
 
-// Observe only direct workspace children. Unlike the previous version, this
-// never watches the PDF text layer, so opening a PDF cannot trigger thousands
-// of normalization rescans while PDF.js builds glyph nodes.
+// Observe only direct workspace children. Never watch PDF.js' text layer: doing
+// so would rescan on every glyph node while a document opens.
 if (workspace) {
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
