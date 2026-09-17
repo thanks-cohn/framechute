@@ -118,6 +118,15 @@ function enhancePdfToolbar(block) {
   primary.className = "pdf-toolbar-row pdf-toolbar-row-primary";
   primary.setAttribute("role", "group");
   primary.setAttribute("aria-label", "PDF essentials");
+
+  // Editing controls get a permanent band. They must never appear/disappear in
+  // response to a click because changing toolbar height during a pointer
+  // gesture physically moves the PDF underneath the pointer.
+  const formatting = document.createElement("div");
+  formatting.className = "pdf-toolbar-row pdf-toolbar-row-formatting";
+  formatting.setAttribute("role", "group");
+  formatting.setAttribute("aria-label", "PDF text formatting");
+
   const secondary = document.createElement("div");
   secondary.className = "pdf-toolbar-row pdf-toolbar-row-secondary";
   secondary.setAttribute("role", "group");
@@ -148,19 +157,27 @@ function enhancePdfToolbar(block) {
   const moved = new Set(primaryNodes);
   primaryNodes.forEach(node => primary.append(node));
 
-  if (editControls) { secondary.append(editControls); moved.add(editControls); }
+  if (editControls) {
+    // Keep logical state visible too. workspace.js may still toggle the hidden
+    // property while selecting text, but the CSS below deliberately keeps this
+    // permanent formatting band rendered so those state changes cannot move the
+    // page.
+    editControls.hidden = false;
+    formatting.append(editControls);
+    moved.add(editControls);
+  }
   if (fileMenu) secondary.append(fileMenu);
   if (organize) { secondary.append(organize); moved.add(organize); }
   if (more) { secondary.append(more); moved.add(more); }
   if (saveAs) moved.add(saveAs);
 
   // Any future command that is not explicitly classified remains available on
-  // the second row rather than being hidden or lost off the right edge.
+  // the third row rather than being hidden or lost off the right edge.
   original.forEach(node => {
     if (!moved.has(node) && node !== saveAs) secondary.append(node);
   });
 
-  toolbar.replaceChildren(primary, secondary);
+  toolbar.replaceChildren(primary, formatting, secondary);
   bindAll(toolbar);
 }
 
@@ -219,15 +236,15 @@ sourceHoverGuard.textContent = `
 `;
 document.head.append(sourceHoverGuard);
 
-// Cosmetic PDF chrome only. Do not place anything over the PDF surface and do
-// not change page geometry, edit hit-testing, masks, reflow, or serialization.
+// Stable PDF chrome: three persistent bands. Interacting with PDF text must not
+// add/remove toolbar rows or change the reader's vertical origin.
 const pdfChromeStyle = document.createElement("style");
 pdfChromeStyle.dataset.pdfResponsiveChrome = "true";
 pdfChromeStyle.textContent = `
 .pdf-toolbar[data-pdf-responsive-toolbar="true"] {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   align-items: stretch !important;
   gap: 0 !important;
   min-height: 0 !important;
@@ -245,11 +262,17 @@ pdfChromeStyle.textContent = `
   min-width: 0;
   padding: 5px 7px;
 }
+.pdf-toolbar-row-formatting,
 .pdf-toolbar-row-secondary {
   min-height: 38px;
   padding-top: 4px;
   padding-bottom: 5px;
   border-top: 1px solid color-mix(in srgb, CanvasText 9%, transparent);
+}
+.pdf-toolbar-row-formatting {
+  background: color-mix(in srgb, CanvasText 1.5%, Canvas);
+}
+.pdf-toolbar-row-secondary {
   background: color-mix(in srgb, CanvasText 2.5%, Canvas);
 }
 .pdf-toolbar-row > * { flex: 0 0 auto; }
@@ -278,7 +301,8 @@ pdfChromeStyle.textContent = `
   width: 100%;
   text-align: left;
 }
-.pdf-toolbar-row-secondary .pdf-edit-controls:not([hidden]) {
+.pdf-toolbar-row-formatting .pdf-edit-controls,
+.pdf-toolbar-row-formatting .pdf-edit-controls[hidden] {
   display: inline-flex !important;
   flex-wrap: wrap;
   align-items: center;
@@ -286,7 +310,6 @@ pdfChromeStyle.textContent = `
   padding-left: 0;
   border-left: 0;
 }
-.pdf-toolbar-row-secondary .pdf-edit-controls[hidden] { display: none !important; }
 @container (max-width: 480px) {
   .pdf-toolbar-row { padding-inline: 5px; gap: 3px; }
   .pdf-toolbar[data-pdf-responsive-toolbar="true"] button,
