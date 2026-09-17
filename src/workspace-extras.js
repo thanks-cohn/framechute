@@ -91,6 +91,11 @@ await import("./straighten-fit.js");
 // rewrite workspace geometry while an object is being dragged.
 await import("./docx-selection-fidelity.js");
 
+// PDF visual polish stays isolated from the document model: normalize the
+// source controls, remove late duplicate rows, and give terminal line masks a
+// few extra live-preview pixels without changing native PDF serialization.
+await import("./pdf-light-editor-polish.js");
+
 const workspaceElement=document.querySelector("#workspace");
 if(workspaceElement){
   // Clear only state left by the removed giant-runway implementation.
