@@ -316,6 +316,15 @@ function ensureFooter(block, descriptor) {
 
 function decorateBlock(block) {
   if (!(block instanceof HTMLElement) || !block.classList.contains("block")) return;
+
+  // PDFs already own a compact Reconnect/Copy source control in their toolbar.
+  // Never decorate them with the generic source-location footer: reconnecting
+  // returns focus to the window and used to recreate that footer as a third row.
+  if (block.dataset.blockType === "pdf" || block.classList.contains("pdf-block")) {
+    block.querySelector(":scope > .framechute-source-location")?.remove();
+    return;
+  }
+
   ensureFooter(block, descriptorFor(block));
 }
 
