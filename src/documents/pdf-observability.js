@@ -1,6 +1,7 @@
 import { validateFiniteRect } from "./pdf-geometry.js";
 
-export const PDF_DIAGNOSTIC_SCHEMA_VERSION="2.0.0";
+export const PDF_DIAGNOSTIC_SCHEMA_VERSION="3.0.0";
+export const PDF_DIAGNOSTIC_MODES=Object.freeze({OFF:"off",DEBUG:"debug",DEEP:"deep"});
 export const PDF_COORDINATE_SPACES=Object.freeze({
   PDF_POINTS:"pdf-points",
   SEMANTIC_PDF_POINTS:"semantic-pdf-points",
@@ -21,7 +22,9 @@ export const PDF_GEOMETRY_ISSUE_CODES=Object.freeze([
   "PDF_CANVAS_TEXT_LAYER_ORIGIN_MISMATCH","PDF_CANVAS_TEXT_LAYER_SIZE_MISMATCH","PDF_VIEWPORT_SURFACE_TRANSFORM_MISMATCH","PDF_VIEWPORT_TRANSFORM_MISMATCH",
   "PDF_OBJECT_DOM_RECT_MISMATCH","PDF_OBJECT_GLYPH_RECT_MISMATCH","POINTER_TARGET_DOES_NOT_MATCH_VISIBLE_GLYPH","EDIT_FIELD_TELEPORTED_FROM_SOURCE",
   "EDIT_FIELD_CHANGED_ON_FOCUS","EDIT_FIELD_CHANGED_ON_SELECTION","TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN","SEARCH_BAR_CHANGED_PAGE_COORDINATE_ORIGIN",
-  "TEXT_LAYER_SCROLL_DESYNCHRONIZED","UNACCOUNTED_CSS_TRANSFORM","UNEXPECTED_GEOMETRY_MUTATION"
+  "TEXT_LAYER_SCROLL_DESYNCHRONIZED","UNACCOUNTED_CSS_TRANSFORM","UNEXPECTED_GEOMETRY_MUTATION","HOVER_BOX_GLYPH_MISMATCH",
+  "SOURCE_DOM_SHOULD_COVER_SOURCE_GLYPH","HOVER_BOX_SHOULD_COVER_HIT_GLYPH","SELECTED_FIELD_SHOULD_REMAIN_ANCHORED_TO_SOURCE",
+  "EDITABLE_FIELD_SHOULD_REMAIN_ANCHORED_TO_SELECTED_FIELD","SOURCE_MASK_SHOULD_COVER_SUPERSEDED_SOURCE_GLYPH","REPLACEMENT_GLYPH_SHOULD_FIT_REPLACEMENT_FIELD"
 ]);
 const STATE_NAMES=Object.freeze(["idle","hover","selected","editing","committed","rerendered","saved","reopened","pointerdown","mousedown","click","dblclick","before-focus","after-focus","before-contenteditable","after-contenteditable","selection-created","editing-active","focusout","rerender-start","rerender-complete"]);
 const round=(n,digits=3)=>Number.isFinite(Number(n))?Math.round(Number(n)*10**digits)/10**digits:null;
@@ -29,6 +32,31 @@ const cleanText=value=>String(value??"").replace(/\s+/g," ").trim().slice(0,500)
 const stableStrings=values=>[...new Set((values||[]).filter(Boolean).map(String))].sort();
 const namedRect=(rect,space)=>rect?{rect:clientRectRecord(rect),space}:null;
 const distanceToRect=(point,rect)=>Math.hypot(Math.max(rect.x-point.x,0,point.x-(rect.x+rect.width)),Math.max(rect.y-point.y,0,point.y-(rect.y+rect.height)));
+const rawNamedRect=value=>value?.rect?value.rect:value;
+
+/** Compare two projections in the same coordinate space. The record is kept
+ * deliberately redundant enough that an agent never has to recalculate IoU,
+ * containment, edge direction, or center displacement from a JSON dossier. */
+export function compareVisualRectangles(left,right,{a="a",b="b",space=null,tolerance=1,nearDistance=24}={}){
+  const ar=rawNamedRect(left),br=rawNamedRect(right),av=validateFiniteRect(ar,{space:space||left?.space||"client-css",allowZeroArea:true}),bv=validateFiniteRect(br,{space:space||right?.space||"client-css",allowZeroArea:true});
+  if(!av.ok||!bv.ok)return {a,b,space:space||left?.space||right?.space||"unknown",valid:false,errors:[...av.errors,...bv.errors]};
+  const A=av.rect,B=bv.rect,x=Math.max(A.x,B.x),y=Math.max(A.y,B.y),rightEdge=Math.min(A.x+A.width,B.x+B.width),bottom=Math.min(A.y+A.height,B.y+B.height);
+  const intersectionRect={x:round(x),y:round(y),width:round(Math.max(0,rightEdge-x)),height:round(Math.max(0,bottom-y))};
+  const areaA=A.width*A.height,areaB=B.width*B.height,intersectionArea=intersectionRect.width*intersectionRect.height,unionArea=areaA+areaB-intersectionArea;
+  const coverageOfA=areaA?intersectionArea/areaA:0,coverageOfB=areaB?intersectionArea/areaB:0;
+  const centerDelta={x:round((B.x+B.width/2)-(A.x+A.width/2)),y:round((B.y+B.height/2)-(A.y+A.height/2))};
+  const edgeDelta={left:round(B.x-A.x),top:round(B.y-A.y),right:round(B.x+B.width-A.x-A.width),bottom:round(B.y+B.height-A.y-A.height)};
+  const distance=round(Math.hypot(centerDelta.x,centerDelta.y));
+  let classification;
+  if(intersectionArea===0)classification=distance<=nearDistance?"near-but-misaligned":"disjoint";
+  else if(Math.max(...Object.values(edgeDelta).map(Math.abs))<=tolerance)classification="aligned";
+  else if(coverageOfA>=.98&&areaB>areaA*1.35)classification="oversized-hitbox";
+  else if(coverageOfB>=.98&&areaB<areaA*.75)classification="undersized-hitbox";
+  else if(coverageOfA>=.98)classification="contains-glyphs";
+  else if(distance<=nearDistance&&intersectionArea)classification="near-but-misaligned";
+  else classification="partial-overlap";
+  return {a,b,space:space||left?.space||right?.space||"client-css",valid:true,intersectionRect,intersectionArea:round(intersectionArea),unionArea:round(unionArea),iou:round(unionArea?intersectionArea/unionArea:0,6),coverageOfA:round(coverageOfA,6),coverageOfB:round(coverageOfB,6),centerDelta,edgeDelta,distance,classification};
+}
 
 /** A serializable, invertible chain. Matrices use DOM/CSS [a,b,c,d,e,f]. */
 export function createGeometryTransformChain(from,to,steps=[]){
@@ -331,6 +359,86 @@ export function compareGeometryFingerprints(before,after,{cause="unknown",tolera
   return {cause,classification,deltas,issues:[...evaluatePageAlignment(after),...(!same&&classification!=="NO_GEOMETRY_CHANGE"?[{severity:"error",code:cause.includes("toolbar")?"TOOLBAR_CHANGED_PAGE_COORDINATE_ORIGIN":cause.includes("search")?"SEARCH_BAR_CHANGED_PAGE_COORDINATE_ORIGIN":"UNEXPECTED_GEOMETRY_MUTATION",probableTransformStage:"layout-mutation",deltas}]:[])]};
 }
 
+const diagnosticModes=new WeakMap();
+export function setPdfDiagnosticMode(block,mode="off"){
+  if(!Object.values(PDF_DIAGNOSTIC_MODES).includes(mode))throw new TypeError(`Unknown PDF diagnostic mode: ${mode}`);
+  if(!block||typeof block!=="object")throw new TypeError("A PDF block is required");
+  if(mode===PDF_DIAGNOSTIC_MODES.OFF)diagnosticModes.delete(block);else diagnosticModes.set(block,mode);
+  if(block.dataset)block.dataset.pdfDiagnosticMode=mode;
+  return mode;
+}
+export function getPdfDiagnosticMode(block){return diagnosticModes.get(block)||block?.dataset?.pdfDiagnosticMode||PDF_DIAGNOSTIC_MODES.OFF;}
+
+function outlineProjection(observation,computed){
+  const style=styleValue(computed,"outline-style"),width=Number.parseFloat(styleValue(computed,"outline-width"))||0,offset=Number.parseFloat(styleValue(computed,"outline-offset"))||0;
+  if(!observation?.clientRect)return null;
+  const rect=rawNamedRect(observation.clientRect),grow=width+offset;
+  return {...namedRect({x:rect.x-grow,y:rect.y-grow,width:rect.width+grow*2,height:rect.height+grow*2},"hover-outline-client-css"),derivedFrom:width&&style!=="none"?"css-outline":"border-box",outline:{style:style||"none",width:round(width),offset:round(offset)},background:styleValue(computed,"background-color")||styleValue(computed,"background")};
+}
+function compactVisualAncestry(element,getComputedStyle){
+  const ancestry=[];let node=element?.parentElement;
+  while(node&&ancestry.length<16){
+    const style=getComputedStyle?.(node)||{},transform=styleValue(style,"transform")||"none",overflow=styleValue(style,"overflow")||"visible",zIndex=styleValue(style,"z-index")||"auto",position=styleValue(style,"position")||"static",clipPath=styleValue(style,"clip-path")||"none";
+    if(transform!=="none"||!/^visible$/.test(overflow)||zIndex!=="auto"||position!=="static"||clipPath!=="none"||node.scrollLeft||node.scrollTop){
+      ancestry.push({element:elementSummary(node),clientRect:namedRect(node.getBoundingClientRect?.(),"client-css"),transform,transformOrigin:styleValue(style,"transform-origin"),overflow,clipPath,zIndex,position,scroll:{left:node.scrollLeft||0,top:node.scrollTop||0}});
+    }
+    node=node.parentElement;
+  }
+  return ancestry;
+}
+
+/** Locate the first unequal named transform step without guessing beyond the
+ * available evidence. Callers may supply projection.transformChain records. */
+export function firstProjectionDivergence(expected,actual,{tolerance=.5}={}){
+  const expectedSteps=expected?.transformChain?.steps||[],actualSteps=actual?.transformChain?.steps||[],length=Math.max(expectedSteps.length,actualSteps.length);
+  for(let index=0;index<length;index++){
+    const e=expectedSteps[index],a=actualSteps[index];
+    if(!e||!a||e.kind!==a.kind||Math.max(...(e.matrix||[]).map((value,i)=>Math.abs(value-(a.matrix||[])[i])))>tolerance){
+      const em=e?.matrix||[1,0,0,1,0,0],am=a?.matrix||[1,0,0,1,0,0];
+      return {stage:`${e?.kind||"missing"} -> ${a?.kind||"missing"}`,step:index,expectedOrigin:{x:em[4]||0,y:em[5]||0},actualOrigin:{x:am[4]||0,y:am[5]||0},delta:{x:round((am[4]||0)-(em[4]||0)),y:round((am[5]||0)-(em[5]||0))},causeCandidates:["stale-client-rect","layout-shift","transform-origin"]};
+    }
+  }
+  const relationship=expected&&actual?compareVisualRectangles(expected,actual):null;
+  return relationship?.classification!=="aligned"?{stage:"final-projection",step:length,expectedOrigin:{x:rawNamedRect(expected).x,y:rawNamedRect(expected).y},actualOrigin:{x:rawNamedRect(actual).x,y:rawNamedRect(actual).y},delta:relationship.centerDelta,causeCandidates:["unrecorded-css-transform","stale-client-rect","wrong-coordinate-space"]}:null;
+}
+
+function projectionIssue(object,projectionName,referenceName,code){
+  const actual=object.projections[projectionName],reference=object.projections[referenceName];if(!actual||!reference)return null;
+  const metrics=compareVisualRectangles(reference,actual,{a:referenceName,b:projectionName});
+  if(["aligned","contains-glyphs"].includes(metrics.classification))return null;
+  return {severity:"error",code,objectId:object.objectId,sourceObjectId:object.sourceObjectId,expected:reference,actual,coordinateSpaces:[reference.space,actual.space],relationship:metrics,firstDivergence:firstProjectionDivergence(reference,actual),interactionState:object.visualState};
+}
+
+/** Materialize a machine-readable shadow of one currently rendered page.
+ * OFF returns a tiny status record and does not query layout or scan glyphs. */
+export function capturePdfVisualScene(block,runtime={},options={}){
+  const mode=options.mode||getPdfDiagnosticMode(block);if(mode===PDF_DIAGNOSTIC_MODES.OFF)return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,mode,page:Number(block?.dataset?.currentPage||1),objects:[],relationships:[],issues:[]};
+  const deep=mode===PDF_DIAGNOSTIC_MODES.DEEP,root=block?.querySelector?.(".pdf-text-layer"),geometry=options.pageGeometry||capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport,getComputedStyle:options.getComputedStyle});
+  const observations=options.observations||capturePdfPageDomObservations(root,{state:"idle",getComputedStyle:options.getComputedStyle,createRange:deep?options.createRange:()=>null,createCanvas:deep?options.createCanvas:()=>null});
+  const elements=new Map([...(root?.querySelectorAll?.("[data-pdf-object-id],[data-object-id]")||[])].map(element=>[String(element.dataset?.pdfObjectId||element.dataset?.objectId),element]));
+  const objects=observations.map(observation=>{
+    const element=elements.get(String(observation.objectId)),styleReader=options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis),computed=element?styleReader?.(element)||{}:{},hovered=options.hoveredObjectId!=null?String(options.hoveredObjectId)===String(observation.objectId):Boolean(element?.matches?.(":hover")),selected=options.selectedObjectId!=null?String(options.selectedObjectId)===String(observation.objectId):Boolean(element?.classList?.contains?.("is-selected")),editing=Boolean(element?.querySelector?.('[contenteditable="true"]'));
+    const projections={expectedViewport:observation.expectedViewportRect?namedRect(observation.expectedViewportRect,"pdf-viewport-css"):null,domLayout:namedRect(rawNamedRect(observation.clientRect),"client-css"),glyphInk:observation.inkUnion?namedRect(rawNamedRect(observation.inkUnion),"glyph-ink-client-css"):null,hitTarget:namedRect(rawNamedRect(observation.clientRect),"client-css"),hoverOutline:hovered?outlineProjection(observation,computed):null,selectedField:selected?namedRect(rawNamedRect(observation.clientRect),"client-css"):null,editableField:observation.editableRect?namedRect(rawNamedRect(observation.editableRect),"client-css"):null,sourceMask:null,replacementField:observation.ownerEditId?namedRect(rawNamedRect(observation.clientRect),"client-css"):null};
+    const record={objectId:observation.objectId,sourceObjectId:observation.sourceObjectId,ownerEditId:observation.ownerEditId,page:Number(block?.dataset?.currentPage||1),text:cleanText(element?.textContent),semantic:{kind:observation.ownerEditId?"replacement-text":"source-text-run"},projections,visualState:{hovered,selected,editing,visible:observation.display!=="none"&&observation.visibility!=="hidden"&&observation.opacity!=="0",clipped:false,pointerReachable:observation.pointerEvents!=="none",zIndex:observation.zIndex},visualAncestry:deep?compactVisualAncestry(element,options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis)):undefined};
+    return record;
+  });
+  const relationships=[],issues=[...evaluatePageAlignment(geometry)];
+  for(const object of objects){
+    for(const [projection,reference,type] of [["hitTarget","glyphInk","hit-to-glyph"],["hoverOutline","glyphInk","hover-to-glyph"],["editableField","glyphInk","edit-to-glyph"],["selectedField","glyphInk","selected-to-glyph"]])if(object.projections[projection]&&object.projections[reference])relationships.push({from:object.objectId,to:`${projection}:${object.objectId}`,type,metrics:compareVisualRectangles(object.projections[reference],object.projections[projection],{a:reference,b:projection})});
+    const checks=[["hoverOutline","glyphInk","HOVER_BOX_GLYPH_MISMATCH"],["editableField","glyphInk","EDIT_FIELD_TELEPORTED_FROM_SOURCE"],["selectedField","glyphInk","SELECTED_FIELD_SHOULD_REMAIN_ANCHORED_TO_SOURCE"]];
+    for(const check of checks){const issue=projectionIssue(object,...check);if(issue)issues.push(issue);}
+  }
+  const pointer=options.pointer||runtime.telemetry?.lastPointer||null;
+  return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,mode,page:Number(block?.dataset?.currentPage||1),viewport:geometry?.viewport||null,surface:geometry?.surface||null,canvas:geometry?.canvas||null,textLayer:geometry?.textLayer||null,scroll:geometry?.surface?{left:geometry.surface.scrollLeft,top:geometry.surface.scrollTop}:null,chrome:geometry?.chrome||null,objects,relationships,pointer,interaction:{hoveredObjectId:options.hoveredObjectId||null,selectedObjectId:options.selectedObjectId||null,editingObjectId:options.editingObjectId||null},issues,interactionTrace:runtime.telemetry?.interactions?.snapshot?.()||[],geometryMutationTrace:runtime.telemetry?.mutations?.snapshot?.()||[]};
+}
+
+export function findVisualObjectAtPoint(scene,point){return (scene?.objects||[]).filter(object=>{const rect=rawNamedRect(object.projections?.glyphInk||object.projections?.hitTarget);return rect&&distanceToRect(point,rect)===0;}).sort((a,b)=>Number(b.visualState?.zIndex||0)-Number(a.visualState?.zIndex||0))[0]||null;}
+export function nearestVisibleGlyph(scene,point){return (scene?.objects||[]).filter(object=>object.visualState?.visible&&object.projections?.glyphInk).map(object=>({object,distance:distanceToRect(point,rawNamedRect(object.projections.glyphInk))})).sort((a,b)=>a.distance-b.distance)[0]||null;}
+export function compareObjectProjection(scene,objectId,a,b){const object=(scene?.objects||[]).find(item=>String(item.objectId)===String(objectId));return object?.projections?.[a]&&object.projections[b]?compareVisualRectangles(object.projections[a],object.projections[b],{a,b}):null;}
+export function objectsWhoseHitboxesDoNotMatchGlyphs(scene){return (scene?.objects||[]).filter(object=>{const metrics=compareObjectProjection(scene,object.objectId,"glyphInk","hitTarget");return metrics&&!['aligned','contains-glyphs'].includes(metrics.classification);});}
+export function objectsWithUnexpectedVisualOverlap(scene){return (scene?.relationships||[]).filter(edge=>!["aligned","contains-glyphs"].includes(edge.metrics?.classification));}
+export function firstGeometryDivergence(scene,objectId){const issue=(scene?.issues||[]).find(item=>String(item.objectId)===String(objectId)&&item.firstDivergence);return issue?.firstDivergence||null;}
+
 // Compatibility bridge for PR #68's existing one-click Copy Page Diagnostics.
 // The explicit API above is preferred for future callers, but the current UI
 // does not yet thread its surface element through createPdfPageDiagnostics.
@@ -371,7 +479,7 @@ function enrichObservations(observations,objects,viewport,issues){
   });
 }
 
-export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},documentVersionId,objects=[],masks=[],observations=[],invariants=[],issues=[],pageGeometry=null,pointerHitTest=null,interactionJournal=[],mutationJournal=[],selectedObjectId=null,editingObjectId=null}) {
+export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},documentVersionId,objects=[],masks=[],observations=[],invariants=[],issues=[],pageGeometry=null,pointerHitTest=null,interactionJournal=[],mutationJournal=[],selectedObjectId=null,editingObjectId=null,visualScene=null}) {
   const allIssues=[...issues];
   const normalized=[];
   for(const object of objects){
@@ -391,5 +499,5 @@ export function buildPdfDiagnosticSnapshot({page,pageBoxes={},viewport={},docume
   if(pointerHitTest?.issues)allIssues.push(...pointerHitTest.issues);
   for(const mutation of mutationJournal)if(mutation?.issues)allIssues.push(...mutation.issues);
   for(const issue of allIssues){const key=`${issue.severity}:${issue.code}`;issueCounts[key]=(issueCounts[key]||0)+1;}
-  return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,page,pageBoxes,viewport,coordinateSpaceRegistry:PDF_COORDINATE_SPACES,documentVersionId:documentVersionId||"unknown",geometryTruthHierarchy:["raw-pdf-source","normalized-canonical-pdf","semantic","expected-viewport","observed-dom","observed-ink","hit-test","editable-field"],pageGeometry,selectedObjectId,editingObjectId,pointerHitTest,interactionJournal,mutationJournal,objectCountsByKind:countsByKind,issueCounts:Object.fromEntries(Object.entries(issueCounts).sort()),objects:normalized.sort((a,b)=>String(a.id).localeCompare(String(b.id))),masks:[...masks].sort((a,b)=>String(a.id).localeCompare(String(b.id))),observations:enrichedObservations,collisions:collisions.sort((a,b)=>a.leftObjectId.localeCompare(b.leftObjectId)||a.rightObjectId.localeCompare(b.rightObjectId)),invariants,issues:allIssues.sort((a,b)=>a.code.localeCompare(b.code)||String(a.objectId||"").localeCompare(String(b.objectId||"")))};
+  return {schemaVersion:PDF_DIAGNOSTIC_SCHEMA_VERSION,page,pageBoxes,viewport,coordinateSpaceRegistry:PDF_COORDINATE_SPACES,documentVersionId:documentVersionId||"unknown",geometryTruthHierarchy:["raw-pdf-source","normalized-canonical-pdf","semantic","expected-viewport","observed-dom","observed-ink","hit-test","editable-field"],pageGeometry,visualScene,selectedObjectId,editingObjectId,pointerHitTest,interactionJournal,mutationJournal,objectCountsByKind:countsByKind,issueCounts:Object.fromEntries(Object.entries(issueCounts).sort()),objects:normalized.sort((a,b)=>String(a.id).localeCompare(String(b.id))),masks:[...masks].sort((a,b)=>String(a.id).localeCompare(String(b.id))),observations:enrichedObservations,collisions:collisions.sort((a,b)=>a.leftObjectId.localeCompare(b.leftObjectId)||a.rightObjectId.localeCompare(b.rightObjectId)),invariants,issues:allIssues.sort((a,b)=>a.code.localeCompare(b.code)||String(a.objectId||"").localeCompare(String(b.objectId||"")))};
 }
