@@ -42,8 +42,15 @@ export function commandsForEditorContext(context) {
   }
   const pdfEditOn = context.block?.dataset?.pdfEditMode !== "off";
   const pdfEditToggle = { id: "toggle-edit", label: `EDIT [ ${pdfEditOn ? "ON" : "OFF"} ]` };
+  const pdfGuidesVisible = context.block?.dataset?.pdfGuidesHidden !== "true";
+  const pdfGuideControls = [
+    { type:"separator" },
+    { id:"toggle-page-guides", label:`Page / Margin Guides  [ ${pdfGuidesVisible ? "ON" : "OFF"} ]` },
+    { id:"reset-page-guides", label:"Reset Page / Margin Guides" }
+  ];
   if (!pdfEditOn) return [
     showHeader, quickActionsToggle, { type: "separator" }, pdfEditToggle,
+    ...pdfGuideControls,
     { type: "separator" }, { id: "settings", label: "Settings…" },
     { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
@@ -57,6 +64,7 @@ export function commandsForEditorContext(context) {
       { id: "delete", label: "Delete Image" },
       { type: "separator" },
       { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" },
+      ...pdfGuideControls,
       { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" },
       ...viewportTail
     ];
@@ -68,14 +76,18 @@ export function commandsForEditorContext(context) {
     { id: "font", label: "Font", submenu: ["Helvetica","Helvetica Bold","Helvetica Oblique","Times Roman","Times Bold","Times Italic","Courier","Courier Bold","Courier Oblique"].map(label => ({ id: "font", label, value: label })) },
     { id: "text-size", label: "Text Size…" }, { id: "duplicate", label: "Duplicate" }, { id: "delete", label: "Delete Field" },
     { type: "separator" }, { id: "front", label: "Bring Forward" }, { id: "back", label: "Send Back" },
-    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
+    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" },
+    ...pdfGuideControls,
+    { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
   if (context.selectionKind === "source-text") return [
     showHeader, quickActionsToggle, { type: "separator" }, pdfEditToggle,
     { id: "edit-text", label: "Edit / Replace Text" }, { id: "delete", label: "Delete Text" },
-    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
+    { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" },
+    ...pdfGuideControls,
+    { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail
   ];
-  return [showHeader,quickActionsToggle,{ type: "separator" },pdfEditToggle,{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail];
+  return [showHeader,quickActionsToggle,{ type: "separator" },pdfEditToggle,{ id: "add-text", label: "Add Text Field" }, { id: "insert-image", label: "Insert Image…", enabled: false }, { id: "paste", label: "Paste Text / Paste Image", enabled: false }, { id: "select-region", label: "Select Region", enabled: false }, { type: "separator" }, { id: "undo", label: "Undo" }, { id: "redo", label: "Redo" }, ...pdfGuideControls, { id: "settings", label: "Settings…" }, { id: "save", label: "Save" }, { id: "save-as", label: "Save As…" }, ...viewportTail];
 }
 
 // CODEX DEBUG V10: this implementation is too video-specific and must become a
