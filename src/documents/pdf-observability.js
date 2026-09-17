@@ -38,20 +38,23 @@ const rawNamedRect=value=>value?.rect?value.rect:value;
 /** One presentation-space authority for every interactive projection of a text
  * run.  PDF geometry remains immutable; an observed glyph rectangle may refine
  * the transient client hit rectangle, but is never suitable for serialization. */
-export function resolvePdfInteractiveTextRect({objectId,sourceRect=null,expectedViewportRect=null,glyphInkRect=null,domRect=null,padding=1,maxPadding=2}={}){
-  const glyph=rawNamedRect(glyphInkRect),expected=rawNamedRect(expectedViewportRect),dom=rawNamedRect(domRect);
+export function resolvePdfInteractiveTextRect({objectId,presentationTruthKind="canvas-source-text",sourceRect=null,sourceProjectionRect=null,expectedViewportRect=null,glyphInkRect=null,domRect=null,padding=1,maxPadding=2}={}){
+  const glyph=rawNamedRect(glyphInkRect),sourceProjection=rawNamedRect(sourceProjectionRect||expectedViewportRect),dom=rawNamedRect(domRect);
   const finite=rect=>rect&&[rect.x,rect.y,rect.width,rect.height].every(Number.isFinite)&&rect.width>0&&rect.height>0;
   const safePadding=Math.max(0,Math.min(Number(padding)||0,maxPadding));
-  let chosen,derivationMethod,confidence;
-  if(finite(glyph)){
-    chosen={x:glyph.x-safePadding,y:glyph.y-safePadding,width:glyph.width+safePadding*2,height:glyph.height+safePadding*2};
-    derivationMethod="observed-glyph-ink";confidence="high";
+  const padded=rect=>({x:rect.x-safePadding,y:rect.y-safePadding,width:rect.width+safePadding*2,height:rect.height+safePadding*2});
+  const domVisible=presentationTruthKind!=="canvas-source-text";
+  let chosen,derivationMethod,confidence,interactionAuthority,interactionAuthorityReason;
+  if(!domVisible&&finite(sourceProjection)){
+    chosen=padded(sourceProjection);derivationMethod="pdfjs-source-projection";confidence="high";interactionAuthority="pdfjs-source-projection";interactionAuthorityReason="canvas source text uses its PDF.js item projection; DOM glyph metrics are diagnostic only";
+  }else if(domVisible&&finite(glyph)){
+    chosen=padded(glyph);derivationMethod="observed-dom-glyph-ink";confidence="high";interactionAuthority="visible-dom-glyphs";interactionAuthorityReason="replacement/free text is visibly painted by the DOM overlay";
   }else if(finite(dom)){
-    chosen={x:dom.x,y:dom.y,width:dom.width,height:dom.height};derivationMethod="normalized-dom-layout";confidence="medium";
-  }else if(finite(expected)){
-    chosen={x:expected.x,y:expected.y,width:expected.width,height:expected.height};derivationMethod="expected-viewport";confidence="medium";
-  }else return {objectId:objectId||null,coordinateSpace:"client-css",canonicalSourceRect:sourceRect,expectedViewportRect,observedGlyphInkRect:glyphInkRect,interactiveRect:null,derivationMethod:"unresolved",confidence:"none",tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
-  return {objectId:objectId||null,coordinateSpace:glyphInkRect?.space||domRect?.space||expectedViewportRect?.space||"client-css",canonicalSourceRect:sourceRect,expectedViewportRect,observedGlyphInkRect:glyphInkRect,interactiveRect:{...chosen,space:glyphInkRect?.space||domRect?.space||expectedViewportRect?.space||"client-css"},derivationMethod,confidence,tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
+    chosen={x:dom.x,y:dom.y,width:dom.width,height:dom.height};derivationMethod="normalized-dom-layout";confidence="medium";interactionAuthority="dom-layout-fallback";interactionAuthorityReason="preferred presentation projection was unavailable";
+  }else if(finite(sourceProjection)){
+    chosen=padded(sourceProjection);derivationMethod="pdfjs-source-projection";confidence="medium";interactionAuthority="pdfjs-source-projection";interactionAuthorityReason="source projection fallback";
+  }else return {objectId:objectId||null,presentationTruthKind,interactionAuthority:"unresolved",interactionAuthorityReason:"no finite presentation rectangle",coordinateSpace:"client-css",canonicalSourceRect:sourceRect,sourceProjectionRect,domGlyphRect:glyphInkRect,interactiveRect:null,derivationMethod:"unresolved",confidence:"none",tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
+  return {objectId:objectId||null,presentationTruthKind,interactionAuthority,interactionAuthorityReason,coordinateSpace:(domVisible?glyphInkRect?.space:null)||sourceProjectionRect?.space||expectedViewportRect?.space||domRect?.space||"client-css",canonicalSourceRect:sourceRect,sourceProjectionRect:sourceProjectionRect||expectedViewportRect,expectedViewportRect,domGlyphRect:glyphInkRect,observedGlyphInkRect:glyphInkRect,domGlyphDelta:rectangleDelta(sourceProjection,glyph),interactiveRect:{...chosen,space:(domVisible?glyphInkRect?.space:null)||sourceProjectionRect?.space||expectedViewportRect?.space||domRect?.space||"client-css"},derivationMethod,confidence,tolerances:{edgePx:1,glyphCoverage:.98,maxPaddingPx:maxPadding}};
 }
 
 /** Deterministic visual hit resolution. Containment is deliberately strict so
@@ -307,9 +310,10 @@ export function capturePdfElementState(element,{state="idle",viewportRect,inkRec
   const sourceObjectId=element.dataset?.pdfSourceObjectId||element.dataset?.sourceObjectId||null;
   const ownerEditId=element.dataset?.pdfEditId||element.dataset?.ownerEditId||null;
   const versionState=element.dataset?.pdfVersionState||element.dataset?.versionState||"current";
+  const presentationTruthKind=element.dataset?.presentationTruthKind||((ownerEditId||element.classList?.contains?.("pdf-text-edit"))?"dom-replacement-text":"canvas-source-text");
   const maskIds=stableStrings([...(masks||[]).map(mask=>mask.id),...(element.dataset?.maskIds||"").split(/\s+/)]);
   return {
-    objectId,sourceObjectId,ownerEditId,versionState,state,
+    objectId,sourceObjectId,ownerEditId,versionState,state,presentationTruthKind,
     identity:{objectId,sourceObjectId,editId:ownerEditId,lineId:element.dataset?.pdfLineId||element.dataset?.lineId||null,blockId:element.dataset?.pdfBlockId||element.dataset?.blockId||null},
     classes:[...(element.classList||[])].sort(),
     display:styleValue(computed,"display"),visibility:styleValue(computed,"visibility"),opacity,
@@ -377,7 +381,7 @@ export function evaluatePageAlignment(geometry,{tolerance=1}={}){
 
 export function capturePointerHitTest(event,root,{observations=[],document=globalThis.document}={}){
   const point={x:Number(event.clientX),y:Number(event.clientY)},stack=[...(document?.elementsFromPoint?.(point.x,point.y)||[])],direct=document?.elementFromPoint?.(point.x,point.y)||stack[0]||null;
-  const candidates=observations.filter(item=>item.inkUnion).map(item=>({objectId:item.objectId,sourceObjectId:item.sourceObjectId,inkRect:item.inkUnion,distance:round(distanceToRect(point,item.inkUnion))})).sort((a,b)=>a.distance-b.distance||String(a.objectId).localeCompare(String(b.objectId)));
+  const candidates=observations.map(item=>{const authority=resolvePdfInteractiveTextRect({objectId:item.objectId,presentationTruthKind:item.presentationTruthKind,sourceProjectionRect:item.clientRect||item.inkUnion,glyphInkRect:item.inkUnion,domRect:item.clientRect,padding:1});const rect=authority.interactiveRect;return {objectId:item.objectId,sourceObjectId:item.sourceObjectId,presentationTruthKind:authority.presentationTruthKind,interactionAuthority:authority.interactionAuthority,interactiveRect:rect,inkRect:item.inkUnion,distance:rect?round(distanceToRect(point,rect)):Infinity};}).filter(item=>Number.isFinite(item.distance)).sort((a,b)=>a.distance-b.distance||String(a.objectId).localeCompare(String(b.objectId)));
   const target=event.target?.closest?.("[data-object-id],[data-pdf-object-id]")||event.target,chosenId=target?.dataset?.objectId||target?.dataset?.pdfObjectId||null,chosen=candidates.find(item=>String(item.objectId)===String(chosenId))||null,best=candidates[0]||null;
   const issues=chosen&&best&&chosen.objectId!==best.objectId&&chosen.distance-best.distance>1?[{severity:"error",code:"POINTER_TARGET_DOES_NOT_MATCH_VISIBLE_GLYPH",objectId:chosen.objectId,expectedObjectId:best.objectId,delta:{distance:round(chosen.distance-best.distance)},interactionEvent:event.type,probableTransformStage:"hit-test"}]:[];
   return {event:event.type,pointer:{clientX:point.x,clientY:point.y,space:"client-css"},target:elementSummary(target),elementFromPoint:elementSummary(direct),elementsFromPoint:stack.slice(0,12).map(elementSummary),candidatePdfObjects:candidates.slice(0,20),chosenObject:chosen,pointerDeltaFromChosenInk:chosen?{distance:chosen.distance}:null,issues};
@@ -452,11 +456,11 @@ export function capturePdfVisualScene(block,runtime={},options={}){
   const elements=new Map([...(root?.querySelectorAll?.("[data-pdf-object-id],[data-object-id]")||[])].map(element=>[String(element.dataset?.pdfObjectId||element.dataset?.objectId),element]));
   const objects=observations.map(observation=>{
     const element=elements.get(String(observation.objectId)),styleReader=options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis),computed=element?styleReader?.(element)||{}:{},hovered=options.hoveredObjectId!=null?String(options.hoveredObjectId)===String(observation.objectId):Boolean(element?.matches?.(":hover")),selected=options.selectedObjectId!=null?String(options.selectedObjectId)===String(observation.objectId):Boolean(element?.classList?.contains?.("is-selected")),editing=Boolean(element?.querySelector?.('[contenteditable="true"]'));
-    const authority=resolvePdfInteractiveTextRect({objectId:observation.objectId,expectedViewportRect:observation.expectedViewportRect,glyphInkRect:observation.inkUnion,domRect:observation.clientRect,padding:1});
+    const authority=resolvePdfInteractiveTextRect({objectId:observation.objectId,presentationTruthKind:observation.presentationTruthKind,sourceProjectionRect:observation.clientRect,expectedViewportRect:observation.expectedViewportRect,glyphInkRect:observation.inkUnion,domRect:observation.clientRect,padding:1});
     const interactive=authority.interactiveRect?namedRect(authority.interactiveRect,"client-css"):namedRect(rawNamedRect(observation.clientRect),"client-css");
     const domProjection=namedRect(rawNamedRect(observation.clientRect),"client-css");
     const projections={expectedViewport:observation.expectedViewportRect?namedRect(observation.expectedViewportRect,"pdf-viewport-css"):null,domLayout:domProjection,glyphInk:observation.inkUnion?namedRect(rawNamedRect(observation.inkUnion),"glyph-ink-client-css"):null,interactiveRect:interactive,hitTarget:domProjection,hoverOutline:hovered&&sharedHoverOutline?namedRect(sharedHoverOutline.getBoundingClientRect(),"hover-outline-client-css"):hovered?outlineProjection(observation,computed):null,selectedField:selected?domProjection:null,editableField:observation.editableRect?namedRect(rawNamedRect(observation.editableRect),"client-css"):null,sourceMask:null,replacementField:observation.ownerEditId?domProjection:null};
-    const record={objectId:observation.objectId,sourceObjectId:observation.sourceObjectId,ownerEditId:observation.ownerEditId,page:Number(block?.dataset?.currentPage||1),text:cleanText(element?.textContent),semantic:{kind:observation.ownerEditId?"replacement-text":"source-text-run"},interactiveGeometry:authority,visualState:{hovered,selected,editing,visible:observation.display!=="none"&&observation.visibility!=="hidden"&&observation.opacity!=="0",clipped:false,pointerReachable:observation.pointerEvents!=="none",zIndex:observation.zIndex},visualAncestry:deep?compactVisualAncestry(element,options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis)):undefined,projections};
+    const record={objectId:observation.objectId,presentationTruthKind:authority.presentationTruthKind,interactionAuthority:authority.interactionAuthority,interactionAuthorityReason:authority.interactionAuthorityReason,sourceProjectionRect:authority.sourceProjectionRect,domGlyphRect:authority.domGlyphRect,interactiveRect:authority.interactiveRect,domGlyphDelta:authority.domGlyphDelta,sourceObjectId:observation.sourceObjectId,ownerEditId:observation.ownerEditId,page:Number(block?.dataset?.currentPage||1),text:cleanText(element?.textContent),semantic:{kind:observation.ownerEditId?"replacement-text":"source-text-run"},interactiveGeometry:authority,visualState:{hovered,selected,editing,visible:observation.display!=="none"&&observation.visibility!=="hidden"&&observation.opacity!=="0",clipped:false,pointerReachable:observation.pointerEvents!=="none",zIndex:observation.zIndex},visualAncestry:deep?compactVisualAncestry(element,options.getComputedStyle||globalThis.getComputedStyle?.bind(globalThis)):undefined,projections};
     return record;
   });
   const relationships=[],issues=[...evaluatePageAlignment(geometry)];

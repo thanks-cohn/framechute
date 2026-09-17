@@ -22,3 +22,18 @@ test("PDF toolbar has a single-row narrow-block policy and contextual controls",
   assert.match(css,/@container \(max-width: 720px\)/);
   assert.match(css,/\.pdf-edit-controls\[hidden\] \{ display: none !important; \}/);
 });
+
+test("PDF toolbar enhancer normalizes on every invocation instead of trusting a dataset guard",async()=>{
+  const source=await readFile(new URL("../src/pdf-popdowns.js",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/pdfResponsiveToolbar === "true"\) return/);
+  assert.match(source,/querySelectorAll\(":scope > \.pdf-toolbar-row"\)/);
+  assert.match(source,/toolbar\.replaceChildren\(primary, formatting, secondary\)/);
+});
+
+test("PDF editing uses one outline, plain Enter commit, and live field expansion",async()=>{
+  const [source,css]=await Promise.all([readFile(new URL("../src/workspace.js",import.meta.url),"utf8"),readFile(new URL("../src/workspace.css",import.meta.url),"utf8")]);
+  assert.match(source,/item\.classList\.contains\("is-editing"\)/);
+  assert.match(source,/event\.key==="Enter"&&!event\.shiftKey/);
+  assert.match(source,/Math\.ceil\(text\.scrollWidth\+4\)/);
+  assert.match(css,/\.pdf-text-item\.is-editing ~ \.pdf-interactive-outline/);
+});

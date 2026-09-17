@@ -612,7 +612,9 @@ function createPdfLiveEditMask(textLayer, span) {
   const rawHeight = Math.max(0, Number.parseFloat(span.style.height) || 0);
   const left = Math.max(0, Math.min(layerWidth, rawLeft));
   const top = Math.max(0, Math.min(layerHeight, rawTop));
-  const right = Math.max(left, Math.min(layerWidth, rawLeft + rawWidth));
+  const scale = Math.max(.25, Number(span.dataset.viewportScale) || 1);
+  const trailingBleed = span.dataset.terminalFragment === "true" ? Math.min(3, Math.max(.75, scale)) : 0;
+  const right = Math.max(left, Math.min(layerWidth, rawLeft + rawWidth + trailingBleed));
   const bottom = Math.max(top, Math.min(layerHeight, rawTop + rawHeight));
   if (right <= left || bottom <= top) return null;
   const mask = document.createElement("div");
@@ -875,10 +877,10 @@ registerBlockType("pdf", {
     const paintInteractiveOutline=event=>{
       if(!interactiveOutline.isConnected)textLayer.append(interactiveOutline);
       const item=event.target.closest?.(".pdf-text-item");
-      if(!item){interactiveOutline.hidden=true;return;}
+      if(!item||item.classList.contains("is-editing")||item.querySelector?.('[contenteditable="true"]')){interactiveOutline.hidden=true;return;}
       const observation=capturePdfPageDomObservations({getBoundingClientRect:()=>textLayer.getBoundingClientRect(),querySelectorAll:()=>[item]},{state:"hover"})[0];
       const ink=observation?.inkUnion,layer=textLayer.getBoundingClientRect();
-      const authority=resolvePdfInteractiveTextRect({objectId:observation?.objectId,glyphInkRect:ink,domRect:observation?.clientRect,padding:1});
+      const authority=resolvePdfInteractiveTextRect({objectId:observation?.objectId,presentationTruthKind:observation?.presentationTruthKind,sourceProjectionRect:observation?.clientRect,glyphInkRect:ink,domRect:observation?.clientRect,padding:1});
       const rect=authority.interactiveRect;if(!rect){interactiveOutline.hidden=true;return;}
       Object.assign(interactiveOutline.style,{left:`${rect.x-layer.left}px`,top:`${rect.y-layer.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});interactiveOutline.hidden=false;
     };
@@ -912,9 +914,9 @@ registerBlockType("pdf", {
     }, true);
     const visualTextTarget=event=>{
       const observations=capturePdfPageDomObservations(textLayer,{state:event.type});
-      const candidates=observations.filter(item=>item.inkUnion).map(item=>{
-        const authority=resolvePdfInteractiveTextRect({objectId:item.objectId,glyphInkRect:item.inkUnion,domRect:item.clientRect,padding:1});
-        return {objectId:item.objectId,glyphInkRect:item.inkUnion,interactiveRect:authority.interactiveRect};
+      const candidates=observations.map(item=>{
+        const authority=resolvePdfInteractiveTextRect({objectId:item.objectId,presentationTruthKind:item.presentationTruthKind,sourceProjectionRect:item.clientRect,glyphInkRect:item.inkUnion,domRect:item.clientRect,padding:1});
+        return {objectId:item.objectId,glyphInkRect:item.presentationTruthKind==="canvas-source-text"?item.clientRect:item.inkUnion,interactiveRect:authority.interactiveRect};
       });
       const resolved=resolvePdfVisualTarget({x:event.clientX,y:event.clientY},candidates);
       return resolved.objectId?[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>String(node.dataset.objectId)===String(resolved.objectId))||null:null;
@@ -949,13 +951,22 @@ registerBlockType("pdf", {
       span.style.fontSize = `${initialFontSize * (runtime?.pageData?.viewport?.scale || 1)}px`;
       if (!existing && index >= 0) createPdfLiveEditMask(textLayer, span);
       recordPdfGeometry(block,runtime,"before-contenteditable",span);
-      text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");
+      text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");interactiveOutline.hidden=true;
       recordPdfGeometry(block,runtime,"after-contenteditable",span);
       text.focus();
       recordPdfGeometry(block,runtime,"after-focus",span);
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
       recordPdfGeometry(block,runtime,"selection-created",span);
+    });
+    textLayer.addEventListener("input", event=>{
+      const text=event.target.closest?.('.pdf-edit-text[contenteditable="true"]');if(!text)return;
+      const span=text.closest(".pdf-text-item"),left=Number.parseFloat(span.style.left)||0,minWidth=Number(span.dataset.editMinWidth)||(Number.parseFloat(span.style.width)||1),maxWidth=Math.max(minWidth,textLayer.clientWidth-left);
+      span.dataset.editMinWidth=String(minWidth);
+      text.style.width="max-content";const needed=Math.ceil(text.scrollWidth+4);text.style.width="100%";
+      const width=Math.min(maxWidth,Math.max(minWidth,needed)),height=Math.max(Number.parseFloat(span.style.height)||1,Math.ceil(text.scrollHeight));
+      Object.assign(span.style,{width:`${width}px`,height:`${height}px`});
+      createPdfLiveEditMask(textLayer,span);
     });
     textLayer.addEventListener("keydown", (event) => {
       if (!pdfEditEnabled(block)) return;
@@ -967,7 +978,7 @@ registerBlockType("pdf", {
         const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
         return;
       }
-      if(text&&event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();text.blur();}
+      if(text&&event.key==="Enter"&&!event.shiftKey){event.preventDefault();event.stopPropagation();text.blur();}
       if(text&&event.key==="Tab"){event.preventDefault();document.execCommand("insertText",false,"\t");}
       if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();void travelPdfHistory(block,event.shiftKey?"redo":"undo");}
@@ -983,12 +994,14 @@ registerBlockType("pdf", {
       removePdfLiveEditMask(textLayer);
       if(text.dataset.cancel){delete text.dataset.cancel;delete text.dataset.pendingFontSize;return;}
       const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
-      const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1),original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
+      const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1);
+      if(index<0){delete text.dataset.pendingFontSize;return;}
+      const original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
       const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
       if(replacement===(existing?.replacement??original.str)){delete text.dataset.pendingFontSize;return;}
       pushPdfHistory(runtime);
       if (replacement === original.str) { if (existing) runtime.edits.splice(runtime.edits.indexOf(existing), 1); }
-      else if(existing)existing.replacement=replacement;
+      else if(existing){existing.replacement=replacement;Object.assign(existing,viewportRectToPdf(runtime.pageData.viewport,{left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)}));}
       else {
         const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);
         const fontSize=Math.max(4,Math.min(144,Number(text.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));

@@ -110,9 +110,14 @@ function makeToolbarMenu(className, label, controls = []) {
 
 function enhancePdfToolbar(block) {
   const toolbar = block.querySelector(".pdf-toolbar");
-  if (!toolbar || toolbar.dataset.pdfResponsiveToolbar === "true") return;
+  if (!toolbar) return;
+  // The dataset is only a hint: restored DOM and observer re-entry can retain
+  // stale markers. Always normalize the structure from the controls themselves.
   toolbar.dataset.pdfResponsiveToolbar = "true";
-
+  const existingRows=[...toolbar.querySelectorAll(":scope > .pdf-toolbar-row")];
+  for(const row of existingRows){while(row.firstChild)toolbar.insertBefore(row.firstChild,row);row.remove();}
+  const duplicateMenus=(selector)=>{const menus=[...toolbar.querySelectorAll(`:scope > ${selector}`)];menus.slice(1).forEach(menu=>{while(menu.firstChild)toolbar.insertBefore(menu.firstChild,menu);menu.remove();});return menus[0]||null;};
+  duplicateMenus(".pdf-file-menu");duplicateMenus(".pdf-organize-menu");duplicateMenus(".pdf-more-menu");
   const original = [...toolbar.children];
   const primary = document.createElement("div");
   primary.className = "pdf-toolbar-row pdf-toolbar-row-primary";
@@ -132,13 +137,14 @@ function enhancePdfToolbar(block) {
   secondary.setAttribute("role", "group");
   secondary.setAttribute("aria-label", "PDF tools");
 
-  const saveAs = toolbar.querySelector(":scope > .document-save-as");
-  const fileMenu = saveAs ? makeToolbarMenu("pdf-file-menu", "File", [saveAs]) : null;
+  const existingFileMenu=toolbar.querySelector(":scope > .pdf-file-menu");
+  const saveAs = toolbar.querySelector(".document-save-as");
+  const fileMenu = existingFileMenu || (saveAs ? makeToolbarMenu("pdf-file-menu", "File", [saveAs]) : null);
   const pageLabel = toolbar.querySelector(".pdf-page")?.closest("label");
   const zoomLabel = toolbar.querySelector(".pdf-zoom")?.closest("label");
-  const editControls = toolbar.querySelector(":scope > .pdf-edit-controls");
-  const organize = toolbar.querySelector(":scope > .pdf-organize-menu");
-  const more = toolbar.querySelector(":scope > .pdf-more-menu");
+  const editControls = toolbar.querySelector(".pdf-edit-controls");
+  const organize = toolbar.querySelector(".pdf-organize-menu");
+  const more = toolbar.querySelector(".pdf-more-menu");
 
   const primaryNodes = [
     toolbar.querySelector(":scope > .document-save"),
@@ -174,7 +180,7 @@ function enhancePdfToolbar(block) {
   // Any future command that is not explicitly classified remains available on
   // the third row rather than being hidden or lost off the right edge.
   original.forEach(node => {
-    if (!moved.has(node) && node !== saveAs) secondary.append(node);
+    if (!moved.has(node) && node !== saveAs && node !== fileMenu) secondary.append(node);
   });
 
   toolbar.replaceChildren(primary, formatting, secondary);
