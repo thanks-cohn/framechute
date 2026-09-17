@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "../src/vendor/pdf-lib.mjs";
-import { openPdfDocument, serializeEditedPdf } from "../src/documents/pdf-document.js";
+import { createPdfPageDiagnostics, extractSemanticPdfText, openPdfDocument, searchCurrentPdfDocument, serializeEditedPdf } from "../src/documents/pdf-document.js";
 import { buildPdfDiagnosticSnapshot, comparePdfSnapshots, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "../src/documents/pdf-observability.js";
 
 test("edit identity never aliases its source and current boundary quarantines A/B",()=>{
@@ -31,7 +31,7 @@ test("correspondence uses semantics and geometry, reports drift and ambiguity",(
   assert.ok(result.issues.some(issue=>issue.code==="AMBIGUOUS_CORRESPONDENCE"));
 });
 
-test("real Save/reopen preserves only C in reconstructed current semantics",async()=>{
+test("production Save/fresh-open/search/diagnostics path preserves only C",async()=>{
   const source=await PDFDocument.create(),page=source.addPage([300,300]),font=await source.embedFont(StandardFonts.Helvetica);
   page.drawText("A",{x:20,y:220,size:12,font});
   const originalBytes=new Uint8Array(await source.save());
@@ -40,18 +40,18 @@ test("real Save/reopen preserves only C in reconstructed current semantics",asyn
   try{
     const history=["A","B","C"].map((text,index)=>({kind:"replacement",id:`edit:${index}`,page:1,index:0,original:"A",replacement:text,text,x:20,y:218,width:20,height:16,sourceX:20,sourceY:218,sourceWidth:20,sourceHeight:16,fontSize:12,fontFamily:"Helvetica",sourceObjectId:"source:p1:text:0",versionState:index===2?"current":"historical"}));
     const blob=await serializeEditedPdf(model,history);reopened=await openPdfDocument(await blob.arrayBuffer());
-    const pdfPage=await reopened.pdf.getPage(1),viewport=pdfPage.getViewport({scale:1}),content=await pdfPage.getTextContent();
-    const extracted=content.items.filter(item=>item.str.trim()).map((item,index)=>{
-      const x=item.transform[4],baseline=item.transform[5],height=Math.max(1,Math.hypot(item.transform[2],item.transform[3]));
-      return {id:`reopened:${index}`,kind:"source-text-run",page:1,text:item.str,paintOrder:index,pdfRect:{x,y:baseline-height*.2,width:Math.max(1,item.width),height:height*1.2},fontSize:height};
-    });
-    const expected={id:"edit:2",kind:"replacement",page:1,text:"C",pdfRect:{x:20,y:218,width:20,height:16},fontSize:12};
-    const reconciled=reconcileReopenedPdfObjects(extracted,[expected],{position:4});
-    assert.equal(reconciled.current.some(object=>object.text==="C"),true);
-    assert.equal(reconciled.current.some(object=>object.text==="A"||object.text==="B"),false);
-    assert.equal(reconciled.historical.some(object=>object.text==="A"),true);
-    const comparison=comparePdfSnapshots({objects:[expected]},{objects:reconciled.current.map(object=>({...object,kind:"replacement"}))},{position:4,size:25});
-    assert.match(comparison.records[0].classification,/semantic-correspondence|geometry-drift/);
-    assert.equal(viewport.scale,1);
+    assert.equal(reopened.reopenedCurrent.objects[0].id,"edit:2","fresh open reads the serializer's current-version manifest");
+    assert.equal(await extractSemanticPdfText(reopened,[]),"C","production semantic extraction reconciles the fresh PDF");
+    assert.equal((await searchCurrentPdfDocument(reopened,[],"C")).length,1);
+    assert.equal((await searchCurrentPdfDocument(reopened,[],"A")).length,0,"old source is absent from current Search");
+    assert.equal((await searchCurrentPdfDocument(reopened,[],"B")).length,0,"intermediate edit is absent from current Search");
+    const diagnostics=await createPdfPageDiagnostics(reopened,[],1);
+    assert.equal(diagnostics.documentVersionId,reopened.documentVersionId);
+    assert.equal(diagnostics.objects.some(object=>object.text==="C"&&object.versionState==="current"),true);
+    assert.equal(diagnostics.objects.some(object=>object.text==="A"&&object.versionState==="historical"),true);
+    assert.equal(diagnostics.invariants.every(invariant=>invariant.ok),true);
+    const secondSave=await serializeEditedPdf(reopened,[]),secondReopen=await openPdfDocument(await secondSave.arrayBuffer());
+    try{assert.equal(await extractSemanticPdfText(secondReopen,[]),"C","a no-op Save preserves the current-version manifest");}
+    finally{await secondReopen.pdf.destroy();}
   } finally {await model.pdf.destroy();await reopened?.pdf.destroy();}
 });

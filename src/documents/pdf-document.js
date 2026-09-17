@@ -2,7 +2,7 @@ import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
 import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from "./pdf-layout.js";
-import { createOwnedMask, currentPdfEdits, ensurePdfEditIdentity } from "./pdf-observability.js";
+import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -268,8 +268,36 @@ export async function openPdfDocument(bytes) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const task = pdfjs.getDocument({ data: data.slice() });
   const pdf = await task.promise;
-  return { bytes: data, pdf, pageCount: pdf.numPages, layoutCache:createPdfLayoutCache({maxPages:3}), layoutSignatures:new Map() };
+  const metadata=await pdf.getMetadata().catch(()=>({}));
+  const reopenedCurrent=parseCurrentVersionKeywords(metadata?.info?.Keywords);
+  return { bytes: data, pdf, pageCount: pdf.numPages, reopenedCurrent, documentVersionId:reopenedCurrent?.documentVersionId||null, layoutCache:createPdfLayoutCache({maxPages:3}), layoutSignatures:new Map() };
 }
+
+const CURRENT_VERSION_KEYWORD="FrameChuteCurrentV1:";
+function encodeBase64Url(value){
+  const bytes=new TextEncoder().encode(value);let binary="";for(const byte of bytes)binary+=String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+","-").replaceAll("/","_").replace(/=+$/g,"");
+}
+function decodeBase64Url(value){
+  const base64=value.replaceAll("-","+").replaceAll("_","/").padEnd(Math.ceil(value.length/4)*4,"=");
+  const binary=atob(base64),bytes=Uint8Array.from(binary,character=>character.charCodeAt(0));return new TextDecoder().decode(bytes);
+}
+function parseCurrentVersionKeywords(keywords){
+  const token=String(keywords||"").split(/[;,]\s*/).find(value=>value.startsWith(CURRENT_VERSION_KEYWORD));
+  if(!token)return null;
+  try{const parsed=JSON.parse(decodeBase64Url(token.slice(CURRENT_VERSION_KEYWORD.length)));return parsed?.schemaVersion===1&&Array.isArray(parsed.objects)?parsed:null;}catch{return null;}
+}
+function currentVersionManifest(edits,inherited=null){
+  const authored=currentPdfEdits(edits).filter(edit=>["replacement","text","wrap"].includes(edit.kind||"replacement")).map(edit=>({
+    id:edit.id,kind:edit.kind||"replacement",page:Number(edit.page),text:String(edit.text??edit.replacement??""),sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,
+    pdfRect:{x:Number(edit.x),y:Number(edit.y),width:Number(edit.width),height:Number(edit.height)},fontSize:Number(edit.fontSize)||12,versionState:"current"
+  }));
+  if(!authored.length&&inherited?.objects?.length)return inherited;
+  const replacedSources=new Set(authored.map(object=>object.sourceObjectId).filter(Boolean));
+  const objects=[...(inherited?.objects||[]).filter(object=>!replacedSources.has(object.sourceObjectId)),...authored];
+  return {schemaVersion:1,documentVersionId:`document:${createPdfEditIdForManifest()}`,objects};
+}
+function createPdfEditIdForManifest(){return globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;}
 
 function semanticSourceRun(viewport, item, index, pageNumber) {
   const box=sourceTextBoxForItem(viewport,item,index);
@@ -286,13 +314,21 @@ export async function getPdfPageLayout(model, pageNumber, edits=[], prepared={})
   const page=prepared.page || await model.pdf.getPage(pageNumber);
   const viewport=prepared.viewport || page.getViewport({scale:1});
   const content=prepared.content || await page.getTextContent();
-  const pageEdits=edits.filter(edit=>Number(edit.page)===pageNumber);
+  const pageEdits=currentPdfEdits(edits.filter(edit=>Number(edit.page)===pageNumber));
+  let sourceRuns=content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber)).filter(Boolean);
+  if(!pageEdits.length&&model.reopenedCurrent?.objects?.length){
+    const extracted=sourceRuns.map(run=>({id:run.id||`source:p${pageNumber}:text:${run.sourceIndex}`,kind:"source-text-run",page:pageNumber,text:run.text,paintOrder:run.paintOrder,pdfRect:run.bounds,fontSize:run.fontSize}));
+    const expected=model.reopenedCurrent.objects.filter(object=>object.page===pageNumber);
+    const reconciled=reconcileReopenedPdfObjects(extracted,expected);
+    model.reopenedReconciliation||=new Map();model.reopenedReconciliation.set(pageNumber,reconciled);
+    sourceRuns=reconciled.current.map((object,index)=>({sourceIndex:index,sourceRef:object.replacementObjectId||object.id,id:object.replacementObjectId||object.id,text:object.text,bounds:object.pdfRect,fontSize:object.fontSize,angle:0,paintOrder:object.paintOrder,confidence:1}));
+  }
   const signature=JSON.stringify(pageEdits.map(edit=>[edit.id,edit.kind,edit.index,edit.x,edit.y,edit.width,edit.height,edit.replacement,edit.text,edit.wrapText]));
   if(model.layoutSignatures.get(pageNumber)!==signature){model.layoutCache.invalidate(pageNumber);model.layoutSignatures.set(pageNumber,signature);}
   return model.layoutCache.get(pageNumber,()=>createPdfPageLayout({
     page:pageNumber,
     pageBounds:viewportRectToPdf(viewport,{left:0,top:0,width:viewport.width,height:viewport.height}),
-    sourceRuns:content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber)).filter(Boolean),
+    sourceRuns,
     edits:pageEdits,
     // Text content alone cannot prove the absence of paths, scans, or masks.
     // Candidates can still be queried, but are explicitly not certified free.
@@ -323,6 +359,8 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   await renderTask.promise;
   const content = await page.getTextContent();
   const pageLayout=await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
+  const reopened=model.reopenedReconciliation?.get(pageNumber),historicalPaintOrders=new Set((reopened?.historical||[]).map(object=>object.paintOrder));
+  const reopenedCurrentByPaintOrder=new Map((reopened?.current||[]).map(object=>[object.paintOrder,object]));
   const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
   textLayer.replaceChildren();
   for (const edit of edits.filter(item => item.page === pageNumber && item.kind === "image")) {
@@ -354,6 +392,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   }
   content.items.forEach((item, index) => {
     if (!item.str?.trim()) return;
+    if(historicalPaintOrders.has(index))return;
     const [, , , d, x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
     const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
     const explicit = edits.find((edit) => edit.page === pageNumber && edit.index === index && edit.kind !== "image");
@@ -361,8 +400,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const saved = wrapped || explicit;
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);
-    span.dataset.objectId=saved?.id||`source:p${pageNumber}:text:${index}`;
-    span.dataset.sourceObjectId=`source:p${pageNumber}:text:${index}`;
+    const reopenedObject=reopenedCurrentByPaintOrder.get(index);
+    span.dataset.objectId=saved?.id||reopenedObject?.replacementObjectId||`source:p${pageNumber}:text:${index}`;
+    span.dataset.sourceObjectId=saved?.sourceObjectId||reopenedObject?.sourceObjectId||`source:p${pageNumber}:text:${index}`;
     if(saved?.id)span.dataset.ownerEditId=saved.id;
     if (options.searchQuery && item.str.toLocaleLowerCase().includes(options.searchQuery.toLocaleLowerCase())) span.classList.add("pdf-search-match");
     const text = document.createElement("span"); text.className = "pdf-edit-text"; text.textContent = saved?.replacement ?? item.str; span.append(text);
@@ -429,6 +469,17 @@ export async function searchCurrentPdfDocument(model, edits, query) {
     const text=await extractSemanticPdfText(model,currentPdfEdits(edits),{pageNumber:page});
     let from=0,at;while((at=text.toLocaleLowerCase().indexOf(needle,from))!==-1){matches.push({page,offset:at,text:text.slice(at,at+needle.length)});from=at+Math.max(1,needle.length);}
   }return matches;
+}
+
+/** Production diagnostics adapter used by Copy Page Diagnostics and tests. */
+export async function createPdfPageDiagnostics(model,edits,pageNumber,{viewport=null,observations=[]}={}){
+  const page=await model.pdf.getPage(pageNumber),actualViewport=viewport||page.getViewport({scale:1}),content=await page.getTextContent();
+  const current=currentPdfEdits(edits),layout=await getPdfPageLayout(model,pageNumber,current,{page,viewport:actualViewport,content});
+  const wrapEdits=imageWrapEditsForPage(actualViewport,content,current,pageNumber),masks=pdfPageMaskPlan(layout,current,wrapEdits,pageNumber);
+  const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>({id:node.id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:"current",sourceObjectId:node.id}));
+  const editObjects=current.filter(edit=>edit.page===pageNumber).map(edit=>({id:edit.id,kind:edit.kind||"replacement",page:pageNumber,text:edit.text??edit.replacement??"",pdfRect:{x:edit.x,y:edit.y,width:edit.width,height:edit.height},coordinateSpace:"pdf-points",versionState:edit.versionState,sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,maskIds:masks.filter(mask=>mask.ownerEditId===edit.id).map(mask=>mask.id)}));
+  const reopened=model.reopenedReconciliation?.get(pageNumber),historical=(reopened?.historical||[]).map(object=>({...object,pdfRect:object.pdfRect,coordinateSpace:"pdf-points"}));
+  return buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:[...sourceObjects,...editObjects,...historical],masks,observations,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
 }
 
 export async function pdfDocumentProperties(model, pageNumber = 1) {
@@ -629,6 +680,8 @@ export function layoutPdfText(edit, font) {
 export async function serializeEditedPdf(model, edits) {
   edits=currentPdfEdits(edits);
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
+  const manifest=currentVersionManifest(edits,model.reopenedCurrent),prior=output.getKeywords()?.split(/,\s*/).filter(keyword=>!keyword.startsWith(CURRENT_VERSION_KEYWORD))||[];
+  output.setKeywords([...prior,`${CURRENT_VERSION_KEYWORD}${encodeBase64Url(JSON.stringify(manifest))}`]);
   const fonts = new Map();
   const wrapByImage = new Map();
   const wrappedSourceEditIds = new Set();

@@ -119,7 +119,7 @@ export function reconcileReopenedPdfObjects(extracted,expectedCurrent,{position=
       .filter(item=>item.match.score<100).sort((a,b)=>a.match.score-b.match.score||b.object.paintOrder-a.object.paintOrder);
     if(!candidates.length){issues.push({severity:"error",code:"MISSING_CURRENT_OBJECT",objectId:expected.id});continue;}
     if(candidates[1]&&candidates[0].match.score===candidates[1].match.score&&candidates[0].object.paintOrder===candidates[1].object.paintOrder){issues.push({severity:"error",code:"AMBIGUOUS_CORRESPONDENCE",objectId:expected.id});continue;}
-    const current=candidates[0].object;current.replacementObjectId=expected.id;current.derivedFrom=expected.id;
+    const current=candidates[0].object;current.replacementObjectId=expected.id;current.sourceObjectId=expected.sourceObjectId||null;current.derivedFrom=expected.id;
     const expectedRect=expected.pdfRect||expected.rect||expected.bounds;
     for(const object of objects){
       if(object===current||object.page!==current.page||object.paintOrder>=current.paintOrder)continue;
