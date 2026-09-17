@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getDocument } from "../src/vendor/pdf.mjs";
 import { PDFDocument, degrees } from "../src/vendor/pdf-lib.mjs";
-import { clampPdfZoom, fitPdfScale, pdfRectToViewport, viewportRectToPdf } from "../src/documents/pdf-geometry.js";
+import { clampPdfZoom, fitPdfScale, pdfRectToViewport, viewportRectToPdf, validateFiniteRect, pdfRectToViewportRect, viewportLocalRectToPdf, cssRectToDevicePixels } from "../src/documents/pdf-geometry.js";
 
 async function viewport(rotation, scale = 1, crop = { x: 17, y: 23, width: 300, height: 420 }) {
   const source = await PDFDocument.create();
@@ -39,4 +39,21 @@ test("viewer zoom and fit calculations use bounded logical scales", () => {
   assert.equal(clampPdfZoom(99), 5);
   assert.equal(fitPdfScale("width", {width:400,height:800}, {width:200,height:300}), .5);
   assert.equal(fitPdfScale("page", {width:400,height:800}, {width:200,height:300}), .375);
+});
+
+test("strict geometry rejects corruption without sanitizing evidence",()=>{
+  const result=validateFiniteRect({x:NaN,y:Infinity,width:-2,height:0},{space:"pdf-points"});
+  assert.equal(result.ok,false);assert.equal(Number.isNaN(result.raw.x),true);
+  assert.deepEqual(result.errors.map(error=>error.code),["NON_FINITE","NON_FINITE","NEGATIVE_DIMENSION","ZERO_AREA"]);
+  assert.equal(cssRectToDevicePixels({x:0,y:0,width:1,height:1},0).ok,false);
+});
+
+for(const scale of [.25,1,2.5,5])test(`named coordinate contracts round trip fractional tiny rect at ${scale}x`,async()=>{
+  const {result,close}=await viewport(270,scale,{x:-17.5,y:23.25,width:300.5,height:420.75});
+  const original={x:-3.125,y:41.875,width:.375,height:.625};
+  const forward=pdfRectToViewportRect(original,result);assert.equal(forward.ok,true);
+  const back=viewportLocalRectToPdf(forward.rect,result);assert.equal(back.ok,true);
+  for(const key of Object.keys(original))assert.ok(Math.abs(back.rect[key]-original[key])<1e-7,`${key} round trip`);
+  for(const dpr of [1,1.25,1.5,2])assert.equal(cssRectToDevicePixels(forward.rect,dpr).rect.width,forward.rect.width*dpr);
+  await close();
 });

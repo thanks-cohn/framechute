@@ -21,7 +21,10 @@ test("an empty replacement retains its source mask", () => {
 
 test("page rerender mask state is derived only from current edit records", () => {
   const otherPage = { ...edit, page: 3, index: 5 };
-  assert.deepEqual(sourceMasksForPage([edit, otherPage], 2), [sourceMaskForEdit(edit)]);
+  const masks=sourceMasksForPage([edit, otherPage], 2);
+  assert.equal(masks.length,2);
+  assert.ok(masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds.includes("source:p2:text:4")));
+  assert.deepEqual(masks.map(mask=>mask.maskRole),["source","field"]);
   assert.deepEqual(sourceMasksForPage([], 2), []);
   assert.deepEqual(sourceMasksForPage([otherPage], 2), []);
 });
@@ -37,11 +40,13 @@ test("restored history snapshots determine mask and replacement records together
   assert.deepEqual(sourceMasksForPage(current, 2), []);
   current = redo.pop();
   assert.deepEqual(current, [edit]);
-  assert.deepEqual(sourceMasksForPage(current, 2), [sourceMaskForEdit(edit)]);
+  assert.deepEqual(sourceMasksForPage(current, 2).map(mask=>mask.maskRole),["source","field"]);
 });
 
 test("legacy replacements normalize to the shared edit-object model", () => {
-  assert.deepEqual(normalizePdfEdit(edit), { ...edit, kind: "replacement", id: "replacement:2:4", text: "GOODBYE", fontFamily: "Helvetica", rotation: 0 });
+  const normalized=normalizePdfEdit(structuredClone(edit));
+  assert.match(normalized.id,/^edit:/);assert.notEqual(normalized.id,normalized.sourceObjectId);
+  assert.deepEqual({...normalized,id:"stable"}, { ...edit, kind: "replacement", id: "stable", sourceObjectId:"source:p2:text:4",versionState:"current",text: "GOODBYE", fontFamily: "Helvetica", rotation: 0 });
   assert.deepEqual(sourceMasksForPage([{ ...edit, kind: "text" }], 2), []);
 });
 

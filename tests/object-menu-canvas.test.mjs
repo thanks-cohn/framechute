@@ -7,7 +7,7 @@ import { compositeRgba, floodFill } from "../src/image-edit/paint-layer.mjs";
 test("object menu reflects per-object Quick Actions visibility",()=>{
   assert.equal(objectMenuItems({quickActionsHidden:true}).find(item=>item.id==="quick-actions").label,"Show Quick Actions for This Object");
   assert.equal(objectMenuItems({quickActionsHidden:false}).find(item=>item.id==="quick-actions").label,"Hide Quick Actions for This Object");
-  assert.deepEqual(objectMenuItems().slice(0,4),[{id:"center",label:"Bring to Center"},{id:"save-as",label:"Save As…"},{id:"duplicate",label:"Clone"},{separator:true}]);
+  assert.deepEqual(objectMenuItems().slice(0,5),[{id:"show-header",label:"Show Header"},{id:"center",label:"Bring to Center"},{id:"save-as",label:"Save As…"},{id:"duplicate",label:"Clone"},{separator:true}]);
   assert.equal(objectMenuItems().find(item=>item.id==="remove").label,"Close Object");
 });
 
