@@ -30,7 +30,7 @@ import { documentDropRange, documentImageDropEffect, moveNodeToDropRange } from 
 import { createObjectDragSession } from "./object-drag-space.js";
 import { isViewportFixed } from "./viewport-fix.js";
 import { fitOpenedBlock } from "./initial-open-fit.js";
-import { capturePdfPageDomObservations, capturePdfPageGeometry, capturePointerHitTest, capturePdfVisualScene as buildPdfVisualScene, compareGeometryFingerprints, createBoundedGeometryJournal, createPdfEditId, ensurePdfEditIdentity, getPdfDiagnosticMode, setPdfDiagnosticMode as updatePdfDiagnosticMode } from "./documents/pdf-observability.js";
+import { capturePdfPageDomObservations, capturePdfPageGeometry, capturePointerHitTest, capturePdfVisualScene as buildPdfVisualScene, compareGeometryFingerprints, createBoundedGeometryJournal, createPdfEditId, ensurePdfEditIdentity, getPdfDiagnosticMode, resolvePdfInteractiveTextRect, resolvePdfVisualTarget, setPdfDiagnosticMode as updatePdfDiagnosticMode } from "./documents/pdf-observability.js";
 
 const workspace = document.querySelector("#workspace");
 const toolbar = document.querySelector(".toolbar");
@@ -871,6 +871,19 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-compress").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),blob=await runtime.serialize(),original=new Uint8Array(await blob.arrayBuffer()),candidate=await conservativelyCompressPdf(original),choice=chooseSmallerPdf(original,candidate);if(!choice.changed){setStatus(`No smaller safe PDF was produced (${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes); the current PDF was kept.`);return;}await replacePdfRuntime(block,choice.bytes,Number(block.dataset.currentPage||1));setStatus(`PDF compressed conservatively: ${original.length.toLocaleString()} → ${candidate.length.toLocaleString()} bytes. Embedded images were not recompressed.`);});
 
     const textLayer = block.querySelector(".pdf-text-layer");
+    const interactiveOutline=document.createElement("div");interactiveOutline.className="pdf-interactive-outline";interactiveOutline.hidden=true;textLayer.append(interactiveOutline);
+    const paintInteractiveOutline=event=>{
+      if(!interactiveOutline.isConnected)textLayer.append(interactiveOutline);
+      const item=event.target.closest?.(".pdf-text-item");
+      if(!item){interactiveOutline.hidden=true;return;}
+      const observation=capturePdfPageDomObservations({getBoundingClientRect:()=>textLayer.getBoundingClientRect(),querySelectorAll:()=>[item]},{state:"hover"})[0];
+      const ink=observation?.inkUnion,layer=textLayer.getBoundingClientRect();
+      const authority=resolvePdfInteractiveTextRect({objectId:observation?.objectId,glyphInkRect:ink,domRect:observation?.clientRect,padding:1});
+      const rect=authority.interactiveRect;if(!rect){interactiveOutline.hidden=true;return;}
+      Object.assign(interactiveOutline.style,{left:`${rect.x-layer.left}px`,top:`${rect.y-layer.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});interactiveOutline.hidden=false;
+    };
+    textLayer.addEventListener("pointerover",paintInteractiveOutline,true);
+    textLayer.addEventListener("pointerout",event=>{if(!event.relatedTarget?.closest?.(".pdf-text-item"))interactiveOutline.hidden=true;},true);
     for(const type of ["pointerover","pointermove","pointerout","pointerdown","mousedown","click"]){textLayer.addEventListener(type,event=>{const runtime=runtimeSources.get(block),object=event.target.closest?.(".pdf-text-item");if(!runtime||getPdfDiagnosticMode(block)==="off")return;const telemetry=pdfTelemetry(runtime);telemetry.hoveredObjectId=type==="pointerout"?null:object?.dataset.objectId||null;recordPdfGeometry(block,runtime,type,object);const state=type==="pointerover"||type==="pointermove"?"hover":type==="pointerout"?"idle":type,observations=capturePdfPageDomObservations(textLayer,{state});telemetry.lastPointer=capturePointerHitTest(event,textLayer,{observations});},true);}
     const claimPdfImage = event => {
       if (!pdfEditEnabled(block)) return false;
@@ -897,10 +910,19 @@ registerBlockType("pdf", {
       }
       endInternalDrag();if(!inserted)return;setDocumentDirty(block,true);await setPdfPage(block,block.dataset.currentPage);setStatus(`${inserted} image${inserted===1?"":"s"} inserted into the PDF.`);
     }, true);
-    textLayer.addEventListener("click", (event) => selectPdfEdit(block, pdfEditEnabled(block) ? event.target.closest(".pdf-text-item") : null));
+    const visualTextTarget=event=>{
+      const observations=capturePdfPageDomObservations(textLayer,{state:event.type});
+      const candidates=observations.filter(item=>item.inkUnion).map(item=>{
+        const authority=resolvePdfInteractiveTextRect({objectId:item.objectId,glyphInkRect:item.inkUnion,domRect:item.clientRect,padding:1});
+        return {objectId:item.objectId,glyphInkRect:item.inkUnion,interactiveRect:authority.interactiveRect};
+      });
+      const resolved=resolvePdfVisualTarget({x:event.clientX,y:event.clientY},candidates);
+      return resolved.objectId?[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>String(node.dataset.objectId)===String(resolved.objectId))||null:null;
+    };
+    textLayer.addEventListener("click", (event) => selectPdfEdit(block, pdfEditEnabled(block) ? visualTextTarget(event) : null));
     textLayer.addEventListener("dblclick", (event) => {
       if (!pdfEditEnabled(block)) return;
-      const span = event.target.closest(".pdf-text-item");
+      const span = visualTextTarget(event);
       if (!span) {
         if (block.dataset.pdfHasSourceText === "false") {
           setStatus("This PDF page has no embedded text to edit. It appears to be image/vector content; OCR support will be needed for direct text editing.");

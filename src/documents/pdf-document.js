@@ -420,7 +420,14 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
         const resize = document.createElement("button"); resize.type="button"; resize.className="pdf-resize-handle"; resize.title="Resize replacement field"; resize.setAttribute("aria-label", "Resize replacement field"); span.append(resize);
       }
     } else {
-      Object.assign(span.style, { left: `${x}px`, top: `${y - height}px`, width: `${Math.max(item.width * scale, 8)}px`, height: `${height * 1.25}px`, fontSize: `${height}px` });
+      // PDF text coordinates identify the baseline, not the top of its nominal
+      // em box. PDF.js exposes the embedded font ascent used by its own text
+      // layer; using it here removes the first (baseline -> CSS top) divergence.
+      const font=content.styles?.[item.fontName]||{},ascent=Number.isFinite(font.ascent)?font.ascent:Number.isFinite(font.descent)?1+font.descent:.8;
+      const angle=Math.atan2(Number(item.transform?.[1])||0,Number(item.transform?.[0])||1);
+      const fontAscent=height*ascent,left=angle?x+fontAscent*Math.sin(angle):x,top=angle?y-fontAscent*Math.cos(angle):y-fontAscent;
+      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(item.width*scale,1)}px`, height: `${height}px`, fontSize: `${height}px`, fontFamily: font.fontFamily||"sans-serif", transform: angle?`rotate(${angle}rad)`:"none" });
+      span.dataset.geometryDerivation="pdf-baseline-font-ascent";
     }
     textLayer.append(span);
   });

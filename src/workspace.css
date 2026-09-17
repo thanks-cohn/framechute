@@ -730,7 +730,7 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-text-layer { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); text-align: left; overflow: hidden; }
 .pdf-image-edit img { width:100%; height:100%; display:block; pointer-events:none; object-fit:fill; }
 .pdf-image-edit.is-selected { outline:2px solid #2687e9; }
-.pdf-text-item { position: absolute; color: transparent; white-space: pre; line-height: 1; cursor: text; transform-origin: 0 0; }
+.pdf-text-item { position: absolute; color: transparent; white-space: pre; line-height: 1; cursor: text; transform-origin: 0 0; box-sizing: border-box; }
 .pdf-source-mask,
 .pdf-live-edit-mask {
   position: absolute;
@@ -740,7 +740,9 @@ body.hide-block-headers .compact-drag-handle {
 }
 .pdf-source-mask { z-index: 1; }
 .pdf-live-edit-mask { z-index: 3; }
-.pdf-text-item:hover { outline: 1px dashed #276ee8; background: #eaf2ff99; color: #111; }
+.pdf-interactive-outline { position:absolute; pointer-events:none; z-index:5; outline:1px dashed #276ee8; background:#eaf2ff66; }
+.pdf-interactive-outline[hidden] { display:none; }
+.pdf-text-item:hover { outline: none; background: transparent; color: transparent; }
 .pdf-text-item.pdf-search-match { background: #ffeb3b99; color: #111; outline: 1px solid #d99b00; }
 .pdf-edit-text[contenteditable="true"] {
   color: #111 !important;

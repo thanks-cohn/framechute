@@ -19,11 +19,31 @@ import {
   ensurePdfEditIdentity,
   pdfRectThroughViewportTransform,
   reconcileReopenedPdfObjects,
+  resolvePdfInteractiveTextRect,
+  resolvePdfVisualTarget,
   rectangleDelta,
   setPdfDiagnosticMode,
   transformPointThroughChain,
   verifyTransformRoundTrip
 } from "../src/documents/pdf-observability.js";
+
+test("canonical interactive rectangles correct shifted and oversized DOM boxes without changing PDF truth",()=>{
+  const source={x:10,y:700,width:80,height:12,space:"pdf-points"};
+  const resolved=resolvePdfInteractiveTextRect({objectId:"source:1",sourceRect:source,expectedViewportRect:{x:20,y:40,width:160,height:24,space:"pdf-viewport-css"},domRect:{x:120,y:65,width:160,height:60,space:"client-css"},glyphInkRect:{x:120,y:90,width:158,height:20,space:"client-css"}});
+  assert.equal(resolved.derivationMethod,"observed-glyph-ink");
+  assert.deepEqual(resolved.interactiveRect,{x:119,y:89,width:160,height:22,space:"client-css"});
+  assert.deepEqual(resolved.canonicalSourceRect,source);
+  assert.equal(compareVisualRectangles(resolved.observedGlyphInkRect,resolved.interactiveRect).coverageOfA,1);
+});
+
+test("visual hit resolution chooses the glyph under the pointer instead of an overlapping neighboring line",()=>{
+  const result=resolvePdfVisualTarget({x:30,y:31},[
+    {objectId:"line-a",interactiveRect:{x:10,y:10,width:100,height:30},glyphInkRect:{x:10,y:12,width:100,height:9}},
+    {objectId:"line-b",interactiveRect:{x:10,y:28,width:100,height:12},glyphInkRect:{x:10,y:29,width:100,height:9}}
+  ]);
+  assert.equal(result.objectId,"line-b");
+  assert.equal(result.reason,"glyph-contained-pointer");
+});
 
 test("visual relationships classify aligned, shifted, oversized, disjoint, and zoom-equivalent projections",()=>{
   const glyph={x:100,y:100,width:80,height:16,space:"client-css"};
