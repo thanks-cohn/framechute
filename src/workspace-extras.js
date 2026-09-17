@@ -91,6 +91,10 @@ await import("./straighten-fit.js");
 // rewrite workspace geometry while an object is being dragged.
 await import("./docx-selection-fidelity.js");
 
+// Lightweight PDF UI/live-mask polish. This module observes only direct
+// workspace block additions, never PDF.js text-layer glyph churn.
+await import("./pdf-light-editor-polish.js");
+
 const workspaceElement=document.querySelector("#workspace");
 if(workspaceElement){
   // Clear only state left by the removed giant-runway implementation.
