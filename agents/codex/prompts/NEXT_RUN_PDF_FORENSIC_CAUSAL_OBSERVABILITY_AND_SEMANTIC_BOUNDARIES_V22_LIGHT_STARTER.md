@@ -22,7 +22,9 @@ Main goals:
    - one edit must not erase unrelated neighboring source text,
    - original BODY_CONTENT must obey top/bottom/left/right content margins,
    - no partial glyph may survive outside legal bounds,
-   - Save/reopen must not resurrect superseded source glyphs.
+   - Save/reopen must not resurrect superseded source glyphs,
+   - reopening a SAVED PDF must never visibly show the old original text underneath the replacement text,
+   - replacement text must appear exactly once visually after round-trip save/reopen.
 
 3. Use the first PDF fixture found under /pdf/ for real canonical integration
    coverage. Do not hard-code its filename and do not mutate it.
