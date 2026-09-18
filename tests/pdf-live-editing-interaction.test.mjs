@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { calculatePdfTextAutofit } from "../src/documents/pdf-forensics.js";
 
-const [workspace,css]=await Promise.all([
+const [workspace,css,pdfDocument]=await Promise.all([
   readFile(new URL("../src/workspace.js",import.meta.url),"utf8"),
-  readFile(new URL("../src/workspace.css",import.meta.url),"utf8")
+  readFile(new URL("../src/workspace.css",import.meta.url),"utf8"),
+  readFile(new URL("../src/documents/pdf-document.js",import.meta.url),"utf8")
 ]);
 
 test("single click enters PDF text editing without selecting the entire source run",()=>{
@@ -75,4 +76,35 @@ test("first PDF edit preserves inferred source family instead of forcing Helveti
 
 test("legacy automatic margin reconstruction edits are discarded during runtime initialization",()=>{
   assert.match(workspace,/state\.edits\.filter\(edit=>edit\?\.marginReconstructed!==true\)/);
+});
+
+
+test("free-text DOM has no competing local focusout/contenteditable lifecycle",()=>{
+  const start=pdfDocument.indexOf("export function createPdfFreeTextElement");
+  const end=pdfDocument.indexOf("export async function renderPdfPage",start);
+  const block=pdfDocument.slice(start,end);
+  assert.equal(block.includes('addEventListener("focusout"'),false);
+  assert.equal(block.includes('removeAttribute("contenteditable")'),false);
+});
+
+test("new PDF free text is one-line sized and does not rerender the source canvas",()=>{
+  const start=workspace.indexOf('if(action==="add-text")');
+  const end=workspace.indexOf('} else if(!edit && action==="delete"',start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/initialHeight=Math\.max\(14,12\*/);
+  assert.match(block,/createPdfFreeTextElement/);
+  assert.equal(block.includes("setPdfPage"),false);
+});
+
+test("free-text input never creates a white source mask beneath itself",()=>{
+  const start=workspace.indexOf('textLayer.addEventListener("input"');
+  const end=workspace.indexOf('textLayer.addEventListener("keydown"',start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/if\(Number\(span\.dataset\.index\)>=0\)/);
+  assert.match(block,/else removePdfLiveEditMask\(textLayer\)/);
+});
+
+test("PDF text overlay origin is explicitly locked to the rendered canvas",()=>{
+  assert.match(pdfDocument,/alignPdfTextLayerToCanvas\(canvas, textLayer\)/);
+  assert.match(pdfDocument,/transform:\s*"none"/);
 });

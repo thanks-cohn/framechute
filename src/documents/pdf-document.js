@@ -389,6 +389,41 @@ export async function extractSemanticPdfText(model, edits=[], {pageNumber=null, 
   return text.filter(Boolean).join("\n\n");
 }
 
+export function alignPdfTextLayerToCanvas(canvas, textLayer) {
+  if (!canvas || !textLayer) return null;
+  const left = Number(canvas.offsetLeft) || 0;
+  const top = Number(canvas.offsetTop) || 0;
+  Object.assign(textLayer.style, { left: `${left}px`, top: `${top}px`, transform: "none" });
+  return { left, top };
+}
+
+export function createPdfFreeTextElement(edit, viewport, documentRef = globalThis.document) {
+  if (!edit || edit.kind !== "text" || !viewport || !documentRef?.createElement) return null;
+  const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
+  const span = documentRef.createElement("span");
+  span.className = "pdf-text-item pdf-text-edit";
+  span.dataset.index = String(saved.index);
+  span.dataset.viewportScale = String(viewport.scale || 1);
+  span.dataset.presentationTruthKind = "dom-free-text";
+  span.dataset.objectId = saved.id;
+  span.dataset.ownerEditId = saved.id;
+  const text = documentRef.createElement("span");
+  text.className = "pdf-edit-text";
+  text.textContent = saved.text;
+  span.append(text);
+  Object.assign(span.style, {
+    left: `${left}px`, top: `${top}px`,
+    width: `${right-left}px`, height: `${bottom-top}px`,
+    fontSize: `${saved.fontSize*(viewport.scale||1)}px`
+  });
+  const move = documentRef.createElement("button");
+  move.type = "button"; move.className = "pdf-move-handle"; move.title = "Drag text field"; move.textContent = "↕";
+  const resize = documentRef.createElement("button");
+  resize.type = "button"; resize.className = "pdf-resize-handle"; resize.title = "Resize text field";
+  span.append(move, resize);
+  return span;
+}
+
 export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits = [], options = {}) {
   edits=currentPdfEdits(edits);
   const page = await model.pdf.getPage(pageNumber);
@@ -399,6 +434,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   canvas.height = Math.ceil(viewport.height * devicePixelRatio);
   canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
   textLayer.style.width = `${viewport.width}px`; textLayer.style.height = `${viewport.height}px`;
+  // Canvas and overlay must share the exact same CSS origin. Centering each
+  // independently drifts when the reader has padding/scrollbars.
+  alignPdfTextLayerToCanvas(canvas, textLayer);
   const renderTask = page.render({ canvasContext: canvas.getContext("2d"), viewport, transform: devicePixelRatio === 1 ? null : [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] });
   options.onRenderTask?.(renderTask);
   await renderTask.promise;
@@ -495,19 +533,8 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     textLayer.append(span);
   });
   edits.filter(edit => edit.page === pageNumber && edit.kind === "text").forEach(edit => {
-    const saved = normalizePdfEdit(edit), [left, top, right, bottom] = pdfRectToViewport(viewport, saved);
-    const span=document.createElement("span");span.className="pdf-text-item pdf-text-edit";span.dataset.index=String(saved.index);span.dataset.presentationTruthKind="dom-free-text";span.dataset.objectId=saved.id;span.dataset.ownerEditId=saved.id;
-    const text=document.createElement("span");text.className="pdf-edit-text";text.textContent=saved.text;span.append(text);
-    const markDirty=()=>{const block=text.closest?.(".block");if(block)block.dataset.documentDirty="true";};
-    text.addEventListener("input",()=>{if(updatePdfFreeText(edit,text.innerText))markDirty();});
-    text.addEventListener("focusout",()=>{
-      if(text.dataset.cancel){updatePdfFreeText(edit,text.dataset.before??edit.text);delete text.dataset.cancel;}
-      else if(updatePdfFreeText(edit,text.innerText))markDirty();
-      text.removeAttribute("contenteditable");
-    });
-    Object.assign(span.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`,fontSize:`${saved.fontSize*scale}px`});
-    const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
-    const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
+    const span=createPdfFreeTextElement(edit,viewport,document);
+    if(span)textLayer.append(span);
   });
   return { viewport, content, sourceMarginEdits, marginReconciliation, presentationPlan };
 }
