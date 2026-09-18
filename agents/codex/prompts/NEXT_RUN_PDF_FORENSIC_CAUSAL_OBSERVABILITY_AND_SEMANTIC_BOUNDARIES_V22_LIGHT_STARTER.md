@@ -24,7 +24,11 @@ Main goals:
    - no partial glyph may survive outside legal bounds,
    - Save/reopen must not resurrect superseded source glyphs,
    - reopening a SAVED PDF must never visibly show the old original text underneath the replacement text,
-   - replacement text must appear exactly once visually after round-trip save/reopen.
+   - replacement text must appear exactly once visually after round-trip save/reopen,
+   - saved/reopened current objects must not leave invisible historical editable fields underneath,
+   - historical/version data may be recoverable later but must be quarantined from live render/hit-test/editing,
+   - reopened saved replacements must hydrate immediately as current editable/manipulable objects,
+   - single click edits current/reopened text; double click shows move/resize handles without requiring a text mutation.
 
 3. Use the first PDF fixture found under /pdf/ for real canonical integration
    coverage. Do not hard-code its filename and do not mutate it.
