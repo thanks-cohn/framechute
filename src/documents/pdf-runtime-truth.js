@@ -1,5 +1,5 @@
 import { currentPdfEdits, ensurePdfEditIdentity } from "./pdf-observability.js";
-import { createPdfCausalJournal, createPdfGenerationClock } from "./pdf-forensics.js";
+import { createPdfCausalJournal, createPdfGenerationClock, reconcileSemanticPageToContentBounds, sourceOwnershipRectForEdit } from "./pdf-forensics.js";
 
 const HISTORICAL_STATES = new Set(["historical", "superseded"]);
 const finite = value => Number.isFinite(Number(value));
@@ -217,6 +217,63 @@ export function projectPdfContentRect(viewport, contentRect) {
   const left = Math.min(points[0], points[2]);
   const top = Math.min(points[1], points[3]);
   return { x: left, y: top, width: Math.abs(points[2] - points[0]), height: Math.abs(points[3] - points[1]) };
+}
+
+/** Capture erase authority before contenteditable/autofit can mutate the live
+ * field. Existing replacements retain their saved ownership; untouched source
+ * runs use their original PDF projection. */
+export function capturePdfSourceOwnership({ edit = null, sourceRect = null } = {}) {
+  const owned = edit ? sourceOwnershipRectForEdit(edit) : sourceRect;
+  if (!owned || ![owned.x, owned.y, owned.width, owned.height].every(finite)) return null;
+  return Object.freeze(rect(owned));
+}
+
+export function projectPdfSourceMask(viewport, ownership, { padding = 0, terminalBleed = 0 } = {}) {
+  const projected = projectPdfContentRect(viewport, ownership);
+  if (!projected) return null;
+  const pad=Math.max(0,Number(padding)||0),bleed=Math.max(0,Number(terminalBleed)||0);
+  return Object.freeze({x:projected.x-pad,y:projected.y-pad,width:projected.width+pad*2+bleed,height:projected.height+pad*2,maskRole:"source-ownership"});
+}
+
+/** Reconstruct source BODY_CONTENT at legal geometry. The semantic reconciler
+ * chooses block/line groups; each member receives the same translation, while
+ * its immutable original rectangle remains its mask authority. Explicit page
+ * furniture roles are retained and exempted rather than inferred from origin. */
+export function buildPdfSourceMarginReconciliation({ layout, contentRect, existingEdits = [] } = {}) {
+  const nodes=layout?.nodes||[];
+  const blocks=nodes.filter(node=>node.kind==="text-block"),lines=nodes.filter(node=>node.kind==="text-line");
+  const blockByLine=new Map();for(const block of blocks)for(const id of block.childIds||[])blockByLine.set(id,block.id);
+  const existingSources=new Set(existingEdits.map(edit=>edit.sourceObjectId).filter(Boolean));
+  const source=nodes.filter(node=>node.kind==="source-text-run"&&!existingSources.has(node.id)).map(node=>{
+    const explicit=node.metadata?.semanticRole||node.semanticRole||"BODY_CONTENT";
+    const furniture=explicit!=="BODY_CONTENT";
+    return {id:node.id,objectId:node.id,page:node.page,text:node.text,canonicalPdfRect:node.bounds,
+      semanticRole:explicit,allowOutsideContentBounds:furniture||node.metadata?.allowOutsideContentBounds===true,
+      lineId:node.ownerId||null,blockId:blockByLine.get(node.ownerId)||null,node};
+  });
+  const reconciliation=reconcileSemanticPageToContentBounds({layout:{objects:source},contentRect});
+  const deltaByMember=new Map();for(const result of reconciliation.results)for(const id of result.memberIds)deltaByMember.set(id,result.actualDelta);
+  const edits=[];
+  for(const object of source){
+    const delta=deltaByMember.get(object.id);if(!delta||(delta.dx===0&&delta.dy===0))continue;
+    const original=rect(object.canonicalPdfRect),node=object.node,index=Number(node.metadata?.sourceIndex);
+    edits.push(ensurePdfEditIdentity({id:`margin:${object.id}`,kind:"replacement",page:object.page,index:Number.isFinite(index)?index:-1,
+      sourceObjectId:object.id,sourceLineId:object.lineId,original:object.text,replacement:object.text,
+      x:original.x+delta.dx,y:original.y+delta.dy,width:original.width,height:original.height,
+      sourceX:original.x,sourceY:original.y,sourceWidth:original.width,sourceHeight:original.height,
+      fontSize:Math.max(4,Number(node.style?.fontSize)||Number(node.bounds?.height)*.8||12),fontFamily:"Helvetica",rotation:0,
+      versionState:"current",marginReconstructed:true,semanticRole:"BODY_CONTENT"}));
+  }
+  return {...reconciliation,edits,roles:Object.freeze(["BODY_CONTENT","HEADER","FOOTER","PAGE_NUMBER","WATERMARK","BACKGROUND","PRINT_MARK","UNKNOWN_PAGE_FURNITURE"])};
+}
+
+export function restorePdfRuntimeTruth(truth, edits, { cause = "history-restore" } = {}) {
+  if (!truth) return edits;
+  truth.edits.splice(0,truth.edits.length,...currentPdfEdits(edits.map(edit=>ensurePdfEditIdentity(structuredClone(edit)))));
+  Object.assign(truth.state,{interaction:"idle",editingObjectId:null,manipulatingObjectId:null,liveText:null,activeElement:null,activeSpan:null,activeContext:null});
+  truth.generations.advance("semantic");truth.generations.advance("replacement");truth.generations.advance("mask");
+  truth.record(cause,{actual:{objectIds:truth.edits.map(edit=>edit.id)},downstreamEffects:["history","replacement","source-mask"]});
+  return truth.edits;
 }
 
 export function runtimeTruthDiagnostics(truth) {

@@ -5,6 +5,7 @@ import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from ".
 import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 import { buildPdfForensicPage } from "./pdf-forensics.js";
+import { buildPdfSourceMarginReconciliation } from "./pdf-runtime-truth.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -373,6 +374,11 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   await renderTask.promise;
   const content = await page.getTextContent();
   const pageLayout=await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
+  const marginReconciliation=options.contentRect&&options.marginConstraintsEnabled!==false
+    ? buildPdfSourceMarginReconciliation({layout:pageLayout,contentRect:options.contentRect,existingEdits:edits})
+    : null;
+  const sourceMarginEdits=marginReconciliation?.edits||[];
+  if(sourceMarginEdits.length)edits=currentPdfEdits([...edits,...sourceMarginEdits]);
   const reopened=model.reopenedReconciliation?.get(pageNumber),historicalPaintOrders=new Set((reopened?.historical||[]).map(object=>object.paintOrder));
   const reopenedCurrentByPaintOrder=new Map((reopened?.current||[]).map(object=>[object.paintOrder,object]));
   const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
@@ -463,7 +469,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
   });
-  return { viewport, content };
+  return { viewport, content, sourceMarginEdits, marginReconciliation };
 }
 
 export async function searchPdfDocument(model, query) {

@@ -151,6 +151,11 @@ export function createPdfGenerationClock(seed = 0) {
       else throw new TypeError(`Unknown PDF generation: ${kind}`);
       return this.snapshot();
     },
+    synchronize() {
+      const next=Math.max(semantic,render,mask,replacement)+1;
+      semantic=render=mask=replacement=next;
+      return this.snapshot();
+    },
     snapshot: () => ({
       semantic,
       render,

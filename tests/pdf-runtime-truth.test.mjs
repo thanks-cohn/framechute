@@ -8,10 +8,14 @@ import { extractSemanticPdfText, openPdfDocument, searchCurrentPdfDocument, seri
 import {
   beginPdfManipulation,
   beginPdfTextInteraction,
+  buildPdfSourceMarginReconciliation,
+  capturePdfSourceOwnership,
   commitPdfTextEdit,
   createPdfRuntimeTruth,
   hydrateReopenedPdfCurrentObjects,
   projectPdfContentRect,
+  projectPdfSourceMask,
+  restorePdfRuntimeTruth,
   runtimeTruthDiagnostics,
   updatePdfLiveText
 } from "../src/documents/pdf-runtime-truth.js";
@@ -140,6 +144,53 @@ test("actual content rectangle projects into live viewport CSS coordinates",()=>
   assert.deepEqual(projectPdfContentRect(viewport,{x:36,y:54,width:240,height:300}),{x:72,y:92,width:480,height:600});
 });
 
+test("first edit autofit, move, and resize never mutate original source ownership",()=>{
+  const source={x:10,y:20,width:80,height:14},ownership=capturePdfSourceOwnership({sourceRect:source});
+  const edit={...manifestObject(),x:10,y:20,width:180,height:42,sourceX:ownership.x,sourceY:ownership.y,sourceWidth:ownership.width,sourceHeight:ownership.height};
+  assert.equal(edit.width,180);assert.equal(edit.sourceWidth,80);
+  Object.assign(edit,{x:45,y:70,width:240,height:60});
+  assert.deepEqual(capturePdfSourceOwnership({edit}),source,"move/resize changes occupancy only");
+  Object.assign(edit,{width:32,height:16});
+  assert.deepEqual(capturePdfSourceOwnership({edit}),source,"autofit shrink cannot shrink erase authority");
+});
+
+test("live source mask projection is independent from changing field geometry",()=>{
+  const viewport={convertToViewportRectangle:([x1,y1,x2,y2])=>[x1*2,500-y1*2,x2*2,500-y2*2]};
+  const ownership={x:10,y:20,width:80,height:14};
+  const initial=projectPdfSourceMask(viewport,ownership,{terminalBleed:2});
+  const growingField={x:100,y:100,width:400,height:90};void growingField;
+  const grown=projectPdfSourceMask(viewport,ownership,{terminalBleed:2});
+  assert.deepEqual(grown,initial);
+  assert.equal(initial.maskRole,"source-ownership");
+});
+
+test("semantic source margin plan translates coherent BODY_CONTENT on every edge and exempts furniture",()=>{
+  const nodes=[
+    ...["left","right","bottom","top"].flatMap(edge=>[{id:`block:${edge}`,kind:"text-block",childIds:[`line:${edge}`]},{id:`line:${edge}`,kind:"text-line",childIds:[edge]}]),
+    {id:"left",kind:"source-text-run",page:1,text:"L",bounds:{x:-2,y:40,width:8,height:8},ownerId:"line:left",metadata:{sourceIndex:0}},
+    {id:"right",kind:"source-text-run",page:1,text:"R",bounds:{x:96,y:40,width:8,height:8},ownerId:"line:right",metadata:{sourceIndex:1}},
+    {id:"bottom",kind:"source-text-run",page:1,text:"B",bounds:{x:40,y:-3,width:8,height:8},ownerId:"line:bottom",metadata:{sourceIndex:2}},
+    {id:"top",kind:"source-text-run",page:1,text:"T",bounds:{x:40,y:97,width:8,height:8},ownerId:"line:top",metadata:{sourceIndex:3}},
+    {id:"header",kind:"source-text-run",page:1,text:"Header",bounds:{x:20,y:105,width:20,height:8},ownerId:"line:header",semanticRole:"HEADER",metadata:{sourceIndex:4,semanticRole:"HEADER",allowOutsideContentBounds:true}}
+  ];
+  const plan=buildPdfSourceMarginReconciliation({layout:{nodes},contentRect:{x:0,y:0,width:100,height:100}});
+  assert.equal(plan.edits.length,4);
+  assert.ok(plan.issues.some(issue=>issue.code.includes("LEFT")));
+  assert.ok(plan.issues.some(issue=>issue.code.includes("RIGHT")));
+  assert.ok(plan.issues.some(issue=>issue.code.includes("TOP")));
+  assert.ok(plan.issues.some(issue=>issue.code.includes("BOTTOM")));
+  assert.equal(plan.edits.some(edit=>edit.sourceObjectId==="header"),false);
+});
+
+test("history restore keeps truth edits array, clears interaction, and restores ownership",()=>{
+  const truth=createPdfRuntimeTruth({model:{},workspaceEdits:[{...manifestObject(),replacement:"after",sourceX:1,sourceY:2,sourceWidth:30,sourceHeight:10}],mode:"debug"});
+  truth.state.interaction="manipulating";truth.state.manipulatingObjectId="edit:stable";
+  const reference=truth.edits;
+  restorePdfRuntimeTruth(truth,[{...manifestObject(),replacement:"before",x:10,sourceX:1,sourceY:2,sourceWidth:30,sourceHeight:10}],{cause:"undo"});
+  assert.equal(truth.edits,reference);assert.equal(truth.edits[0].replacement,"before");assert.equal(truth.edits[0].sourceWidth,30);
+  assert.equal(truth.state.interaction,"idle");assert.equal(truth.state.manipulatingObjectId,null);
+});
+
 test("OFF runtime remains allocation-cheap while DEBUG exposes causal truth",()=>{
   const off=createPdfRuntimeTruth({model:{},mode:"off"});
   off.record("input",{objectId:"x"});
@@ -151,6 +202,9 @@ test("OFF runtime remains allocation-cheap while DEBUG exposes causal truth",()=
   assert.equal(diagnostics.recentCausalEvents[0].event,"reopen-hydration");
   assert.equal(diagnostics.generations.semantic,1);
   assert.equal(diagnostics.generations.replacement,1);
+  debug.generations.advance("semantic");debug.generations.advance("replacement");
+  assert.equal(debug.generations.snapshot().inSync,false);
+  assert.equal(debug.generations.synchronize().inSync,true,"rerender synchronizes semantic/render/mask/replacement generations");
 });
 
 test("real first /pdf fixture serialize to reopen hydrates exactly one stable current replacement",async()=>{
@@ -169,16 +223,17 @@ test("real first /pdf fixture serialize to reopen hydrates exactly one stable cu
     assert.ok(index>=0,"fixture must expose a real source text run");
     const height=Math.max(8,Math.hypot(item.transform[2],item.transform[3]));
     const [left,baseline]=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-    const geometry=viewportRectToPdf(viewport,{left,top:baseline-height,width:Math.max(item.width,8),height:height*1.25});
+    const ownershipGeometry=viewportRectToPdf(viewport,{left,top:baseline-height,width:Math.max(item.width,8),height:height*1.25});
+    const geometry={...ownershipGeometry,x:ownershipGeometry.x+30,width:ownershipGeometry.width+100,height:ownershipGeometry.height+12};
     const replacement=`ZQ_RUNTIME_TRUTH_${Date.now()}`;
-    const edit={kind:"replacement",id:"edit:fixture-stable",page:pageNumber,index,original:item.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize:Math.max(4,height),rotation:0,sourceObjectId:`source:p${pageNumber}:text:${index}`,versionState:"current"};
+    const edit={kind:"replacement",id:"edit:fixture-stable",page:pageNumber,index,original:item.str,replacement,...geometry,sourceX:ownershipGeometry.x,sourceY:ownershipGeometry.y,sourceWidth:ownershipGeometry.width,sourceHeight:ownershipGeometry.height,fontFamily:"Helvetica",fontSize:Math.max(4,height),rotation:0,sourceObjectId:`source:p${pageNumber}:text:${index}`,versionState:"current"};
     const blob=await serializeEditedPdf(model,[edit]);
     reopened=await openPdfDocument(await blob.arrayBuffer());
     const hydration=hydrateReopenedPdfCurrentObjects(reopened);
     assert.equal(hydration.edits.length,1);
     assert.equal(hydration.edits[0].id,edit.id);
     assert.equal(hydration.edits[0].replacement,replacement);
-    assert.deepEqual({x:hydration.edits[0].sourceX,y:hydration.edits[0].sourceY,width:hydration.edits[0].sourceWidth,height:hydration.edits[0].sourceHeight},geometry);
+    assert.deepEqual({x:hydration.edits[0].sourceX,y:hydration.edits[0].sourceY,width:hydration.edits[0].sourceWidth,height:hydration.edits[0].sourceHeight},ownershipGeometry);
     assert.deepEqual({x:hydration.edits[0].x,y:hydration.edits[0].y,width:hydration.edits[0].width,height:hydration.edits[0].height},geometry);
     assert.equal((await searchCurrentPdfDocument(reopened,hydration.edits,replacement)).length,1);
     // Search is current-version aware: the stable replacement is found once.
