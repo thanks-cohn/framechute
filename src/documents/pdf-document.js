@@ -5,6 +5,7 @@ import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from ".
 import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 import { buildPdfForensicPage } from "./pdf-forensics.js";
+import { buildPdfSourceMarginReconciliation } from "./pdf-runtime-truth.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -285,14 +286,18 @@ function decodeBase64Url(value){
   const binary=atob(base64),bytes=Uint8Array.from(binary,character=>character.charCodeAt(0));return new TextDecoder().decode(bytes);
 }
 function parseCurrentVersionKeywords(keywords){
-  const token=String(keywords||"").split(/[;,]\s*/).find(value=>value.startsWith(CURRENT_VERSION_KEYWORD));
+  // Some producers expose /Keywords as a custom Info value. pdf-lib repairs
+  // that value with a leading separator; tolerate surrounding whitespace so
+  // the manifest survives a real-world source PDF rather than only fixtures
+  // created from a pristine empty document.
+  const token=String(keywords||"").split(/[;,]\s*/).map(value=>value.trim()).find(value=>value.startsWith(CURRENT_VERSION_KEYWORD));
   if(!token)return null;
   try{const parsed=JSON.parse(decodeBase64Url(token.slice(CURRENT_VERSION_KEYWORD.length)));return parsed?.schemaVersion===1&&Array.isArray(parsed.objects)?parsed:null;}catch{return null;}
 }
 function currentVersionManifest(edits,inherited=null){
   const authored=currentPdfEdits(edits).filter(edit=>["replacement","text","wrap"].includes(edit.kind||"replacement")).map(edit=>({
     id:edit.id,kind:edit.kind||"replacement",page:Number(edit.page),text:String(edit.text??edit.replacement??""),sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,
-    pdfRect:{x:Number(edit.x),y:Number(edit.y),width:Number(edit.width),height:Number(edit.height)},fontSize:Number(edit.fontSize)||12,versionState:"current"
+    pdfRect:{x:Number(edit.x),y:Number(edit.y),width:Number(edit.width),height:Number(edit.height)},sourceOwnershipRect:{x:Number(edit.sourceX??edit.x),y:Number(edit.sourceY??edit.y),width:Number(edit.sourceWidth??edit.width),height:Number(edit.sourceHeight??edit.height)},fontSize:Number(edit.fontSize)||12,fontFamily:edit.fontFamily||"Helvetica",rotation:Number(edit.rotation)||0,index:Number.isFinite(Number(edit.index))?Number(edit.index):-1,original:String(edit.original??""),versionState:"current"
   }));
   if(!authored.length&&inherited?.objects?.length)return inherited;
   const replacedSources=new Set(authored.map(object=>object.sourceObjectId).filter(Boolean));
@@ -318,11 +323,19 @@ export async function getPdfPageLayout(model, pageNumber, edits=[], prepared={})
   const content=prepared.content || await page.getTextContent();
   const pageEdits=currentPdfEdits(edits.filter(edit=>Number(edit.page)===pageNumber));
   let sourceRuns=content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber)).filter(Boolean);
-  if(!pageEdits.length&&model.reopenedCurrent?.objects?.length){
+  if(model.reopenedCurrent?.objects?.length){
     const extracted=sourceRuns.map(run=>({id:run.id||`source:p${pageNumber}:text:${run.sourceIndex}`,kind:"source-text-run",page:pageNumber,text:run.text,paintOrder:run.paintOrder,pdfRect:run.bounds,fontSize:run.fontSize}));
     const expected=model.reopenedCurrent.objects.filter(object=>object.page===pageNumber);
     const reconciled=reconcileReopenedPdfObjects(extracted,expected);
     model.reopenedReconciliation||=new Map();model.reopenedReconciliation.set(pageNumber,reconciled);
+    // A hydrated manifest object owns the last matching painted replacement,
+    // never the superseded source operator that happened to have its old
+    // index. Updating the runtime paint index makes the real DOM field (and
+    // therefore its handles/hit target) land on current presentation truth.
+    for(const edit of pageEdits.filter(edit=>edit.reopened)){
+      const painted=reconciled.current.find(object=>object.replacementObjectId===edit.id);
+      if(painted)edit.index=painted.paintOrder;
+    }
     sourceRuns=reconciled.current.map((object,index)=>({sourceIndex:index,sourceRef:object.replacementObjectId||object.id,id:object.replacementObjectId||object.id,text:object.text,bounds:object.pdfRect,fontSize:object.fontSize,angle:0,paintOrder:object.paintOrder,confidence:1}));
   }
   const signature=JSON.stringify(pageEdits.map(edit=>[edit.id,edit.kind,edit.index,edit.x,edit.y,edit.width,edit.height,edit.replacement,edit.text,edit.wrapText]));
@@ -361,6 +374,11 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   await renderTask.promise;
   const content = await page.getTextContent();
   const pageLayout=await getPdfPageLayout(model,pageNumber,edits,{page,viewport,content});
+  const marginReconciliation=options.contentRect&&options.marginConstraintsEnabled!==false
+    ? buildPdfSourceMarginReconciliation({layout:pageLayout,contentRect:options.contentRect,existingEdits:edits})
+    : null;
+  const sourceMarginEdits=marginReconciliation?.edits||[];
+  if(sourceMarginEdits.length)edits=currentPdfEdits([...edits,...sourceMarginEdits]);
   const reopened=model.reopenedReconciliation?.get(pageNumber),historicalPaintOrders=new Set((reopened?.historical||[]).map(object=>object.paintOrder));
   const reopenedCurrentByPaintOrder=new Map((reopened?.current||[]).map(object=>[object.paintOrder,object]));
   const wrapEdits = imageWrapEditsForPage(viewport, content, edits, pageNumber);
@@ -451,7 +469,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
   });
-  return { viewport, content };
+  return { viewport, content, sourceMarginEdits, marginReconciliation };
 }
 
 export async function searchPdfDocument(model, query) {
