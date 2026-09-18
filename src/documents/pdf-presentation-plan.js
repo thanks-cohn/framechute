@@ -106,16 +106,23 @@ export function buildPdfPresentationPlan({
   const allSourceIds = new Set([...sourceById.keys(), ...owners.keys()]);
   for (const sourceObjectId of allSourceIds) {
     const source = sourceById.get(sourceObjectId) || {}, edit = owners.get(sourceObjectId) || null;
-    const sourceRect = ownershipFor(edit) || ownershipFor(source) || layoutRectFor(source);
-    const layoutRect = layoutRectFor(edit) || layoutRectFor(source);
-    const isLive = Boolean(edit && (activeInteraction?.editingObjectId === edit.id || activeInteraction?.sourceObjectId === sourceObjectId));
+    const interactionOwnsSource = Boolean(activeInteraction && (
+      activeInteraction.sourceObjectId === sourceObjectId ||
+      activeInteraction.editingObjectId === sourceObjectId ||
+      (edit && activeInteraction.editingObjectId === edit.id)
+    ));
+    const sourceRect = ownershipFor(edit) || cleanRect(activeInteraction?.sourceOwnershipRect) || ownershipFor(source) || layoutRectFor(source);
+    const layoutRect = interactionOwnsSource
+      ? (cleanRect(activeInteraction?.layoutRect) || layoutRectFor(edit) || layoutRectFor(source))
+      : (layoutRectFor(edit) || layoutRectFor(source));
+    const isLive = interactionOwnsSource;
     const deleted = edit?.deleted === true || edit?.presentationState === PDF_PRESENTATION_STATES.DELETED;
     let state = deleted ? PDF_PRESENTATION_STATES.DELETED : isLive ? PDF_PRESENTATION_STATES.LIVE_EDIT : edit ? PDF_PRESENTATION_STATES.COMMITTED_REPLACEMENT : PDF_PRESENTATION_STATES.SOURCE_ONLY;
     let sourceVisible = state === PDF_PRESENTATION_STATES.SOURCE_ONLY;
     let liveVisible = state === PDF_PRESENTATION_STATES.LIVE_EDIT;
     let replacementVisible = state === PDF_PRESENTATION_STATES.COMMITTED_REPLACEMENT;
     const requiresMask = liveVisible || replacementVisible || deleted;
-    const expectedOwner = edit?.id || activeInteraction?.editingObjectId || null;
+    const expectedOwner = edit?.id || (isLive ? (activeInteraction?.editingObjectId || sourceObjectId) : null);
     const supplied = suppliedMasks?.find(mask => mask.ownerEditId === expectedOwner || (!expectedOwner && mask.sourceObjectId === sourceObjectId));
     const maskRect = sourceRect;
     const correctMask = !requiresMask || (maskRect && (!supplied || ((supplied.ownerEditId === expectedOwner || supplied.sourceObjectId === sourceObjectId) && sameRect(cleanRect(supplied.sourceOwnershipRect || supplied.rect || supplied), maskRect))));
@@ -133,7 +140,7 @@ export function buildPdfPresentationPlan({
       masks.push({ id: maskId, kind: "mask", ownerEditId: expectedOwner, sourceObjectId, sourceObjectIds: [sourceObjectId], sourceOwnershipRect: maskRect, requiredMaskRect: maskRect, layoutRect: cleanRect(paddedRect(maskRect,padding)), paddingPolicy:{kind:"bounded-antialias",points:padding}, coverageComplete: true, generation: presentationGeneration });
     }
     const record = {
-      id: edit?.id || sourceObjectId, sourceObjectId, currentObjectId: edit?.id || null, kind: edit?.kind || "source-text-run",
+      id: edit?.id || (isLive ? (activeInteraction?.editingObjectId || sourceObjectId) : sourceObjectId), sourceObjectId, currentObjectId: edit?.id || null, kind: isLive ? "live-text" : (edit?.kind || "source-text-run"),
       semanticRole: edit?.semanticRole || source?.semanticRole || "BODY_CONTENT", text: String(isLive ? activeInteraction?.liveText ?? edit?.replacement ?? edit?.text ?? source?.text ?? "" : edit?.replacement ?? edit?.text ?? source?.text ?? ""),
       sourceText: String(source?.text ?? edit?.original ?? ""), state, presentationState: state,
       sourceVisible, liveVisible, replacementVisible, visible: sourceVisible || liveVisible || replacementVisible,
@@ -147,7 +154,7 @@ export function buildPdfPresentationPlan({
     };
     objects[sourceObjectId] = record;
     if (sourceVisible) sourcePresentations.push({ ...record, id: sourceObjectId, kind: "source", visible: true });
-    if (liveVisible) livePresentations.push({ ...record, id: edit.id, kind: "live", visible: true });
+    if (liveVisible) livePresentations.push({ ...record, id: edit?.id || activeInteraction?.editingObjectId || sourceObjectId, kind: "live", visible: true });
     if (replacementVisible) replacementPresentations.push({ ...record, id: edit.id, kind: "replacement", visible: true });
   }
 
