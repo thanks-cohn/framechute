@@ -556,10 +556,12 @@ async function setPdfPage(block, page) {
     if(runtime.marginState.constraintsEnabled)reconcileEditableGeometryToContentBounds({edits:runtime.edits,contentRect:initialContentRect,page:nextPage});
     try {
       runtime.truth?.record("rerender",{cause:"page-render-start",actual:{page:nextPage}});
-      const result = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits, {scale:runtime.zoom,searchQuery:runtime.search?.query,contentRect:initialContentRect,marginConstraintsEnabled:runtime.marginState.constraintsEnabled,onRenderTask:task=>runtime.renderTask=task});
+      const result = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits, {scale:runtime.zoom,searchQuery:runtime.search?.query,contentRect:initialContentRect,marginConstraintsEnabled:runtime.marginState.constraintsEnabled,applySourceMarginReconciliation:false,onRenderTask:task=>runtime.renderTask=task});
       if (token !== runtime.renderToken) return;
       runtime.pageData = result;
-      for(const edit of result.sourceMarginEdits||[])if(!runtime.edits.some(current=>current.id===edit.id))runtime.edits.push(edit);
+      // Ordinary rendering must never author replacement edits for untouched
+      // imported source. Margin reconciliation remains inspectable diagnostics
+      // until an explicit layout command deliberately applies it.
       runtime.marginDiagnostics={pageBounds:initialPageBounds,margins:initialMargins,contentRect:initialContentRect,semanticReconciliation:result.marginReconciliation||null};
       runtime.truth?.generations.synchronize();
       runtime.truth?.record("rerender",{cause:"page-render-complete",actual:{page:nextPage}});
