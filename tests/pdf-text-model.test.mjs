@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, pdfPageMaskPlan, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText, sourceTextDisplayBoxForItem } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, pdfPageMaskPlan, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, inferPdfSourceFontFamily, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText, sourceTextDisplayBoxForItem } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -166,18 +166,21 @@ test("live PDF mask does not claim the line tail when an untouched source run fo
   assert.ok(masks[0].x+masks[0].width<120,"middle edit stays bounded before the untouched terminal run");
 });
 
-test("PDF Save and live preview share one semantic mask plan",()=>{
+test("PDF Save and committed preview share exact immutable source-ownership masks",()=>{
   const line={id:"line:save",kind:"text-line",bounds:{x:20,y:100,width:180,height:12},childIds:["run:0","run:1"]};
   const run0={id:"run:0",kind:"source-text-run",bounds:{x:20,y:101,width:70,height:9},metadata:{sourceIndex:0}};
   const run1={id:"run:1",kind:"source-text-run",bounds:{x:95,y:101,width:105,height:9},metadata:{sourceIndex:1}};
   const parents=new Map([["run:0",line],["run:1",line]]);
   const layout={nodes:[run0,run1,line],parent:id=>parents.get(id)||null};
-  const edits=[{kind:"replacement",id:"edit:1",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9,x:120,y:80,width:90,height:22}];
+  const edits=[{kind:"replacement",id:"edit:1",page:1,index:1,sourceObjectId:"run:1",sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9,x:120,y:80,width:90,height:22}];
   const plan=pdfPageMaskPlan(layout,edits,[],1);
-  const source=plan.find(mask=>mask.maskRole==="source-line");
-  assert.ok(source,"shared plan includes semantic source-line erasure");
+  assert.equal(plan.length,1);
+  const source=plan[0];
+  assert.equal(source.maskRole,"source");
+  assert.equal(source.ownerEditId,"edit:1");
+  assert.deepEqual(source.sourceObjectIds,["run:1"]);
+  assert.ok(source.x<95&&source.x+source.width>200,"immutable ownership receives only bounded antialias padding");
   assert.equal(plan.some(mask=>mask.maskRole==="field"),false,"layout occupancy never becomes source erase authority");
-  assert.ok(source.x+source.width>200,"terminal run cleanup reaches the semantic line tail");
 });
 
 test("PDF replacement masks clamp to page/CropBox bounds",()=>{
@@ -242,4 +245,11 @@ test("PDF source semantic box uses the same baseline and ascent geometry as the 
   const item={str:"Hello",fontName:"f1",transform:[10,0,0,10,100,200],width:50};
   const box=sourceTextDisplayBoxForItem(viewport,item,{f1:{ascent:.8,fontFamily:"Century Schoolbook"}});
   assert.deepEqual(box,{left:100,top:192,width:50,height:10,angle:0,fontFamily:"Century Schoolbook",ascent:.8});
+});
+
+
+test("PDF first-edit font inference follows the imported source family instead of forcing Helvetica",()=>{
+  assert.equal(inferPdfSourceFontFamily({fontName:"TimesNewRomanPSMT"},{TimesNewRomanPSMT:{fontFamily:"Times New Roman"}}),"Times Roman");
+  assert.equal(inferPdfSourceFontFamily({fontName:"Courier-Bold"},{ "Courier-Bold":{fontFamily:"Courier"} }),"Courier Bold");
+  assert.equal(inferPdfSourceFontFamily({fontName:"Helvetica-Oblique"},{ "Helvetica-Oblique":{fontFamily:"Helvetica"} }),"Helvetica Oblique");
 });
