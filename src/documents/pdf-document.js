@@ -806,10 +806,46 @@ export async function transformPdfPages(bytes, operation) {
 
 export async function extractPdfPages(bytes, pageNumbers) {
   const source=await PDFDocument.load(bytes instanceof Uint8Array?bytes.slice():bytes),output=await PDFDocument.create(),indices=[...new Set(pageNumbers)].map(page=>page-1).filter(index=>index>=0&&index<source.getPageCount());
-  if(!indices.length)throw new Error("Choose at least one valid page");const pages=await output.copyPages(source,indices);pages.forEach(page=>output.addPage(page));return new Uint8Array(await output.save());
+  if(!indices.length)throw new Error("Choose at least one valid page");
+  const pages=await output.copyPages(source,indices);pages.forEach(page=>output.addPage(page));
+  const manifest=parseCurrentVersionKeywords(source.getKeywords());
+  if(manifest){
+    const pageMap=new Map(indices.map((sourceIndex,outputIndex)=>[sourceIndex+1,outputIndex+1])),changes=[];
+    const objects=(manifest.objects||[]).filter(object=>pageMap.has(Number(object.page))).map(original=>{
+      const before=Number(original.page),after=pageMap.get(before),object={...structuredClone(original),page:after,originPage:Number(original.originPage)||before};
+      changes.push({operation:"extract-pages",objectId:object.id,pageBefore:before,pageAfter:after,identityPreserved:true,manifestUpdated:true});
+      return object;
+    });
+    for(const original of manifest.objects||[])if(!pageMap.has(Number(original.page)))changes.push({operation:"extract-pages",objectId:original.id,pageBefore:Number(original.page),pageAfter:null,identityPreserved:true,manifestUpdated:true,currentDisposition:"excluded"});
+    const remapped={...structuredClone(manifest),documentVersionId:`document:${createPdfEditIdForManifest()}`,objects,structuralRemap:{operation:{type:"extract",pages:indices.map(index=>index+1)},pageCountBefore:source.getPageCount(),pageCountAfter:indices.length,changes}};
+    const prior=String(source.getKeywords()||"").split(/,\s*/).map(value=>value.trim()).filter(value=>value&&!value.startsWith(CURRENT_VERSION_KEYWORD));
+    output.setKeywords([...prior,`${CURRENT_VERSION_KEYWORD}${encodeBase64Url(JSON.stringify(remapped))}`]);
+  }
+  return new Uint8Array(await output.save());
 }
 export async function mergePdfBytes(bytes, addedBytes, insertAfter=null) {
-  const output=await PDFDocument.load(bytes instanceof Uint8Array?bytes.slice():bytes),added=await PDFDocument.load(addedBytes instanceof Uint8Array?addedBytes.slice():addedBytes),pages=await output.copyPages(added,added.getPageIndices());let at=insertAfter==null?output.getPageCount():Math.max(0,Math.min(output.getPageCount(),insertAfter));for(const page of pages)output.insertPage(at++,page);return new Uint8Array(await output.save());
+  const output=await PDFDocument.load(bytes instanceof Uint8Array?bytes.slice():bytes),added=await PDFDocument.load(addedBytes instanceof Uint8Array?addedBytes.slice():addedBytes);
+  const baseCount=output.getPageCount(),addedCount=added.getPageCount(),insertAt=insertAfter==null?baseCount:Math.max(0,Math.min(baseCount,Number(insertAfter)||0));
+  const baseManifest=parseCurrentVersionKeywords(output.getKeywords()),addedManifest=parseCurrentVersionKeywords(added.getKeywords()),pages=await output.copyPages(added,added.getPageIndices());
+  let at=insertAt;for(const page of pages)output.insertPage(at++,page);
+  if(baseManifest||addedManifest){
+    const objects=[],changes=[],usedIds=new Set();
+    for(const original of baseManifest?.objects||[]){
+      const before=Number(original.page),after=before>insertAt?before+addedCount:before,object={...structuredClone(original),page:after,originPage:Number(original.originPage)||before};
+      objects.push(object);usedIds.add(String(object.id));changes.push({operation:"merge-pages",objectId:object.id,pageBefore:before,pageAfter:after,identityPreserved:true,manifestUpdated:true,source:"base"});
+    }
+    for(const original of addedManifest?.objects||[]){
+      const before=Number(original.page),after=insertAt+before;let id=String(original.id),suffix=2;
+      if(usedIds.has(id)){const baseId=`${id}:merged:p${after}`;id=baseId;while(usedIds.has(id))id=`${baseId}:${suffix++}`;}
+      const object={...structuredClone(original),id,page:after,originPage:Number(original.originPage)||before,mergeProvenance:{sourceDocumentVersionId:addedManifest?.documentVersionId||null,sourceObjectId:original.id,sourcePage:before,mergedPage:after}};
+      objects.push(object);usedIds.add(id);changes.push({operation:"merge-pages",objectId:id,sourceObjectId:original.id,pageBefore:before,pageAfter:after,identityPreserved:id===String(original.id),manifestUpdated:true,source:"added"});
+    }
+    const seed=baseManifest||addedManifest;
+    const merged={...structuredClone(seed),documentVersionId:`document:${createPdfEditIdForManifest()}`,objects,structuralRemap:{operation:{type:"merge",insertAfter:insertAt,addedPageCount:addedCount},pageCountBefore:baseCount,pageCountAfter:baseCount+addedCount,changes}};
+    const prior=String(output.getKeywords()||"").split(/,\s*/).map(value=>value.trim()).filter(value=>value&&!value.startsWith(CURRENT_VERSION_KEYWORD));
+    output.setKeywords([...prior,`${CURRENT_VERSION_KEYWORD}${encodeBase64Url(JSON.stringify(merged))}`]);
+  }
+  return new Uint8Array(await output.save());
 }
 export async function cropPdfMargins(bytes, pageNumber, margins) {
   const output=await PDFDocument.load(bytes instanceof Uint8Array?bytes.slice():bytes),page=output.getPage(pageNumber-1),{width,height}=page.getSize(),left=Math.max(0,Number(margins.left)||0),right=Math.max(0,Number(margins.right)||0),top=Math.max(0,Number(margins.top)||0),bottom=Math.max(0,Number(margins.bottom)||0);if(left+right>=width||top+bottom>=height)throw new Error("Crop margins leave no visible page");page.setCropBox(left,bottom,width-left-right,height-top-bottom);return new Uint8Array(await output.save());
