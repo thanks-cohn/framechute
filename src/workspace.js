@@ -15,6 +15,7 @@ import {
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText, createPdfPageDiagnostics } from "./documents/pdf-document.js";
+import { calculatePdfTextAutofit, sourceOwnershipRectForEdit } from "./documents/pdf-forensics.js";
 import { clampPdfZoom, fitPdfScale, pdfRectToViewport } from "./documents/pdf-geometry.js";
 import { createPdfMarginState, derivePdfContentRect, marginsForPage, normalizePdfMargins, reconcileEditableGeometryToContentBounds, constrainRectToLayoutBounds, constrainTranslationToLayoutBounds, constrainResizeToLayoutBounds } from "./documents/pdf-layout-bounds.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
@@ -652,10 +653,15 @@ function syncPdfReplacementFieldMask(textLayer, edit, display, viewport) {
   const pad = Math.max(1, 1.5 * (viewport?.scale || 1));
   const layerWidth = textLayer.clientWidth;
   const layerHeight = textLayer.clientHeight;
-  const left = Math.max(0, Math.min(layerWidth, display.left - pad));
-  const top = Math.max(0, Math.min(layerHeight, display.top - pad));
-  const right = Math.max(left, Math.min(layerWidth, display.left + display.width + pad));
-  const bottom = Math.max(top, Math.min(layerHeight, display.top + display.height + pad));
+  // Moving replacement layout never moves or expands its authority to erase
+  // source glyphs. Always project the immutable source ownership rectangle.
+  const ownership=sourceOwnershipRectForEdit(edit);
+  const projected=pdfRectToViewport(viewport,ownership);
+  const ownedDisplay={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};
+  const left = Math.max(0, Math.min(layerWidth, ownedDisplay.left - pad));
+  const top = Math.max(0, Math.min(layerHeight, ownedDisplay.top - pad));
+  const right = Math.max(left, Math.min(layerWidth, ownedDisplay.left + ownedDisplay.width + pad));
+  const bottom = Math.max(top, Math.min(layerHeight, ownedDisplay.top + ownedDisplay.height + pad));
   let mask = textLayer.querySelector(`.pdf-source-mask[data-mask-index="${CSS.escape(String(edit.index))}"][data-mask-role="field"]`);
   if (!mask) {
     mask = document.createElement("div");
@@ -941,10 +947,8 @@ registerBlockType("pdf", {
       const resolved=resolvePdfVisualTarget({x:event.clientX,y:event.clientY},candidates);
       return resolved.objectId?[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>String(node.dataset.objectId)===String(resolved.objectId))||null:null;
     };
-    textLayer.addEventListener("click", (event) => selectPdfEdit(block, pdfEditEnabled(block) ? visualTextTarget(event) : null));
-    textLayer.addEventListener("dblclick", (event) => {
+    const enterPdfTextEditing=(event,span) => {
       if (!pdfEditEnabled(block)) return;
-      const span = visualTextTarget(event);
       if (!span) {
         if (block.dataset.pdfHasSourceText === "false") {
           setStatus("This PDF page has no embedded text to edit. It appears to be image/vector content; OCR support will be needed for direct text editing.");
@@ -978,14 +982,32 @@ registerBlockType("pdf", {
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
       recordPdfGeometry(block,runtime,"selection-created",span);
+    };
+    textLayer.addEventListener("click", event => {
+      if(!pdfEditEnabled(block))return;
+      const span=visualTextTarget(event);
+      selectPdfEdit(block,span);
+      if(span&&(!event.detail||event.detail===1))enterPdfTextEditing(event,span);
+    });
+    textLayer.addEventListener("dblclick", (event) => {
+      if (!pdfEditEnabled(block)) return;
+      const span=visualTextTarget(event);if(!span)return;
+      const text=span.querySelector('.pdf-edit-text[contenteditable="true"]');
+      if(text){text.removeAttribute("contenteditable");span.classList.remove("is-editing");removePdfLiveEditMask(textLayer);}
+      selectPdfEdit(block,span);
+      span.dataset.interactionState="manipulating";
+      recordPdfGeometry(block,runtimeSources.get(block),"dblclick",span);
     });
     textLayer.addEventListener("input", event=>{
       const text=event.target.closest?.('.pdf-edit-text[contenteditable="true"]');if(!text)return;
-      const span=text.closest(".pdf-text-item"),left=Number.parseFloat(span.style.left)||0,minWidth=Number(span.dataset.editMinWidth)||(Number.parseFloat(span.style.width)||1),maxWidth=Math.max(minWidth,textLayer.clientWidth-left);
-      span.dataset.editMinWidth=String(minWidth);
-      text.style.width="max-content";const needed=Math.ceil(text.scrollWidth+4);text.style.width="100%";
-      const width=Math.min(maxWidth,Math.max(minWidth,needed)),height=Math.max(Number.parseFloat(span.style.height)||1,Math.ceil(text.scrollHeight));
-      Object.assign(span.style,{width:`${width}px`,height:`${height}px`});
+      const span=text.closest(".pdf-text-item"),left=Number.parseFloat(span.style.left)||0,top=Number.parseFloat(span.style.top)||0;
+      const previousText=text.dataset.liveText??text.dataset.before??"";
+      const computed=getComputedStyle(text),fontSize=Number.parseFloat(computed.fontSize)||12,lineHeight=Number.parseFloat(computed.lineHeight)||fontSize*1.2;
+      const probe=document.createElement("canvas").getContext("2d");probe.font=computed.font;
+      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:Number.parseFloat(span.style.width)||16,height:Number.parseFloat(span.style.height)||lineHeight},contentRect:{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:lineHeight+2,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):null,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
+      text.dataset.liveText=text.innerText;
+      span.dataset.autofitTrace=JSON.stringify(autofit.trace);
+      Object.assign(span.style,{width:`${autofit.rect.width}px`,height:`${autofit.rect.height}px`});
       createPdfLiveEditMask(textLayer,span);
     });
     textLayer.addEventListener("keydown", (event) => {

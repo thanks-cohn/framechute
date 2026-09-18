@@ -763,6 +763,8 @@ body.hide-block-headers .compact-drag-handle {
   overflow: visible;
 }
 .pdf-text-edit { color: #111; background: transparent; outline: none; overflow: hidden; z-index: 2; }
+.pdf-text-item.is-editing { background: #fff; color: #111; z-index: 5; }
+.pdf-text-item.is-editing .pdf-edit-text { display: block; min-width: 100%; min-height: 100%; color: #111; background: #fff; opacity: 1; }
 .pdf-wrapped-source {
   color: #111;
   background: transparent;

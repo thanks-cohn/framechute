@@ -4,6 +4,7 @@ import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from "./pdf-layout.js";
 import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
+import { buildPdfForensicPage } from "./pdf-forensics.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -487,11 +488,15 @@ export async function createPdfPageDiagnostics(model,edits,pageNumber,{viewport=
   const page=await model.pdf.getPage(pageNumber),actualViewport=viewport||page.getViewport({scale:1}),content=await page.getTextContent();
   const current=currentPdfEdits(edits),layout=await getPdfPageLayout(model,pageNumber,current,{page,viewport:actualViewport,content});
   const wrapEdits=imageWrapEditsForPage(actualViewport,content,current,pageNumber),masks=pdfPageMaskPlan(layout,current,wrapEdits,pageNumber);
-  const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>({id:node.id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:"current",sourceObjectId:node.id}));
+  const replacedSourceIds=new Set(current.filter(edit=>edit.page===pageNumber&&edit.sourceObjectId).map(edit=>edit.sourceObjectId));
+  const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>({id:node.id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:replacedSourceIds.has(node.id)?"superseded":"current",sourceObjectId:node.id}));
   const editObjects=current.filter(edit=>edit.page===pageNumber).map(edit=>({id:edit.id,kind:edit.kind||"replacement",page:pageNumber,text:edit.text??edit.replacement??"",pdfRect:{x:edit.x,y:edit.y,width:edit.width,height:edit.height},coordinateSpace:"pdf-points",versionState:edit.versionState,sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,maskIds:masks.filter(mask=>mask.ownerEditId===edit.id).map(mask=>mask.id)}));
   const reopened=model.reopenedReconciliation?.get(pageNumber),historical=(reopened?.historical||[]).map(object=>({...object,pdfRect:object.pdfRect,coordinateSpace:"pdf-points"}));
-  const snapshot=buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:[...sourceObjects,...editObjects,...historical],masks,observations,pageGeometry,pointerHitTest,interactionJournal,mutationJournal,selectedObjectId,editingObjectId,visualScene,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
-  return {...snapshot,contentGroups:contentGroupsFromPdfLayout(layout)};
+  const allObjects=[...sourceObjects,...editObjects,...historical];
+  const snapshot=buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:allObjects,masks,observations,pageGeometry,pointerHitTest,interactionJournal,mutationJournal,selectedObjectId,editingObjectId,visualScene,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
+  const forensicObjects=allObjects.map(object=>({...object,objectId:object.id,canonicalPdfRect:object.pdfRect,layoutRect:object.pdfRect,sourceOwnershipRect:object.kind==="replacement"?sourceMaskForEdit(current.find(edit=>edit.id===object.id)||object):object.pdfRect,semanticRole:"BODY_CONTENT",provenance:object.kind==="source-text-run"?"source-pdf":"substrate"}));
+  const forensic=buildPdfForensicPage({pageNumber,mode:"debug",objects:forensicObjects,masks,contentRect:layout.contentRect||null,journal:interactionJournal});
+  return {...snapshot,forensic,saveIntent:forensic.saveIntent,contentGroups:contentGroupsFromPdfLayout(layout)};
 }
 
 export async function pdfDocumentProperties(model, pageNumber = 1) {
@@ -529,12 +534,8 @@ export function sourceMaskForEdit(edit) {
   };
 }
 
-/**
- * A replacement owns two erase regions: its original source glyph box and its
- * current replacement field box. This makes resizing the field a deliberate
- * "erase underneath here" operation without erasing the strip between source
- * and destination when a field is moved.
- */
+/** A replacement may erase only the immutable source region it supersedes.
+ * Layout growth and movement grant occupancy, never additional erase rights. */
 export function replacementMasksForEdit(edit) {
   edit=ensurePdfEditIdentity(edit);
   const sourceObjectId=edit.sourceObjectId||`source:p${edit.page}:text:${edit.index}`;
@@ -543,16 +544,7 @@ export function replacementMasksForEdit(edit) {
     return [{...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"source",pdfRect}),...pdfRect,maskIndex:edit.index}];
   }
   const source = padPdfRect(sourceMaskForEdit(edit));
-  const field = padPdfRect({
-    x: edit.x,
-    y: edit.y,
-    width: Math.max(Number(edit.width) || 0, 2),
-    height: Math.max(Number(edit.height) || 0, 2)
-  });
-  return [
-    {...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"source",pdfRect:source}),...source,maskIndex:edit.index},
-    {...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"field",pdfRect:field}),...field,maskIndex:edit.index}
-  ];
+  return [{...createOwnedMask({ownerEditId:edit.id,sourceObjectIds:[sourceObjectId],maskRole:"source",pdfRect:source}),...source,maskIndex:edit.index}];
 }
 
 /**
@@ -570,13 +562,8 @@ export function pdfPageMaskPlan(layout, edits, wrapEdits, pageNumber) {
     ...maskEdits.filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement"),
     ...(wrapEdits||[])
   ];
-  const fieldMasks=maskEdits
-    .filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement")
-    .flatMap(replacementMasksForEdit)
-    .filter(mask=>mask.maskRole==="field");
   return Object.freeze([
-    ...semanticLiveSourceMasks(layout,sourceMaskEdits,pageNumber),
-    ...fieldMasks
+    ...semanticLiveSourceMasks(layout,sourceMaskEdits,pageNumber)
   ]);
 }
 
