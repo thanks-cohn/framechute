@@ -8,8 +8,9 @@ import {
 } from "../src/documents/pdf-layout-bounds.js";
 import {
   unionPdfRects, stablePdfContentGroupId, createPdfContentGroup,
-  translatePdfContentGroup
+  translatePdfContentGroup, contentGroupsFromPdfLayout
 } from "../src/documents/pdf-content-groups.js";
+import { createPdfPageLayout } from "../src/documents/pdf-layout.js";
 
 const page={x:0,y:0,width:612,height:792};
 const bounds={x:36,y:36,width:540,height:720};
@@ -125,4 +126,28 @@ test("oversized group reports overflow without moving members",()=>{
   const result=translatePdfContentGroup(group,{dx:20,dy:20},bounds);
   assert.equal(result.status,"overflow");
   assert.deepEqual(result.translatedMembers[0].rect,{x:0,y:0,width:600,height:20});
+});
+
+
+test("canonical page layout exposes real text and image content groups",()=>{
+  const layout=createPdfPageLayout({
+    page:1,
+    pageBounds:{x:0,y:0,width:300,height:400},
+    sourceRuns:[
+      {sourceIndex:0,sourceRef:"run-0",text:"Hello world",bounds:{x:36,y:320,width:72,height:12},fontSize:12,angle:0,paintOrder:0}
+    ],
+    edits:[
+      {id:"image:test",kind:"image",page:1,index:-1,x:120,y:220,width:80,height:60,wrapText:true}
+    ]
+  });
+  const groups=contentGroupsFromPdfLayout(layout);
+  const textGroup=groups.find(group=>group.kind==="text-block");
+  const imageGroup=groups.find(group=>group.kind==="image-block");
+  assert.ok(textGroup);
+  assert.ok(imageGroup);
+  assert.equal(textGroup.memberIds.length,1);
+  assert.deepEqual(textGroup.bounds,{x:36,y:320,width:72,height:12});
+  assert.deepEqual(imageGroup.bounds,{x:120,y:220,width:80,height:60});
+  assert.deepEqual(imageGroup.members[0].localRect,{x:0,y:0,width:80,height:60});
+  assert.equal(contentGroupsFromPdfLayout(layout).find(group=>group.kind==="image-block").id,imageGroup.id);
 });
