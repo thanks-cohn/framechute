@@ -186,7 +186,10 @@ function classifySourceRoles({runs,lines,blocks,pageBounds}) {
     else if(!role&&centerY<=bottom+edge&&block?.childIds?.length<=2){role="FOOTER";confidence=.72;evidence=["bottom-page-band","isolated-from-primary-body-flow"];}
     else {role||="BODY_CONTENT";confidence||=.98;evidence.length||evidence.push("primary-body-flow-or-insufficient-furniture-evidence");}
     const furniture=["HEADER","FOOTER","PAGE_NUMBER","WATERMARK","BACKGROUND","PRINT_MARK"].includes(role);
-    const exempt=run.allowOutsideContentBounds===true||furniture;
+    const explicitFurniture=Boolean(furniture&&run.metadata?.importedSemanticRole===role);
+    const strongAutomaticFurniture=(role==="PAGE_NUMBER"&&confidence>=.9)||(role==="WATERMARK"&&confidence>=.85);
+    const exempt=run.allowOutsideContentBounds===true||explicitFurniture||strongAutomaticFurniture;
+    if(furniture&&!exempt)evidence.push("provisional-furniture-role-not-margin-exempt");
     Object.assign(run,{semanticRole:role,roleConfidence:round(confidence),roleEvidence:Object.freeze(evidence),allowOutsideContentBounds:exempt});
     run.metadata=Object.freeze({...run.metadata,semanticRole:role,roleConfidence:round(confidence),roleEvidence:Object.freeze(evidence),allowOutsideContentBounds:exempt,parentLineId:line?.id||null,parentBlockId:block?.id||null});
   }

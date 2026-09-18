@@ -395,9 +395,7 @@ export function reconcileSemanticPageToContentBounds({
     results = [],
     issues = [];
   const candidates = objects.filter(
-    (object) =>
-      (object.semanticRole || "BODY_CONTENT") === "BODY_CONTENT" &&
-      !object.allowOutsideContentBounds,
+    (object) => !object.allowOutsideContentBounds,
   );
   const groups = new Map();
   for (const object of candidates) {

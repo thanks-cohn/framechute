@@ -9,7 +9,7 @@ const rect = value => ({
   width: Math.max(2, Number(value?.width) || 2),
   height: Math.max(2, Number(value?.height) || 2)
 });
-const sourceKey = value => value?.sourceObjectId ? `source:${value.sourceObjectId}` : `object:${value?.id}`;
+const sourceKey = value => value?.sourceObjectId ? `source:${value.sourceObjectId}:page:${Number(value.page) || 0}` : `object:${value?.id}`;
 
 /** Convert the saved current-version manifest into the same mutable object
  * contract used by newly-created editor fields. Manifest objects are not
@@ -279,7 +279,7 @@ export function remapPdfCurrentManifestForPageOperation(manifest, pageCount, ope
   if(!manifest)return null;
   const type=operation.type,page=Math.max(1,Math.min(pageCount,Number(operation.page)||1));
   const target=Math.max(1,Math.min(pageCount,Number(operation.to)||page));
-  const mapPage=value=>{const current=Number(value);if(type==="add")return current>page?current+1:current;if(type==="delete")return current===page?null:current>page?current-1:current;if(type==="move"){if(current===page)return target;if(page<target&&current>page&&current<=target)return current-1;if(page>target&&current>=target&&current<page)return current+1;}return current;};
+  const mapPage=value=>{const current=Number(value);if(type==="add"||type==="duplicate")return current>page?current+1:current;if(type==="delete")return current===page?null:current>page?current-1:current;if(type==="move"){if(current===page)return target;if(page<target&&current>page&&current<=target)return current-1;if(page>target&&current>=target&&current<page)return current+1;}return current;};
   const objects=[],changes=[];
   for(const original of manifest.objects||[]){const before=Number(original.page),after=mapPage(before);if(after==null){changes.push({operation:`${type}-page`,objectId:original.id,pageBefore:before,pageAfter:null,identityPreserved:true,manifestUpdated:true,currentDisposition:"removed"});continue;}const object={...structuredClone(original),page:after,originPage:Number(original.originPage)||before};objects.push(object);changes.push({operation:`${type}-page`,objectId:object.id,pageBefore:before,pageAfter:after,identityPreserved:true,manifestUpdated:true});}
   if(type==="duplicate")for(const original of (manifest.objects||[]).filter(object=>Number(object.page)===page)){let id=`${original.id}:clone:p${page+1}`,suffix=2;while(objects.some(object=>object.id===id))id=`${original.id}:clone:p${page+1}:${suffix++}`;const clone={...structuredClone(original),id,page:page+1,originPage:Number(original.originPage)||page,cloneProvenance:{sourceObjectId:original.id,originPage:page,duplicatePage:page+1,operation:"duplicate-page"}};objects.push(clone);changes.push({operation:"duplicate-page",objectId:id,sourceObjectId:original.id,pageBefore:page,pageAfter:page+1,identityPreserved:false,manifestUpdated:true,cloneProvenance:clone.cloneProvenance});}
