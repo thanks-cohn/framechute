@@ -14,7 +14,7 @@ import {
   storeHandle
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
-import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText, createPdfPageDiagnostics } from "./documents/pdf-document.js";
+import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, inferPdfSourceFontFamily, extractSemanticPdfText, createPdfPageDiagnostics } from "./documents/pdf-document.js";
 import { calculatePdfTextAutofit, sourceOwnershipRectForEdit } from "./documents/pdf-forensics.js";
 import { beginPdfManipulation, beginPdfTextInteraction, capturePdfSourceOwnership, commitPdfTextEdit, createPdfRuntimeTruth, endPdfManipulation, projectPdfContentRect, projectPdfSourceMask, restorePdfRuntimeTruth, runtimeTruthDiagnostics, updatePdfLiveText } from "./documents/pdf-runtime-truth.js";
 import { clampPdfZoom, fitPdfScale, pdfRectToViewport } from "./documents/pdf-geometry.js";
@@ -649,7 +649,8 @@ function applyPdfTextCommit(block, span, { text, layoutRect, before, sourceOwner
   else {
     const field=span.querySelector(".pdf-edit-text"),fontSize=Math.max(4,Math.min(144,Number(field?.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
     const ownership=sourceOwnershipRect||geometry;
-    edit=ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement:text,...geometry,sourceX:ownership.x,sourceY:ownership.y,sourceWidth:ownership.width,sourceHeight:ownership.height,fontFamily:"Helvetica",fontSize,rotation:0});
+    const fontFamily=field?.dataset.pendingFontFamily||inferPdfSourceFontFamily(original,runtime.pageData.content.styles);
+    edit=ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement:text,...geometry,sourceX:ownership.x,sourceY:ownership.y,sourceWidth:ownership.width,sourceHeight:ownership.height,fontFamily,fontSize,rotation:0});
     runtime.edits.push(edit);
   }
   reflowPdfTextEditGeometry(edit);setDocumentDirty(block,true);return {changed:true,edit};
@@ -658,7 +659,14 @@ function applyPdfTextCommit(block, span, { text, layoutRect, before, sourceOwner
 function commitActivePdfText(block,cause="commit",{cancel=false,rerender=false}={}){
   const runtime=runtimeSources.get(block),truth=runtime?.truth;if(!truth)return {changed:false,reason:"no-runtime-truth"};
   const result=commitPdfTextEdit(truth,{cause,cancel});
-  const textLayer=block.querySelector(".pdf-text-layer");removePdfLiveEditMask(textLayer);
+  const textLayer=block.querySelector(".pdf-text-layer");
+  if(result.changed&&result.edit?.kind==="replacement"&&runtime?.pageData?.viewport){
+    // Never expose one frame where the replacement and original canvas glyph
+    // are both visible. Install the persistent ownership mask before removing
+    // the transient editing mask; the next render will rebuild both atomically.
+    syncPdfReplacementSourceMask(textLayer,result.edit,runtime.pageData.viewport);
+    removePdfLiveEditMask(textLayer);
+  }else removePdfLiveEditMask(textLayer);
   if(result.changed&&rerender)void setPdfPage(block,block.dataset.currentPage);
   return result;
 }
@@ -755,7 +763,10 @@ window.addEventListener("framechute:pdf-context-command", event => {
 });
 
 async function initializePdfRuntime(block,{model,handle=null,state={},previous=null,structurallyDirty=Boolean(state.structurallyDirty)}={}){
-  const truth=createPdfRuntimeTruth({model,workspaceEdits:Array.isArray(state.edits)?state.edits:[],mode:getPdfDiagnosticMode(block)}),edits=truth.edits;
+  // V24 briefly persisted automatic margin-reconstruction edits. They were
+  // never user-authored and must not survive as phantom replacement layers.
+  const restoredEdits=Array.isArray(state.edits)?state.edits.filter(edit=>edit?.marginReconstructed!==true):[];
+  const truth=createPdfRuntimeTruth({model,workspaceEdits:restoredEdits,mode:getPdfDiagnosticMode(block)}),edits=truth.edits;
   const runtime={handle,model,edits,truth,marginState:createPdfMarginState(state.pdfLayoutMargins||previous?.marginState),structurallyDirty,zoom:state.zoom??previous?.zoom,fitMode:state.fitMode??previous?.fitMode??(!state.zoom?"page":null)};
   runtime.serialize=()=>serializeEditedPdf(model,runtime.edits);runtimeSources.set(block,runtime);return runtime;
 }
@@ -1024,10 +1035,11 @@ registerBlockType("pdf", {
       const existing=runtime?.edits?.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
       const original=index>=0?runtime?.pageData?.content?.items?.[index]:null;
       const fontSize=existing?.fontSize??inferPdfSourceFontSize(original,12),controls=block.querySelector(".pdf-edit-controls");
+      const fontFamily=existing?.fontFamily??inferPdfSourceFontFamily(original,runtime?.pageData?.content?.styles);
       if(!controls)return;
       controls.hidden=false;
       controls.querySelector(".pdf-font-size").value=String(Math.round(fontSize*10)/10);
-      controls.querySelector(".pdf-font-family").value=existing?.fontFamily||"Helvetica";
+      controls.querySelector(".pdf-font-family").value=fontFamily;
       if(span?.classList.contains("pdf-text-edit"))selectPdfEdit(block,span);
     };
     const enterPdfTextEditing=(event,span,{showControls=false,preserveSelection=false}={}) => {
@@ -1057,7 +1069,9 @@ registerBlockType("pdf", {
       const initialDisplay={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};
       const sourceOwnership=capturePdfSourceOwnership({edit:existing,sourceRect:viewportRectToPdf(runtime.pageData.viewport,initialDisplay)});
       const initialFontSize = existing?.fontSize ?? inferPdfSourceFontSize(original, 12);
+      const initialFontFamily = existing?.fontFamily ?? inferPdfSourceFontFamily(original, runtime?.pageData?.content?.styles);
       text.dataset.pendingFontSize = String(initialFontSize);
+      text.dataset.pendingFontFamily = initialFontFamily;
       const controls = block.querySelector(".pdf-edit-controls");
       if (controls) controls.hidden = !showControls;
       if(showControls){showPdfTextControls(block,span);recordPdfMutation(block,runtime,"pdf-edit-controls-revealed",beforeGeometry);}
@@ -1074,7 +1088,9 @@ registerBlockType("pdf", {
         getEdit:()=>runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image")||null,
         readLayoutRect:node=>({left:parseFloat(node.style.left),top:parseFloat(node.style.top),width:parseFloat(node.style.width),height:parseFloat(node.style.height)}),
         apply:payload=>applyPdfTextCommit(block,span,{...payload,sourceOwnershipRect:sourceOwnership}),
-        removeLiveMask:()=>removePdfLiveEditMask(textLayer)
+        // commitActivePdfText owns the handoff from transient edit mask to
+        // persistent source-ownership mask so there is never a naked frame.
+        removeLiveMask:()=>{}
       }});
       recordPdfGeometry(block,runtime,"after-contenteditable",span);
       text.focus({preventScroll:true});
@@ -1144,6 +1160,7 @@ registerBlockType("pdf", {
       const text = event.target.closest('.pdf-edit-text[contenteditable="true"]');
       if (!text) return;
       delete text.dataset.pendingFontSize;
+      delete text.dataset.pendingFontFamily;
       const result=commitActivePdfText(block,"focusout");
       if(result.changed)void setPdfPage(block,block.dataset.currentPage);
     });
