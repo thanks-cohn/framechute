@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [html,css,workspace,toolbar]=await Promise.all([
+const [html,css,workspace,toolbar,pdfDocument]=await Promise.all([
   readFile(new URL("../src/workspace.html",import.meta.url),"utf8"),
   readFile(new URL("../src/workspace.css",import.meta.url),"utf8"),
   readFile(new URL("../src/workspace.js",import.meta.url),"utf8"),
-  readFile(new URL("../src/pdf-popdowns.js",import.meta.url),"utf8")
+  readFile(new URL("../src/pdf-popdowns.js",import.meta.url),"utf8"),
+  readFile(new URL("../src/documents/pdf-document.js",import.meta.url),"utf8")
 ]);
 
 test("toolbar contains one stable accessible Margins control and reset path",()=>{
@@ -37,4 +38,12 @@ test("workspace persists independent margin state and uses canonical constraints
   assert.match(workspace,/constrainTranslationToLayoutBounds/);
   assert.match(workspace,/constrainResizeToLayoutBounds/);
   assert.match(workspace,/reconcileEditableGeometryToContentBounds/);
+});
+
+
+test("ordinary PDF render preserves imported source instead of authoring margin replacements",()=>{
+  assert.match(workspace,/applySourceMarginReconciliation:false/);
+  assert.doesNotMatch(workspace,/for\s*\(const edit of result\.sourceMarginEdits/);
+  assert.match(pdfDocument,/options\.applySourceMarginReconciliation===true/);
+  assert.match(pdfDocument,/Never silently turn untouched source glyphs into Helvetica replacement/);
 });
