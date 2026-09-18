@@ -24,6 +24,7 @@ This run must also use that observability to fix the currently exposed correctne
 - original/source PDF body text can remain outside active margins while new Substrate text is constrained,
 - top/bottom margin violations by original text can remain visible,
 - Save can resurrect stale/cut-off source glyph fragments from the original byte stream,
+- **a saved PDF reopened in Substrate can visibly contain the OLD ORIGINAL TEXT underneath the new replacement text, producing double text / overlay-on-original behavior**,
 - live and saved visibility can diverge,
 - transient states can disagree with committed state.
 
@@ -980,6 +981,105 @@ Add invariants:
 
 ---
 
+# 22A. SAVED PDF MUST NOT CONTAIN VISIBLE OLD TEXT UNDER REPLACEMENTS
+
+Current severe bug:
+
+> After saving an edited PDF and reopening that saved file, the old original text can still be visibly present underneath the replacement text.
+
+This has been discussed before and is NOT acceptable as a mere PDF extraction artifact.
+
+Distinguish two different facts:
+
+1. the original PDF byte/content stream may still contain historical text operators,
+2. the current VISUAL document must not render that superseded text.
+
+A saved PDF may preserve historical source internally only if it is guaranteed to remain non-visible and non-interactive according to the current-version model.
+
+The saved/reopened visual result must be:
+
+```text
+CURRENT REPLACEMENT ONLY
+```
+
+never:
+
+```text
+OLD ORIGINAL TEXT
++ CURRENT REPLACEMENT ON TOP
+```
+
+Create explicit diagnostics for each replacement:
+
+- original source object ID,
+- original source rect,
+- sourceOwnershipRect,
+- source mask rect(s),
+- mask paint order,
+- replacement paint order,
+- expected saved visibility of original,
+- actual reopened visibility of original,
+- whether original text is still extractable,
+- whether extractable-but-hidden vs visibly rendered,
+- whether a current-version manifest identifies it as superseded.
+
+Add issue codes such as:
+
+- `PDF_SAVED_OLD_TEXT_VISIBLE_UNDER_REPLACEMENT`
+- `PDF_REOPEN_DOUBLE_TEXT`
+- `PDF_SAVE_SOURCE_MASK_MISSING`
+- `PDF_SAVE_SOURCE_MASK_INCOMPLETE`
+- `PDF_SAVE_PAINT_ORDER_WRONG`
+- `PDF_REOPEN_SUPERSEDED_SOURCE_RENDERED`
+
+Important:
+
+Do NOT declare success merely because the new text exists.
+
+Do NOT declare success merely because the old source is marked historical in metadata.
+
+Do NOT declare success merely because the old source can be found in text extraction.
+
+The acceptance criterion is visual/current-document truth:
+
+> **Superseded source text must not be visibly rendered beneath or beside its replacement after Save and reopen.**
+
+If keeping original PDF operators in the stream makes this unreliable, implement the stronger serialization strategy required for edited regions.
+
+Possible strategies may include:
+
+- exact owned source masking before replacement draw,
+- rebuilding the affected region from the current semantic model,
+- flattening a current-version presentation layer for changed regions,
+- or another standards-compatible deterministic method.
+
+Choose based on correctness, not minimum code churn.
+
+The serializer must make paint order explicit:
+
+```text
+original source
+→ owned erase/mask
+→ current replacement
+```
+
+and reopen must preserve that visual ordering.
+
+Add an in-memory round-trip test:
+
+1. load fixture PDF,
+2. replace a source text object,
+3. save,
+4. reopen saved bytes,
+5. render/inspect the affected region using available tooling,
+6. verify old visible source is absent,
+7. verify replacement is present exactly once,
+8. verify current-version identity/reconciliation remains coherent.
+
+If a full browser render is unavailable in CI, add the strongest deterministic structural test possible and clearly separate it from browser visual verification.
+
+---
+
 # 23. POINTER / HIT-TEST EXPLANATION
 
 Extend current pointer hit-test diagnostics into an explicit explanation API.
@@ -1582,6 +1682,8 @@ Reopen.
 There must be:
 
 - no stale source resurrection,
+- **no old original text visibly underneath replacement text**, 
+- replacement text appears exactly once visually,
 - no terminal glyph remnants,
 - no partial glyphs outside margins,
 - no difference between live intended visibility and reopened visibility.
@@ -1683,6 +1785,8 @@ At the end of this run, Codex / ChatGPT / future agents should be able to inspec
 - What moved after this drop?
 - Does the saved geometry match live geometry?
 - Can a superseded source glyph reappear on reopen?
+- Why is old original text visible underneath this saved replacement?
+- Did Save mask/rebuild the owned source region before drawing the replacement?
 
 without guessing from screenshots.
 
