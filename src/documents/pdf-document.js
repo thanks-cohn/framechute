@@ -2,6 +2,7 @@ import * as pdfjs from "../vendor/pdf.mjs";
 import { PDFDocument, StandardFonts, rgb, degrees } from "../vendor/pdf-lib.mjs";
 import { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from "./pdf-layout.js";
+import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
@@ -489,7 +490,8 @@ export async function createPdfPageDiagnostics(model,edits,pageNumber,{viewport=
   const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>({id:node.id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:"current",sourceObjectId:node.id}));
   const editObjects=current.filter(edit=>edit.page===pageNumber).map(edit=>({id:edit.id,kind:edit.kind||"replacement",page:pageNumber,text:edit.text??edit.replacement??"",pdfRect:{x:edit.x,y:edit.y,width:edit.width,height:edit.height},coordinateSpace:"pdf-points",versionState:edit.versionState,sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,maskIds:masks.filter(mask=>mask.ownerEditId===edit.id).map(mask=>mask.id)}));
   const reopened=model.reopenedReconciliation?.get(pageNumber),historical=(reopened?.historical||[]).map(object=>({...object,pdfRect:object.pdfRect,coordinateSpace:"pdf-points"}));
-  return buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:[...sourceObjects,...editObjects,...historical],masks,observations,pageGeometry,pointerHitTest,interactionJournal,mutationJournal,selectedObjectId,editingObjectId,visualScene,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
+  const snapshot=buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:[...sourceObjects,...editObjects,...historical],masks,observations,pageGeometry,pointerHitTest,interactionJournal,mutationJournal,selectedObjectId,editingObjectId,visualScene,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
+  return {...snapshot,contentGroups:contentGroupsFromPdfLayout(layout)};
 }
 
 export async function pdfDocumentProperties(model, pageNumber = 1) {
