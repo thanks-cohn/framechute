@@ -234,16 +234,21 @@ export function reconcileReopenedPdfObjects(extracted,expectedCurrent,{position=
     const ef=semanticFingerprint(expected);
     const candidates=objects.filter(object=>object.page===expected.page&&cleanText(object.text).toLocaleLowerCase()===ef.text)
       .map(object=>({object,match:scoreCandidate(expected,object,{position,size:3,fontSize:1})}))
-      .filter(item=>item.match.score<100).sort((a,b)=>a.match.score-b.match.score||b.object.paintOrder-a.object.paintOrder);
+      // Saved field geometry is interaction geometry, not a promise that the
+      // glyph ink fills the field. Exact page/text identity remains valid when
+      // a wide field contains a short replacement, so rank geometric drift
+      // instead of discarding the only authoritative candidate.
+      .sort((a,b)=>a.match.score-b.match.score||b.object.paintOrder-a.object.paintOrder);
     if(!candidates.length){issues.push({severity:"error",code:"MISSING_CURRENT_OBJECT",objectId:expected.id});continue;}
     if(candidates[1]&&candidates[0].match.score===candidates[1].match.score&&candidates[0].object.paintOrder===candidates[1].object.paintOrder){issues.push({severity:"error",code:"AMBIGUOUS_CORRESPONDENCE",objectId:expected.id});continue;}
     const current=candidates[0].object;current.replacementObjectId=expected.id;current.sourceObjectId=expected.sourceObjectId||null;current.derivedFrom=expected.id;
     const expectedRect=expected.pdfRect||expected.rect||expected.bounds;
+    const ownershipRect=expected.sourceOwnershipRect||expected.sourceRect||expectedRect;
     for(const object of objects){
       if(object===current||object.page!==current.page||object.paintOrder>=current.paintOrder)continue;
-      const overlap=intersectionRecord(object.pdfRect||object.rect||object.bounds,expectedRect);
+      const overlap=intersectionRecord(object.pdfRect||object.rect||object.bounds,ownershipRect);
       const rect=object.pdfRect||object.rect||object.bounds;
-      if(overlap.ok&&overlap.overlapArea>=Math.min(rect.width*rect.height,expectedRect.width*expectedRect.height)*.5){object.versionState="historical";object.supersededBy=current.id;object.ownerEditId=expected.id;}
+      if(overlap.ok&&overlap.overlapArea>=Math.min(rect.width*rect.height,ownershipRect.width*ownershipRect.height)*.5){object.versionState="historical";object.supersededBy=current.id;object.ownerEditId=expected.id;}
     }
   }
   return {current:objects.filter(o=>o.versionState==="current"),historical:objects.filter(o=>o.versionState==="historical"),objects,issues};

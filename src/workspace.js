@@ -16,6 +16,7 @@ import {
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, extractSemanticPdfText, createPdfPageDiagnostics } from "./documents/pdf-document.js";
 import { calculatePdfTextAutofit, sourceOwnershipRectForEdit } from "./documents/pdf-forensics.js";
+import { beginPdfManipulation, beginPdfTextInteraction, commitPdfTextEdit, createPdfRuntimeTruth, endPdfManipulation, projectPdfContentRect, runtimeTruthDiagnostics, updatePdfLiveText } from "./documents/pdf-runtime-truth.js";
 import { clampPdfZoom, fitPdfScale, pdfRectToViewport } from "./documents/pdf-geometry.js";
 import { createPdfMarginState, derivePdfContentRect, marginsForPage, normalizePdfMargins, reconcileEditableGeometryToContentBounds, constrainRectToLayoutBounds, constrainTranslationToLayoutBounds, constrainResizeToLayoutBounds } from "./documents/pdf-layout-bounds.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
@@ -495,6 +496,7 @@ function setDocumentDirty(block, dirty) {
 async function saveNativeDocument(block, saveAs = false) {
   const runtime = runtimeSources.get(block);
   if (!runtime?.serialize) throw new Error("Reconnect the original document before saving.");
+  commitActivePdfText(block, "save");
   const source = getSourceRecord(block);
   const extension = block.dataset.blockType;
   const filename = block.querySelector(".block-name")?.value || source?.displayName || `document.${extension}`;
@@ -538,6 +540,10 @@ async function setPdfPage(block, page) {
   const runtime = runtimeSources.get(block);
   const nextPage = Math.min(clampInteger(page, 1), runtime?.model?.pageCount || Infinity);
 
+  if (runtime?.truth?.state.interaction === "editing" && nextPage !== Number(block.dataset.currentPage || 1)) {
+    commitActivePdfText(block, "page-change");
+  }
+
   input.value = String(nextPage);
   block.dataset.currentPage = String(nextPage);
 
@@ -549,9 +555,12 @@ async function setPdfPage(block, page) {
     const initialPageBounds=viewportRectToPdf(base,{left:0,top:0,width:base.width,height:base.height}),initialMargins=marginsForPage(runtime.marginState,nextPage,initialPageBounds),initialContentRect=derivePdfContentRect(initialPageBounds,initialMargins);
     if(runtime.marginState.constraintsEnabled)reconcileEditableGeometryToContentBounds({edits:runtime.edits,contentRect:initialContentRect,page:nextPage});
     try {
+      runtime.truth?.record("rerender",{cause:"page-render-start",actual:{page:nextPage}});
       const result = await renderPdfPage(runtime.model, nextPage, block.querySelector(".pdf-canvas"), block.querySelector(".pdf-text-layer"), runtime.edits, {scale:runtime.zoom, searchQuery:runtime.search?.query, onRenderTask:task=>runtime.renderTask=task});
       if (token !== runtime.renderToken) return;
       runtime.pageData = result;
+      runtime.truth?.generations.advance("render");
+      runtime.truth?.record("rerender",{cause:"page-render-complete",actual:{page:nextPage}});
       renderPdfMarginGuides(block,runtime);
       const hasSourceText = result.content.items.some(item => item.str?.trim());
       block.dataset.pdfHasSourceText = hasSourceText ? "true" : "false";
@@ -612,6 +621,41 @@ function selectPdfEdit(block, span) {
   controls.hidden = edit?.kind === "image";
   if(edit?.kind !== "image")controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
   if(edit?.kind !== "image")controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
+}
+
+function applyPdfTextCommit(block, span, { text, layoutRect, before }) {
+  const runtime=runtimeSources.get(block);if(!runtime?.pageData||!span)return {changed:false,edit:before};
+  const index=Number(span.dataset.index),page=Number(block.dataset.currentPage||1);
+  if(index<0){
+    const edit=before||runtime.edits.find(item=>item.page===page&&item.index===index);
+    if(!edit)return {changed:false,edit:null};
+    const geometry=layoutRect?viewportRectToPdf(runtime.pageData.viewport,layoutRect):null;
+    const changed=edit.text!==text||Boolean(geometry&&["x","y","width","height"].some(key=>edit[key]!==geometry[key]));
+    if(changed){pushPdfHistory(runtime);edit.text=text;if(geometry)Object.assign(edit,geometry);reflowPdfTextEditGeometry(edit);setDocumentDirty(block,true);}
+    return {changed,edit};
+  }
+  const original=runtime.pageData.content.items[index];if(!original)return {changed:false,edit:before};
+  const existing=before||runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
+  if(text===(existing?.replacement??original.str))return {changed:false,edit:existing};
+  pushPdfHistory(runtime);
+  if(text===original.str){if(existing)runtime.edits.splice(runtime.edits.indexOf(existing),1);setDocumentDirty(block,true);return {changed:true,edit:null};}
+  const geometry=viewportRectToPdf(runtime.pageData.viewport,layoutRect);
+  let edit=existing;
+  if(edit){edit.replacement=text;Object.assign(edit,geometry);}
+  else {
+    const field=span.querySelector(".pdf-edit-text"),fontSize=Math.max(4,Math.min(144,Number(field?.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
+    edit=ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement:text,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0});
+    runtime.edits.push(edit);
+  }
+  reflowPdfTextEditGeometry(edit);setDocumentDirty(block,true);return {changed:true,edit};
+}
+
+function commitActivePdfText(block,cause="commit",{cancel=false,rerender=false}={}){
+  const runtime=runtimeSources.get(block),truth=runtime?.truth;if(!truth)return {changed:false,reason:"no-runtime-truth"};
+  const result=commitPdfTextEdit(truth,{cause,cancel});
+  const textLayer=block.querySelector(".pdf-text-layer");removePdfLiveEditMask(textLayer);
+  if(result.changed&&rerender)void setPdfPage(block,block.dataset.currentPage);
+  return result;
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
 
@@ -706,8 +750,9 @@ async function loadPdfHandle(block, handle, state = {}) {
   if (!file) throw new Error("PDF could not be read");
 
   const model = await openPdfDocument(await file.arrayBuffer());
-  const edits = Array.isArray(state.edits) ? structuredClone(state.edits).map(edit=>ensurePdfEditIdentity(edit)) : [];
-  const runtime = { handle, model, edits, marginState:createPdfMarginState(state.pdfLayoutMargins), structurallyDirty: Boolean(state.structurallyDirty), zoom: state.zoom, fitMode: state.fitMode || (!state.zoom ? "page" : null) };
+  const truth=createPdfRuntimeTruth({model,workspaceEdits:Array.isArray(state.edits)?state.edits:[],mode:getPdfDiagnosticMode(block)});
+  const edits=truth.edits;
+  const runtime = { handle, model, edits, truth, marginState:createPdfMarginState(state.pdfLayoutMargins), structurallyDirty: Boolean(state.structurallyDirty), zoom: state.zoom, fitMode: state.fitMode || (!state.zoom ? "page" : null) };
   runtime.serialize = () => serializeEditedPdf(model, edits);
   runtimeSources.set(block, runtime);
   setPdfEditMode(block, state.editMode !== false);
@@ -715,7 +760,7 @@ async function loadPdfHandle(block, handle, state = {}) {
   setDocumentDirty(block, Boolean(state.dirty));
   await setPdfPage(block, state.page ?? block.dataset.currentPage ?? 1);
 }
-async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfDocument(bytes),edits=Array.isArray(state.edits)?structuredClone(state.edits).map(edit=>ensurePdfEditIdentity(edit)):[],runtime={handle:null,model,edits,marginState:createPdfMarginState(state.pdfLayoutMargins),structurallyDirty:Boolean(state.structurallyDirty),zoom:state.zoom,fitMode:state.fitMode||(!state.zoom?"page":null)};runtime.serialize=()=>serializeEditedPdf(model,edits);runtimeSources.set(block,runtime);setPdfEditMode(block,state.editMode!==false);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
+async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfDocument(bytes),truth=createPdfRuntimeTruth({model,workspaceEdits:Array.isArray(state.edits)?state.edits:[],mode:getPdfDiagnosticMode(block)}),edits=truth.edits,runtime={handle:null,model,edits,truth,marginState:createPdfMarginState(state.pdfLayoutMargins),structurallyDirty:Boolean(state.structurallyDirty),zoom:state.zoom,fitMode:state.fitMode||(!state.zoom?"page":null)};runtime.serialize=()=>serializeEditedPdf(model,edits);runtimeSources.set(block,runtime);setPdfEditMode(block,state.editMode!==false);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
 
 async function applyPdfPageOperation(block, operation) {
   const previous = runtimeSources.get(block); if (!previous?.model) return;
@@ -883,7 +928,7 @@ registerBlockType("pdf", {
     block.querySelector(".pdf-search-prev").addEventListener("click",()=>stepSearch(-1));block.querySelector(".pdf-search-next").addEventListener("click",()=>stepSearch(1));
     block.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="f"&&!event.target.closest('[contenteditable="true"]')){event.preventDefault();showSearch();}if(event.key==="Escape"&&!searchBox.hidden){event.preventDefault();block.querySelector(".pdf-search-close").click();}if(!event.target.closest("input,textarea,select,[contenteditable=true]")){if(event.key==="PageUp"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)-1);}if(event.key==="PageDown"){event.preventDefault();void setPdfPage(block,Number(block.dataset.currentPage)+1);}if(event.key==="Home"){event.preventDefault();void setPdfPage(block,1);}if(event.key==="End"){event.preventDefault();void setPdfPage(block,runtimeSources.get(block)?.model.pageCount);}}});
     block.querySelector(".pdf-properties").addEventListener("click",async event=>{const runtime=runtimeSources.get(block);if(!runtime)return;const data=await pdfDocumentProperties(runtime.model,Number(block.dataset.currentPage));event.currentTarget.closest(".pdf-popdown").querySelector(".pdf-properties-list").replaceChildren(...Object.entries(data).map(([key,value])=>{const row=document.createElement("div");row.innerHTML=`<strong>${key.replace(/[A-Z]/g,m=>` ${m}`).replace(/^./,m=>m.toUpperCase())}</strong><span></span>`;row.lastChild.textContent=value||"—";return row;}));});
-    block.querySelector(".pdf-copy-diagnostics").addEventListener("click",async()=>{const runtime=runtimeSources.get(block);if(!runtime)return;try{const page=Number(block.dataset.currentPage||1),telemetry=pdfTelemetry(runtime),root=block.querySelector(".pdf-text-layer"),observations=capturePdfPageDomObservations(root,{state:"idle"}),selectedObjectId=block.querySelector(".pdf-text-item.is-selected")?.dataset.objectId||null,editingObjectId=block.querySelector('.pdf-text-item .pdf-edit-text[contenteditable="true"]')?.closest(".pdf-text-item")?.dataset.objectId||null,pageGeometry=capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport}),visualScene=buildPdfVisualScene(block,runtime,{mode:getPdfDiagnosticMode(block)==="deep"?"deep":"debug",observations,pageGeometry,hoveredObjectId:telemetry.hoveredObjectId,selectedObjectId,editingObjectId,pointer:telemetry.lastPointer});const diagnostics=await createPdfPageDiagnostics(runtime.model,runtime.edits,page,{viewport:runtime.pageData?.viewport,observations,pageGeometry,pointerHitTest:telemetry.lastPointer,interactionJournal:telemetry.interactions.snapshot(),mutationJournal:telemetry.mutations.snapshot(),selectedObjectId,editingObjectId,visualScene});diagnostics.marginGuidesVisible=runtime.marginState.guidesVisible;diagnostics.marginConstraintsEnabled=runtime.marginState.constraintsEnabled;diagnostics.pdfMargins=runtime.marginDiagnostics?.margins||pdfLayoutForPage(runtime,page)?.margins;diagnostics.contentRect=runtime.marginDiagnostics?.contentRect||pdfLayoutForPage(runtime,page)?.contentRect;diagnostics.projectedGuides=runtime.marginDiagnostics?.projectedGuides||null;diagnostics.activeGuideDrag=runtime.marginDiagnostics?.activeGuideDrag||null;diagnostics.layoutViolations=runtime.marginDiagnostics?.reconciliation?.results?.filter(item=>!item.violations.inside)||[];if(!Array.isArray(diagnostics.contentGroups))diagnostics.contentGroups=[];await navigator.clipboard.writeText(JSON.stringify(diagnostics,null,2));setStatus(`Copied PDF page ${page} diagnostics (${diagnostics.objects.length} objects, ${diagnostics.issues.length} issues).`);}catch(error){console.error(error);setStatus("Could not copy PDF page diagnostics.");}});
+    block.querySelector(".pdf-copy-diagnostics").addEventListener("click",async()=>{const runtime=runtimeSources.get(block);if(!runtime)return;try{const page=Number(block.dataset.currentPage||1),telemetry=pdfTelemetry(runtime),root=block.querySelector(".pdf-text-layer"),observations=capturePdfPageDomObservations(root,{state:"idle"}),selectedObjectId=block.querySelector(".pdf-text-item.is-selected")?.dataset.objectId||null,editingObjectId=block.querySelector('.pdf-text-item .pdf-edit-text[contenteditable="true"]')?.closest(".pdf-text-item")?.dataset.objectId||null,pageGeometry=capturePdfPageGeometry(block,{viewport:runtime.pageData?.viewport}),visualScene=buildPdfVisualScene(block,runtime,{mode:getPdfDiagnosticMode(block)==="deep"?"deep":"debug",observations,pageGeometry,hoveredObjectId:telemetry.hoveredObjectId,selectedObjectId,editingObjectId,pointer:telemetry.lastPointer});const diagnostics=await createPdfPageDiagnostics(runtime.model,runtime.edits,page,{viewport:runtime.pageData?.viewport,observations,pageGeometry,pointerHitTest:telemetry.lastPointer,interactionJournal:telemetry.interactions.snapshot(),mutationJournal:telemetry.mutations.snapshot(),selectedObjectId,editingObjectId,visualScene});diagnostics.marginGuidesVisible=runtime.marginState.guidesVisible;diagnostics.marginConstraintsEnabled=runtime.marginState.constraintsEnabled;diagnostics.pdfMargins=runtime.marginDiagnostics?.margins||pdfLayoutForPage(runtime,page)?.margins;diagnostics.contentRect=runtime.marginDiagnostics?.contentRect||pdfLayoutForPage(runtime,page)?.contentRect;diagnostics.projectedGuides=runtime.marginDiagnostics?.projectedGuides||null;diagnostics.activeGuideDrag=runtime.marginDiagnostics?.activeGuideDrag||null;diagnostics.layoutViolations=runtime.marginDiagnostics?.reconciliation?.results?.filter(item=>!item.violations.inside)||[];diagnostics.runtimeTruth=runtimeTruthDiagnostics(runtime.truth);if(!Array.isArray(diagnostics.contentGroups))diagnostics.contentGroups=[];await navigator.clipboard.writeText(JSON.stringify(diagnostics,null,2));setStatus(`Copied PDF page ${page} diagnostics (${diagnostics.objects.length} objects, ${diagnostics.issues.length} issues).`);}catch(error){console.error(error);setStatus("Could not copy PDF page diagnostics.");}});
     block.querySelector(".pdf-thumbnails").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const render=async(canvas,number)=>{if(canvas.dataset.rendered)return;canvas.dataset.rendered="true";const page=await runtime.model.pdf.getPage(number),viewport=page.getViewport({scale:.18}),ratio=devicePixelRatio||1;canvas.width=Math.ceil(viewport.width*ratio);canvas.height=Math.ceil(viewport.height*ratio);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;await page.render({canvasContext:canvas.getContext("2d"),viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]}).promise;};const observer=new IntersectionObserver(entries=>entries.filter(entry=>entry.isIntersecting).forEach(entry=>{void render(entry.target,Number(entry.target.dataset.page));observer.unobserve(entry.target);}),{root:panel,rootMargin:"150px"});for(let number=1;number<=runtime.model.pageCount;number++){const button=document.createElement("button"),canvas=document.createElement("canvas"),label=document.createElement("span");button.type="button";canvas.dataset.page=String(number);canvas.style.aspectRatio=".72";label.textContent=String(number);button.append(canvas,label);button.addEventListener("click",()=>void setPdfPage(block,number));panel.append(button);observer.observe(canvas);}});
     block.querySelector(".pdf-outline").addEventListener("click",async()=>{const runtime=runtimeSources.get(block),panel=block.querySelector(".pdf-side-panel");if(!runtime)return;panel.hidden=false;panel.replaceChildren();const outline=await runtime.model.pdf.getOutline();const add=async(items,depth=0)=>{for(const item of items||[]){const button=document.createElement("button");button.type="button";button.textContent=item.title||"Untitled";button.style.paddingInlineStart=`${8+depth*14}px`;button.addEventListener("click",async()=>{let destination=item.dest;if(typeof destination==="string")destination=await runtime.model.pdf.getDestination(destination);if(destination?.[0])void setPdfPage(block,(await runtime.model.pdf.getPageIndex(destination[0]))+1);});panel.append(button);await add(item.items,depth+1);}};await add(outline);if(!outline?.length)panel.textContent="No document outline.";});
     block.querySelector(".pdf-side-close").addEventListener("click",()=>{block.querySelector(".pdf-side-panel").hidden=true;});
@@ -976,6 +1021,12 @@ registerBlockType("pdf", {
       if (!existing && index >= 0) createPdfLiveEditMask(textLayer, span);
       recordPdfGeometry(block,runtime,"before-contenteditable",span);
       text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");interactiveOutline.hidden=true;
+      beginPdfTextInteraction(runtime.truth,{element:text,span,edit:existing,context:{
+        getEdit:()=>runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image")||null,
+        readLayoutRect:node=>({left:parseFloat(node.style.left),top:parseFloat(node.style.top),width:parseFloat(node.style.width),height:parseFloat(node.style.height)}),
+        apply:payload=>applyPdfTextCommit(block,span,payload),
+        removeLiveMask:()=>removePdfLiveEditMask(textLayer)
+      }});
       recordPdfGeometry(block,runtime,"after-contenteditable",span);
       text.focus();
       recordPdfGeometry(block,runtime,"after-focus",span);
@@ -992,11 +1043,12 @@ registerBlockType("pdf", {
     textLayer.addEventListener("dblclick", (event) => {
       if (!pdfEditEnabled(block)) return;
       const span=visualTextTarget(event);if(!span)return;
-      const text=span.querySelector('.pdf-edit-text[contenteditable="true"]');
-      if(text){text.removeAttribute("contenteditable");span.classList.remove("is-editing");removePdfLiveEditMask(textLayer);}
+      const runtime=runtimeSources.get(block),text=span.querySelector('.pdf-edit-text[contenteditable="true"]');
+      if(text)commitActivePdfText(block,"double-click");
       selectPdfEdit(block,span);
       span.dataset.interactionState="manipulating";
-      recordPdfGeometry(block,runtimeSources.get(block),"dblclick",span);
+      beginPdfManipulation(runtime?.truth,{objectId:span.dataset.objectId,cause:"double-click"});
+      recordPdfGeometry(block,runtime,"dblclick",span);
     });
     textLayer.addEventListener("input", event=>{
       const text=event.target.closest?.('.pdf-edit-text[contenteditable="true"]');if(!text)return;
@@ -1004,11 +1056,14 @@ registerBlockType("pdf", {
       const previousText=text.dataset.liveText??text.dataset.before??"";
       const computed=getComputedStyle(text),fontSize=Number.parseFloat(computed.fontSize)||12,lineHeight=Number.parseFloat(computed.lineHeight)||fontSize*1.2;
       const probe=document.createElement("canvas").getContext("2d");probe.font=computed.font;
-      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:Number.parseFloat(span.style.width)||16,height:Number.parseFloat(span.style.height)||lineHeight},contentRect:{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:lineHeight+2,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):null,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
+      const runtime=runtimeSources.get(block),layout=pdfLayoutForPage(runtime,Number(block.dataset.currentPage||1));
+      const legalBounds=runtime.marginState.constraintsEnabled&&layout?projectPdfContentRect(runtime.pageData.viewport,layout.contentRect):null;
+      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:Number.parseFloat(span.style.width)||16,height:Number.parseFloat(span.style.height)||lineHeight},contentRect:legalBounds||{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:lineHeight+2,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):null,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
       text.dataset.liveText=text.innerText;
       span.dataset.autofitTrace=JSON.stringify(autofit.trace);
       Object.assign(span.style,{width:`${autofit.rect.width}px`,height:`${autofit.rect.height}px`});
       createPdfLiveEditMask(textLayer,span);
+      updatePdfLiveText(runtime.truth,text.innerText,{rect:autofit.rect,cause:event.inputType?.startsWith("delete")?"delete":"input"});
     });
     textLayer.addEventListener("keydown", (event) => {
       if (!pdfEditEnabled(block)) return;
@@ -1020,9 +1075,9 @@ registerBlockType("pdf", {
         const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
         return;
       }
-      if(text&&event.key==="Enter"&&!event.shiftKey){event.preventDefault();event.stopPropagation();text.blur();}
+      if(text&&event.key==="Enter"&&!event.shiftKey){event.preventDefault();event.stopPropagation();commitActivePdfText(block,"enter",{rerender:true});}
       if(text&&event.key==="Tab"){event.preventDefault();document.execCommand("insertText",false,"\t");}
-      if(text&&event.key==="Escape"){event.preventDefault();text.dataset.cancel="true";text.textContent=text.dataset.before;text.blur();}
+      if(text&&event.key==="Escape"){event.preventDefault();text.textContent=text.dataset.before;commitActivePdfText(block,"escape",{cancel:true});}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();void travelPdfHistory(block,event.shiftKey?"redo":"undo");}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){event.preventDefault();void travelPdfHistory(block,"redo");}
       if(!text&&selectedPdfEdit(block)&&["Delete","Backspace"].includes(event.key)){event.preventDefault();const runtime=runtimeSources.get(block);pushPdfHistory(runtime);runtime.edits.splice(runtime.edits.indexOf(selectedPdfEdit(block)),1);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);return;}
@@ -1031,35 +1086,17 @@ registerBlockType("pdf", {
     textLayer.addEventListener("focusout", (event) => {
       const text = event.target.closest('.pdf-edit-text[contenteditable="true"]');
       if (!text) return;
-      text.removeAttribute("contenteditable");
-      text.closest(".pdf-text-item")?.classList.remove("is-editing");
-      removePdfLiveEditMask(textLayer);
-      if(text.dataset.cancel){delete text.dataset.cancel;delete text.dataset.pendingFontSize;return;}
-      const span=text.closest(".pdf-text-item"),runtime = runtimeSources.get(block); if (!runtime?.pageData) return;
-      const index = Number(span.dataset.index),page = Number(block.dataset.currentPage || 1);
-      if(index<0){delete text.dataset.pendingFontSize;return;}
-      const original = runtime.pageData.content.items[index],replacement = text.innerText.replace(/\r\n?/g,"\n");
-      const existing = runtime.edits.find((edit) => edit.page === page && edit.index === index);
-      if(replacement===(existing?.replacement??original.str)){delete text.dataset.pendingFontSize;return;}
-      pushPdfHistory(runtime);
-      if (replacement === original.str) { if (existing) runtime.edits.splice(runtime.edits.indexOf(existing), 1); }
-      else if(existing){existing.replacement=replacement;Object.assign(existing,viewportRectToPdf(runtime.pageData.viewport,{left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)}));}
-      else {
-        const rect={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)},geometry=viewportRectToPdf(runtime.pageData.viewport,rect);
-        const fontSize=Math.max(4,Math.min(144,Number(text.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
-        runtime.edits.push(ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily:"Helvetica",fontSize,rotation:0}));
-      }
-      const committed=runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
-      if(committed)reflowPdfTextEditGeometry(committed);
       delete text.dataset.pendingFontSize;
-      setDocumentDirty(block,true);void setPdfPage(block,page);
+      const result=commitActivePdfText(block,"focusout");
+      if(result.changed)void setPdfPage(block,block.dataset.currentPage);
     });
     textLayer.addEventListener("pointerdown",event=>{
       if (!pdfEditEnabled(block)) return;
       const handle=event.target.closest(".pdf-move-handle,.pdf-resize-handle"),span=handle?.closest(".pdf-text-edit"),runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!handle||!span||!edit)return;
       event.preventDefault();event.stopPropagation();const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};pushPdfHistory(runtime);handle.setPointerCapture(event.pointerId);
-      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});syncPdfReplacementFieldMask(textLayer,edit,display,runtime.pageData.viewport);};
-      handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
+      const before={x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)};
+      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});syncPdfReplacementFieldMask(textLayer,edit,display,runtime.pageData.viewport);runtime.truth?.record(isMove?"move-update":"resize-update",{objectId:edit.id,before,requested:next,actual:{...next,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)}});};
+      handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);endPdfManipulation(runtime.truth,{objectId:edit.id,kind:handle.matches(".pdf-move-handle")?"move":"resize",before,actual:{x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)}});setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
     block.querySelector(".pdf-redo").addEventListener("click",()=>void travelPdfHistory(block,"redo"));
