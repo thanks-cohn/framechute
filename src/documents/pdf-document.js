@@ -379,7 +379,13 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   const marginReconciliation=options.contentRect&&options.marginConstraintsEnabled!==false
     ? buildPdfSourceMarginReconciliation({layout:pageLayout,contentRect:options.contentRect,existingEdits:edits})
     : null;
-  const sourceMarginEdits=marginReconciliation?.edits||[];
+  // Imported PDF source is visual truth on open. Margin analysis is diagnostic
+  // until an explicit layout operation asks SUBSTRATE to reconstruct source.
+  // Never silently turn untouched source glyphs into Helvetica replacement
+  // overlays merely because a default content rectangle exists.
+  const sourceMarginEdits=options.applySourceMarginReconciliation===true
+    ? (marginReconciliation?.edits||[])
+    : [];
   if(sourceMarginEdits.length)edits=currentPdfEdits([...edits,...sourceMarginEdits]);
   const reopened=model.reopenedReconciliation?.get(pageNumber),historicalPaintOrders=new Set((reopened?.historical||[]).map(object=>object.paintOrder));
   const reopenedCurrentByPaintOrder=new Map((reopened?.current||[]).map(object=>[object.paintOrder,object]));
