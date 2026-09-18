@@ -175,9 +175,8 @@ test("PDF Save and live preview share one semantic mask plan",()=>{
   const edits=[{kind:"replacement",id:"edit:1",page:1,index:1,sourceX:95,sourceY:101,sourceWidth:105,sourceHeight:9,x:120,y:80,width:90,height:22}];
   const plan=pdfPageMaskPlan(layout,edits,[],1);
   const source=plan.find(mask=>mask.maskRole==="source-line");
-  const field=plan.find(mask=>mask.maskRole==="field");
   assert.ok(source,"shared plan includes semantic source-line erasure");
-  assert.ok(field,"shared plan includes the same replacement-field erasure visible in the editor");
+  assert.equal(plan.some(mask=>mask.maskRole==="field"),false,"layout occupancy never becomes source erase authority");
   assert.ok(source.x+source.width>200,"terminal run cleanup reaches the semantic line tail");
 });
 
@@ -193,27 +192,24 @@ test("PDF replacement masks clamp to page/CropBox bounds",()=>{
 });
 
 
-test("PDF replacement erases both original source and current field without bridging between them",()=>{
+test("PDF replacement erases only its original source ownership region",()=>{
   const masks=replacementMasksForEdit({
     kind:"replacement",index:7,
     sourceX:10,sourceY:20,sourceWidth:40,sourceHeight:12,
     x:120,y:90,width:100,height:24
   });
-  assert.equal(masks.length,2);
+  assert.equal(masks.length,1);
   const source=masks.find(mask=>mask.maskRole==="source");
-  const field=masks.find(mask=>mask.maskRole==="field");
   assert.ok(source.x<10 && source.x+source.width>50);
-  assert.ok(field.x<120 && field.x+field.width>220);
-  assert.ok(source.x+source.width<field.x, "separate masks must not erase the strip between moved source and field");
+  assert.equal(masks.some(mask=>mask.maskRole==="field"),false);
 });
 
-test("resizing a PDF replacement field enlarges its erasure region",()=>{
+test("resizing a PDF replacement field does not enlarge its erasure authority",()=>{
   const small=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:30,height:10})
-    .find(mask=>mask.maskRole==="field");
+    .find(mask=>mask.maskRole==="source");
   const large=replacementMasksForEdit({kind:"replacement",index:1,sourceX:20,sourceY:20,sourceWidth:30,sourceHeight:10,x:20,y:20,width:160,height:36})
-    .find(mask=>mask.maskRole==="field");
-  assert.ok(large.width>small.width);
-  assert.ok(large.height>small.height);
+    .find(mask=>mask.maskRole==="source");
+  assert.deepEqual({x:large.x,y:large.y,width:large.width,height:large.height},{x:small.x,y:small.y,width:small.width,height:small.height});
 });
 
 

@@ -30,10 +30,11 @@ test("PDF toolbar enhancer normalizes on every invocation instead of trusting a 
   assert.match(source,/toolbar\.replaceChildren\(primary, formatting, secondary\)/);
 });
 
-test("PDF editing uses one outline, plain Enter commit, and live field expansion",async()=>{
+test("PDF editing uses one outline, plain Enter commit, and bidirectional live autofit",async()=>{
   const [source,css]=await Promise.all([readFile(new URL("../src/workspace.js",import.meta.url),"utf8"),readFile(new URL("../src/workspace.css",import.meta.url),"utf8")]);
   assert.match(source,/item\.classList\.contains\("is-editing"\)/);
   assert.match(source,/event\.key==="Enter"&&!event\.shiftKey/);
-  assert.match(source,/Math\.ceil\(text\.scrollWidth\+4\)/);
+  assert.match(source,/calculatePdfTextAutofit\(\{/);
+  assert.match(source,/text\.dataset\.liveText=text\.innerText/);
   assert.match(css,/\.pdf-text-item\.is-editing ~ \.pdf-interactive-outline/);
 });

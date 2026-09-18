@@ -22,9 +22,9 @@ test("an empty replacement retains its source mask", () => {
 test("page rerender mask state is derived only from current edit records", () => {
   const otherPage = { ...edit, page: 3, index: 5 };
   const masks=sourceMasksForPage([edit, otherPage], 2);
-  assert.equal(masks.length,2);
+  assert.equal(masks.length,1);
   assert.ok(masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds.includes("source:p2:text:4")));
-  assert.deepEqual(masks.map(mask=>mask.maskRole),["source","field"]);
+  assert.deepEqual(masks.map(mask=>mask.maskRole),["source"]);
   assert.deepEqual(sourceMasksForPage([], 2), []);
   assert.deepEqual(sourceMasksForPage([otherPage], 2), []);
 });
@@ -40,7 +40,7 @@ test("restored history snapshots determine mask and replacement records together
   assert.deepEqual(sourceMasksForPage(current, 2), []);
   current = redo.pop();
   assert.deepEqual(current, [edit]);
-  assert.deepEqual(sourceMasksForPage(current, 2).map(mask=>mask.maskRole),["source","field"]);
+  assert.deepEqual(sourceMasksForPage(current, 2).map(mask=>mask.maskRole),["source"]);
 });
 
 test("legacy replacements normalize to the shared edit-object model", () => {
