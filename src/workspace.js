@@ -17,6 +17,7 @@ import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, inferPdfSourceFontFamily, extractSemanticPdfText, createPdfPageDiagnostics } from "./documents/pdf-document.js";
 import { calculatePdfTextAutofit, sourceOwnershipRectForEdit } from "./documents/pdf-forensics.js";
 import { beginPdfManipulation, beginPdfTextInteraction, capturePdfSourceOwnership, commitPdfTextEdit, createPdfRuntimeTruth, endPdfManipulation, projectPdfContentRect, projectPdfSourceMask, restorePdfRuntimeTruth, runtimeTruthDiagnostics, updatePdfLiveText } from "./documents/pdf-runtime-truth.js";
+import { buildPdfAgentPageMirror, buildPdfPresentationPlan, explainPdfMirrorPoint, inspectPdfMirrorObject, validatePdfPresentation } from "./documents/pdf-presentation-plan.js";
 import { clampPdfZoom, fitPdfScale, pdfRectToViewport } from "./documents/pdf-geometry.js";
 import { createPdfMarginState, derivePdfContentRect, marginsForPage, normalizePdfMargins, reconcileEditableGeometryToContentBounds, constrainRectToLayoutBounds, constrainTranslationToLayoutBounds, constrainResizeToLayoutBounds } from "./documents/pdf-layout-bounds.js";
 import { DOCX_MIME, addDocxImage, parseDocx, serializeDocx } from "./documents/docx-document.js";
@@ -1977,12 +1978,29 @@ function captureBlock(block) {
 // Shared public bridge for utility modules. It deliberately delegates to the
 // same registry/capture/create path as built-in blocks so FCX and duplication
 // never need to inspect or clone live DOM/runtime state.
+function activePdfAgentMirror(block=null) {
+  const target=block||document.querySelector('.block[data-block-type="pdf"]:focus-within')||document.querySelector('.block[data-block-type="pdf"]');
+  const runtime=runtimeSources.get(target),renderedPlan=runtime?.pageData?.presentationPlan;
+  if(!target||!runtime||!renderedPlan)return null;
+  const sourceObjects=Object.values(renderedPlan.objects).filter(object=>object.sourceObjectId&&object.presentationState!=="HISTORICAL").map(object=>({id:object.sourceObjectId,sourceObjectId:object.sourceObjectId,page:renderedPlan.pageNumber,text:object.sourceText,pdfRect:object.geometryAncestry?.sourcePdfRect||object.sourceOwnershipRect,sourceOwnershipRect:object.sourceOwnershipRect,semanticRole:object.semanticRole}));
+  const plan=buildPdfPresentationPlan({pageNumber:renderedPlan.pageNumber,sourceObjects,currentEdits:runtime.edits,activeInteraction:runtime.truth?.state?.interaction==="editing"?{editingObjectId:runtime.truth.state.editingObjectId,liveText:runtime.truth.state.liveText}:null,selectedObjectId:target.dataset.selectedPdfObjectId||null,viewport:renderedPlan.viewport,historicalObjects:Object.values(renderedPlan.objects).filter(object=>object.presentationState==="HISTORICAL")});
+  return buildPdfAgentPageMirror({plan,documentId:runtime.model?.documentVersionId||target.dataset.blockId||null,pageBounds:pdfPageBounds(runtime),contentRect:runtime.marginDiagnostics?.contentRect||null,interaction:{selectedObjectId:target.dataset.selectedPdfObjectId||null,editingObjectId:runtime.truth?.state.editingObjectId||null,manipulatingObjectId:runtime.truth?.state.manipulatingObjectId||null},recentCausalEvents:runtime.truth?.journal?.snapshot?.()||[]});
+}
+
 window.FrameChuteWorkspace = Object.freeze({
   registerBlockType,
   createBlock,
   captureBlock,
   setPdfDiagnosticMode(block,mode){return updatePdfDiagnosticMode(block,mode);},
   capturePdfVisualScene(block,options={}){const runtime=runtimeSources.get(block);return buildPdfVisualScene(block,runtime,options);},
+  pdf:Object.freeze({
+    inspectActivePage(block=null){return activePdfAgentMirror(block);},
+    inspectObject(objectId,block=null){return inspectPdfMirrorObject(activePdfAgentMirror(block),objectId);},
+    explainObject(objectId,block=null){return inspectPdfMirrorObject(activePdfAgentMirror(block),objectId);},
+    explainPoint(point,block=null){return explainPdfMirrorPoint(activePdfAgentMirror(block),point||{});},
+    validatePresentation(block=null){const mirror=activePdfAgentMirror(block);return mirror?validatePdfPresentation(mirror.presentationPlan):{valid:false,issues:[{code:"PDF_NO_ACTIVE_PAGE",severity:"hard"}],autoSuppressedPresentations:[],generationState:{}};},
+    getRecentEvents(block=null){return activePdfAgentMirror(block)?.recentCausalEvents||[];}
+  }),
   async extractText(block) {
     const runtime=runtimeSources.get(block);
     if(block?.dataset?.blockType==="pdf"&&runtime?.model)return extractSemanticPdfText(runtime.model,runtime.edits);

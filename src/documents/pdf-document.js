@@ -6,6 +6,7 @@ import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 import { buildPdfForensicPage } from "./pdf-forensics.js";
 import { buildPdfSourceMarginReconciliation, remapPdfCurrentManifestForPageOperation } from "./pdf-runtime-truth.js";
+import { buildPdfAgentPageMirror, buildPdfPresentationPlan, validatePdfPresentation } from "./pdf-presentation-plan.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -426,7 +427,12 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.setAttribute("aria-label","Resize inserted image");
     Object.assign(element.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`}); element.append(image,move,resize); textLayer.append(element);
   }
-  const visibleMasks=pdfPageMaskPlan(pageLayout,edits,wrapEdits,pageNumber);
+  const legacyMasks=pdfPageMaskPlan(pageLayout,edits,wrapEdits,pageNumber);
+  const sourceObjects=pageLayout.nodes.filter(node=>node.kind==="source-text-run").map(node=>{const id=`source:p${pageNumber}:text:${Number(node.metadata?.sourceIndex)}`;return {id,sourceObjectId:id,page:pageNumber,text:node.text,pdfRect:node.bounds,sourceOwnershipRect:node.bounds,semanticRole:node.semanticRole};});
+  const presentationPlan=buildPdfPresentationPlan({pageNumber,sourceObjects,currentEdits:edits.filter(edit=>edit.kind!=="image"&&edit.kind!=="text"),historicalObjects:reopened?.historical||[],viewport:{scale:viewport.scale,rotation:viewport.rotation,width:viewport.width,height:viewport.height,transform:[...viewport.transform]}});
+  // Image-wrap masks have no source-backed authored owner in the control plane
+  // yet. Keep those, but canonical replacement masks come only from the plan.
+  const visibleMasks=[...legacyMasks.filter(mask=>!mask.ownerEditId),...presentationPlan.masks.map(mask=>({...mask,...mask.layoutRect}))];
   for (const mask of visibleMasks) {
     const raw = pdfRectToViewport(viewport, mask);
     const left = Math.max(0, Math.min(viewport.width, raw[0]));
@@ -453,7 +459,8 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const { left:sourceLeft, top:sourceTop, width:sourceWidth, height, angle, fontFamily:sourceFontFamily } = sourceDisplay;
     const explicit = edits.find((edit) => edit.page === pageNumber && edit.index === index && edit.kind !== "image");
     const wrapped = wrapEdits.find(edit => edit.index === index);
-    const saved = wrapped || explicit;
+    const decision=presentationPlan.objects[`source:p${pageNumber}:text:${index}`];
+    const saved = wrapped || (decision?.replacementVisible ? explicit : null);
     const span = document.createElement("span");
     span.className = "pdf-text-item"; span.dataset.index = String(index);span.dataset.viewportScale=String(scale);
     const nextItem=content.items.slice(index+1).find(candidate=>candidate.str?.trim());
@@ -502,7 +509,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
     const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Drag text field";move.textContent="↕";
     const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize text field";span.append(move,resize);textLayer.append(span);
   });
-  return { viewport, content, sourceMarginEdits, marginReconciliation };
+  return { viewport, content, sourceMarginEdits, marginReconciliation, presentationPlan };
 }
 
 export async function searchPdfDocument(model, query) {
@@ -540,14 +547,16 @@ export async function createPdfPageDiagnostics(model,edits,pageNumber,{viewport=
   const current=currentPdfEdits(edits),layout=await getPdfPageLayout(model,pageNumber,current,{page,viewport:actualViewport,content});
   const wrapEdits=imageWrapEditsForPage(actualViewport,content,current,pageNumber),masks=pdfPageMaskPlan(layout,current,wrapEdits,pageNumber);
   const replacedSourceIds=new Set(current.filter(edit=>edit.page===pageNumber&&edit.sourceObjectId).map(edit=>edit.sourceObjectId));
-  const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>({id:node.id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:replacedSourceIds.has(node.id)?"superseded":"current",sourceObjectId:node.id}));
+  const sourceObjects=layout.nodes.filter(node=>node.kind==="source-text-run").map(node=>{const id=`source:p${pageNumber}:text:${Number(node.metadata?.sourceIndex)}`;return {id,kind:node.kind,page:pageNumber,text:node.text,pdfRect:node.bounds,coordinateSpace:"pdf-points",versionState:replacedSourceIds.has(id)?"superseded":"current",sourceObjectId:id};});
   const editObjects=current.filter(edit=>edit.page===pageNumber).map(edit=>({id:edit.id,kind:edit.kind||"replacement",page:pageNumber,text:edit.text??edit.replacement??"",pdfRect:{x:edit.x,y:edit.y,width:edit.width,height:edit.height},coordinateSpace:"pdf-points",versionState:edit.versionState,sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,maskIds:masks.filter(mask=>mask.ownerEditId===edit.id).map(mask=>mask.id)}));
   const reopened=model.reopenedReconciliation?.get(pageNumber),historical=(reopened?.historical||[]).map(object=>({...object,pdfRect:object.pdfRect,coordinateSpace:"pdf-points"}));
   const allObjects=[...sourceObjects,...editObjects,...historical];
   const snapshot=buildPdfDiagnosticSnapshot({page:pageNumber,pageBoxes:{viewBox:page.view},viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},documentVersionId:model.documentVersionId||"live-unsaved",objects:allObjects,masks,observations,pageGeometry,pointerHitTest,interactionJournal,mutationJournal,selectedObjectId,editingObjectId,visualScene,invariants:[{name:"current-version-only",ok:!historical.some(object=>object.versionState==="current")},{name:"explicit-mask-ownership",ok:masks.every(mask=>mask.ownerEditId&&mask.sourceObjectIds?.length)}],issues:reopened?.issues||[]});
   const forensicObjects=allObjects.map(object=>({...object,objectId:object.id,canonicalPdfRect:object.pdfRect,layoutRect:object.pdfRect,sourceOwnershipRect:object.kind==="replacement"?sourceMaskForEdit(current.find(edit=>edit.id===object.id)||object):object.pdfRect,semanticRole:"BODY_CONTENT",provenance:object.kind==="source-text-run"?"source-pdf":"substrate"}));
   const forensic=buildPdfForensicPage({pageNumber,mode:"debug",objects:forensicObjects,masks,contentRect:layout.contentRect||null,journal:interactionJournal});
-  return {...snapshot,forensic,saveIntent:forensic.saveIntent,contentGroups:contentGroupsFromPdfLayout(layout)};
+  const presentationPlan=buildPdfPresentationPlan({pageNumber,sourceObjects,currentEdits:current.filter(edit=>edit.kind!=="image"&&edit.kind!=="text"),activeInteraction:editingObjectId?{editingObjectId}:null,selectedObjectId,viewport:{scale:actualViewport.scale,rotation:actualViewport.rotation,width:actualViewport.width,height:actualViewport.height,transform:[...actualViewport.transform]},historicalObjects:historical});
+  const agentPageMirror=buildPdfAgentPageMirror({plan:presentationPlan,documentId:model.documentVersionId||"live-unsaved",pageBounds:layout.pageBounds,contentRect:layout.contentRect,interaction:{selectedObjectId,editingObjectId},recentCausalEvents:[...interactionJournal,...mutationJournal]});
+  return {...snapshot,forensic,saveIntent:forensic.saveIntent,contentGroups:contentGroupsFromPdfLayout(layout),presentationPlan,agentPageMirror,presentationValidation:validatePdfPresentation(presentationPlan),invariantResults:presentationPlan.invariantResults,collisions:presentationPlan.collisions};
 }
 
 export async function pdfDocumentProperties(model, pageNumber = 1) {

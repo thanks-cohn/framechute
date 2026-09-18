@@ -130,9 +130,13 @@ export function currentPdfEdits(edits=[]) {
     const edit=ensurePdfEditIdentity(raw);
     if(edit.versionState==="historical"||edit.versionState==="superseded")continue;
     if(edit.sourceObjectId){
-      const prior=bySource.get(edit.sourceObjectId);
+      // A duplicated page intentionally retains immutable origin provenance.
+      // Current ownership is therefore unique per source *and page*, not per
+      // origin ID across the whole document.
+      const sourcePageKey=`${edit.sourceObjectId}:page:${Number(edit.page)||0}`;
+      const prior=bySource.get(sourcePageKey);
       if(prior){prior.versionState="superseded";prior.supersededBy=edit.id;edit.supersedes=prior.id;}
-      bySource.set(edit.sourceObjectId,edit);
+      bySource.set(sourcePageKey,edit);
     }else free.push(edit);
   }
   return [...bySource.values(),...free].sort((a,b)=>Number(a.page)-Number(b.page)||String(a.id).localeCompare(String(b.id)));
