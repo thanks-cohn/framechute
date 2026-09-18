@@ -49,6 +49,10 @@ export function hydrateReopenedPdfCurrentObjects(model, workspaceEdits = []) {
       fontSize: Math.max(4, Number(saved.fontSize) || 12),
       fontFamily: saved.fontFamily || "Helvetica",
       rotation: Number(saved.rotation) || 0,
+      semanticRole:saved.semanticRole||null,roleConfidence:Number(saved.roleConfidence)||0,roleEvidence:[...(saved.roleEvidence||[])],
+      parentLineId:saved.parentLineId||saved.sourceLineId||null,parentBlockId:saved.parentBlockId||null,
+      reconciliationSemanticUnit:saved.reconciliationSemanticUnit||null,originPage:Number(saved.originPage)||Number(saved.page)||1,
+      cloneProvenance:saved.cloneProvenance||null,
       versionState: "current",
       reopened: true,
       manipulationCapability: Object.freeze({ move: true, resize: true, editText: true })
@@ -241,15 +245,15 @@ export function projectPdfSourceMask(viewport, ownership, { padding = 0, termina
  * furniture roles are retained and exempted rather than inferred from origin. */
 export function buildPdfSourceMarginReconciliation({ layout, contentRect, existingEdits = [] } = {}) {
   const nodes=layout?.nodes||[];
-  const blocks=nodes.filter(node=>node.kind==="text-block"),lines=nodes.filter(node=>node.kind==="text-line");
-  const blockByLine=new Map();for(const block of blocks)for(const id of block.childIds||[])blockByLine.set(id,block.id);
+  const lines=new Map(nodes.filter(node=>node.kind==="text-line").map(node=>[node.id,node]));
+  const blocks=new Map(nodes.filter(node=>node.kind==="text-block").map(node=>[node.id,node]));
   const existingSources=new Set(existingEdits.map(edit=>edit.sourceObjectId).filter(Boolean));
   const source=nodes.filter(node=>node.kind==="source-text-run"&&!existingSources.has(node.id)).map(node=>{
-    const explicit=node.metadata?.semanticRole||node.semanticRole||"BODY_CONTENT";
-    const furniture=explicit!=="BODY_CONTENT";
+    const line=lines.get(node.parentId),block=blocks.get(line?.parentId),explicit=node.semanticRole||node.metadata?.semanticRole||"BODY_CONTENT";
     return {id:node.id,objectId:node.id,page:node.page,text:node.text,canonicalPdfRect:node.bounds,
-      semanticRole:explicit,allowOutsideContentBounds:furniture||node.metadata?.allowOutsideContentBounds===true,
-      lineId:node.ownerId||null,blockId:blockByLine.get(node.ownerId)||null,node};
+      semanticRole:explicit,roleConfidence:node.roleConfidence??node.metadata?.roleConfidence??0,roleEvidence:node.roleEvidence||node.metadata?.roleEvidence||[],
+      allowOutsideContentBounds:node.allowOutsideContentBounds===true||node.metadata?.allowOutsideContentBounds===true,
+      lineId:line?.id||null,blockId:block?.id||null,node};
   });
   const reconciliation=reconcileSemanticPageToContentBounds({layout:{objects:source},contentRect});
   const deltaByMember=new Map();for(const result of reconciliation.results)for(const id of result.memberIds)deltaByMember.set(id,result.actualDelta);
@@ -262,9 +266,24 @@ export function buildPdfSourceMarginReconciliation({ layout, contentRect, existi
       x:original.x+delta.dx,y:original.y+delta.dy,width:original.width,height:original.height,
       sourceX:original.x,sourceY:original.y,sourceWidth:original.width,sourceHeight:original.height,
       fontSize:Math.max(4,Number(node.style?.fontSize)||Number(node.bounds?.height)*.8||12),fontFamily:"Helvetica",rotation:0,
-      versionState:"current",marginReconstructed:true,semanticRole:"BODY_CONTENT"}));
+      versionState:"current",marginReconstructed:true,semanticRole:object.semanticRole,roleConfidence:object.roleConfidence,
+      roleEvidence:object.roleEvidence,parentLineId:object.lineId,parentBlockId:object.blockId,
+      reconciliationSemanticUnit:object.blockId?"block":object.lineId?"line":"run"}));
   }
   return {...reconciliation,edits,roles:Object.freeze(["BODY_CONTENT","HEADER","FOOTER","PAGE_NUMBER","WATERMARK","BACKGROUND","PRINT_MARK","UNKNOWN_PAGE_FURNITURE"])};
+}
+
+/** Pure canonical permutation of CURRENT manifest membership. Source IDs stay
+ * immutable origin provenance; `page` is the current physical location. */
+export function remapPdfCurrentManifestForPageOperation(manifest, pageCount, operation = {}) {
+  if(!manifest)return null;
+  const type=operation.type,page=Math.max(1,Math.min(pageCount,Number(operation.page)||1));
+  const target=Math.max(1,Math.min(pageCount,Number(operation.to)||page));
+  const mapPage=value=>{const current=Number(value);if(type==="add")return current>page?current+1:current;if(type==="delete")return current===page?null:current>page?current-1:current;if(type==="move"){if(current===page)return target;if(page<target&&current>page&&current<=target)return current-1;if(page>target&&current>=target&&current<page)return current+1;}return current;};
+  const objects=[],changes=[];
+  for(const original of manifest.objects||[]){const before=Number(original.page),after=mapPage(before);if(after==null){changes.push({operation:`${type}-page`,objectId:original.id,pageBefore:before,pageAfter:null,identityPreserved:true,manifestUpdated:true,currentDisposition:"removed"});continue;}const object={...structuredClone(original),page:after,originPage:Number(original.originPage)||before};objects.push(object);changes.push({operation:`${type}-page`,objectId:object.id,pageBefore:before,pageAfter:after,identityPreserved:true,manifestUpdated:true});}
+  if(type==="duplicate")for(const original of (manifest.objects||[]).filter(object=>Number(object.page)===page)){let id=`${original.id}:clone:p${page+1}`,suffix=2;while(objects.some(object=>object.id===id))id=`${original.id}:clone:p${page+1}:${suffix++}`;const clone={...structuredClone(original),id,page:page+1,originPage:Number(original.originPage)||page,cloneProvenance:{sourceObjectId:original.id,originPage:page,duplicatePage:page+1,operation:"duplicate-page"}};objects.push(clone);changes.push({operation:"duplicate-page",objectId:id,sourceObjectId:original.id,pageBefore:page,pageAfter:page+1,identityPreserved:false,manifestUpdated:true,cloneProvenance:clone.cloneProvenance});}
+  return {...structuredClone(manifest),objects,structuralRemap:{operation:{...operation},pageCountBefore:pageCount,pageCountAfter:type==="add"||type==="duplicate"?pageCount+1:type==="delete"?pageCount-1:pageCount,changes}};
 }
 
 export function restorePdfRuntimeTruth(truth, edits, { cause = "history-restore" } = {}) {
