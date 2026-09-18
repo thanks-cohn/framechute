@@ -225,7 +225,7 @@ export function calculatePdfTextAutofit({
   );
   const desiredHeight = Math.max(
     minHeight,
-    Math.ceil(lines.length * lineHeight + 2),
+    Math.ceil(lines.length * lineHeight),
   );
   const width =
     userWidth == null
