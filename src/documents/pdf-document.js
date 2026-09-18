@@ -129,24 +129,42 @@ export function wrapPdfTextBoxAroundImage(textBox, imageBox, gap = 6) {
   };
 }
 
-function sourceTextBoxForItem(viewport, item, index) {
+export function sourceTextDisplayBoxForItem(viewport, item, styles = {}) {
   if (!item?.str?.trim()) return null;
   const scale = viewport.scale || 1;
   const [, , , , x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
-  const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
-  const display = {
-    left: x,
-    top: y - height,
-    width: Math.max(item.width * scale, 8),
-    height: height * 1.25
+  const height = Math.max(1, Math.hypot(item.transform[2], item.transform[3]) * scale);
+  const font = styles?.[item.fontName] || {};
+  const ascent = Number.isFinite(font.ascent)
+    ? font.ascent
+    : Number.isFinite(font.descent)
+      ? 1 + font.descent
+      : .8;
+  const angle = Math.atan2(Number(item.transform?.[1]) || 0, Number(item.transform?.[0]) || 1);
+  const fontAscent = height * ascent;
+  const left = angle ? x + fontAscent * Math.sin(angle) : x;
+  const top = angle ? y - fontAscent * Math.cos(angle) : y - fontAscent;
+  return {
+    left,
+    top,
+    width: Math.max(item.width * scale, 1),
+    height,
+    angle,
+    fontFamily: font.fontFamily || "sans-serif",
+    ascent
   };
+}
+
+function sourceTextBoxForItem(viewport, item, index, styles = {}) {
+  const display = sourceTextDisplayBoxForItem(viewport, item, styles);
+  if (!display) return null;
   const rect = viewportRectToPdf(viewport, display);
   return {
     ...rect,
     index,
     text: item.str,
-    fontSize: Math.max(4, rect.height * .8),
-    pageWidth: viewport.width / scale
+    fontSize: Math.max(4, rect.height),
+    pageWidth: viewport.width / (viewport.scale || 1)
   };
 }
 
@@ -219,7 +237,7 @@ export function imageWrapEditsForPage(viewport, content, edits, pageNumber) {
     };
     content.items.forEach((item, index) => {
       if (claimed.has(index)) return;
-      const source = sourceTextBoxForItem(viewport, item, index);
+      const source = sourceTextBoxForItem(viewport, item, index, content.styles);
       if (!source) return;
       const explicit=explicitByIndex.get(index)||null;
       const layoutBox=explicit
@@ -324,7 +342,7 @@ export async function getPdfPageLayout(model, pageNumber, edits=[], prepared={})
   const viewport=prepared.viewport || page.getViewport({scale:1});
   const content=prepared.content || await page.getTextContent();
   const pageEdits=currentPdfEdits(edits.filter(edit=>Number(edit.page)===pageNumber));
-  let sourceRuns=content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber)).filter(Boolean);
+  let sourceRuns=content.items.map((item,index)=>semanticSourceRun(viewport,item,index,pageNumber,content.styles)).filter(Boolean);
   if(model.reopenedCurrent?.objects?.length){
     const extracted=sourceRuns.map(run=>({id:run.id||`source:p${pageNumber}:text:${run.sourceIndex}`,kind:"source-text-run",page:pageNumber,text:run.text,paintOrder:run.paintOrder,pdfRect:run.bounds,fontSize:run.fontSize}));
     const expected=model.reopenedCurrent.objects.filter(object=>object.page===pageNumber);
@@ -379,7 +397,13 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   const marginReconciliation=options.contentRect&&options.marginConstraintsEnabled!==false
     ? buildPdfSourceMarginReconciliation({layout:pageLayout,contentRect:options.contentRect,existingEdits:edits})
     : null;
-  const sourceMarginEdits=marginReconciliation?.edits||[];
+  // Imported PDF source is visual truth on open. Margin analysis is diagnostic
+  // until an explicit layout operation asks SUBSTRATE to reconstruct source.
+  // Never silently turn untouched source glyphs into Helvetica replacement
+  // overlays merely because a default content rectangle exists.
+  const sourceMarginEdits=options.applySourceMarginReconciliation===true
+    ? (marginReconciliation?.edits||[])
+    : [];
   if(sourceMarginEdits.length)edits=currentPdfEdits([...edits,...sourceMarginEdits]);
   const reopened=model.reopenedReconciliation?.get(pageNumber),historicalPaintOrders=new Set((reopened?.historical||[]).map(object=>object.paintOrder));
   const reopenedCurrentByPaintOrder=new Map((reopened?.current||[]).map(object=>[object.paintOrder,object]));
@@ -415,8 +439,9 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   content.items.forEach((item, index) => {
     if (!item.str?.trim()) return;
     if(historicalPaintOrders.has(index))return;
-    const [, , , d, x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
-    const height = Math.max(8, Math.hypot(item.transform[2], item.transform[3]) * scale);
+    const sourceDisplay = sourceTextDisplayBoxForItem(viewport, item, content.styles);
+    if (!sourceDisplay) return;
+    const { left:sourceLeft, top:sourceTop, width:sourceWidth, height, angle, fontFamily:sourceFontFamily } = sourceDisplay;
     const explicit = edits.find((edit) => edit.page === pageNumber && edit.index === index && edit.kind !== "image");
     const wrapped = wrapEdits.find(edit => edit.index === index);
     const saved = wrapped || explicit;
@@ -448,10 +473,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       // PDF text coordinates identify the baseline, not the top of its nominal
       // em box. PDF.js exposes the embedded font ascent used by its own text
       // layer; using it here removes the first (baseline -> CSS top) divergence.
-      const font=content.styles?.[item.fontName]||{},ascent=Number.isFinite(font.ascent)?font.ascent:Number.isFinite(font.descent)?1+font.descent:.8;
-      const angle=Math.atan2(Number(item.transform?.[1])||0,Number(item.transform?.[0])||1);
-      const fontAscent=height*ascent,left=angle?x+fontAscent*Math.sin(angle):x,top=angle?y-fontAscent*Math.cos(angle):y-fontAscent;
-      Object.assign(span.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(item.width*scale,1)}px`, height: `${height}px`, fontSize: `${height}px`, fontFamily: font.fontFamily||"sans-serif", transform: angle?`rotate(${angle}rad)`:"none" });
+      Object.assign(span.style, { left: `${sourceLeft}px`, top: `${sourceTop}px`, width: `${sourceWidth}px`, height: `${height}px`, fontSize: `${height}px`, fontFamily: sourceFontFamily, transform: angle?`rotate(${angle}rad)`:"none" });
       span.dataset.geometryDerivation="pdf-baseline-font-ascent";
     }
     textLayer.append(span);
