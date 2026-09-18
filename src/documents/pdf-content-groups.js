@@ -45,14 +45,55 @@ export function translatePdfContentGroup(group,desiredDelta,contentRect) {
 
 export function contentGroupsFromPdfLayout(layout,{includeEdits=true}={}) {
   const nodes=layout?.nodes||layout?.allNodes||[];
+  const byId=new Map(nodes.map(node=>[node.id,node]));
   const groups=[];
   for(const node of nodes){
-    if(node.kind!=="block"&&node.type!=="text-block")continue;
-    const members=(node.children||node.memberIds||[]).map(id=>typeof id==="object"?id:nodes.find(candidate=>candidate.id===id)).filter(Boolean).map(member=>({id:member.id,kind:"text",rect:member.bounds||member.rect||member}));
-    if(members.length)groups.push(createPdfContentGroup({id:node.id,page:layout.page,kind:"text-block",members,provenance:"derived-layout",confidence:node.confidence??1,readingOrder:node.readingOrder}));
+    if(node.kind!=="text-block")continue;
+    const memberRefs=node.childIds||node.memberIds||node.children||[];
+    const members=memberRefs
+      .map(value=>typeof value==="object"?value:byId.get(value))
+      .filter(Boolean)
+      .map(member=>({
+        id:member.id,
+        sourceObjectId:member.sourceObjectId??null,
+        ownerEditId:member.ownerEditId??null,
+        kind:member.kind||"text-line",
+        rect:member.bounds||member.rect||member
+      }));
+    if(members.length)groups.push(createPdfContentGroup({
+      id:node.id,
+      page:layout.page,
+      kind:"text-block",
+      members,
+      provenance:node.provenance||"derived-layout",
+      confidence:node.confidence??1,
+      semanticParentId:node.parentId??null,
+      readingOrder:node.readingOrder,
+      spatialOrder:node.spatialOrder,
+      metadata:{sourceRefs:[...(node.sourceRefs||[])]}
+    }));
   }
-  if(includeEdits)for(const edit of layout?.edits||[]){
-    if(edit.kind==="image")groups.push(createPdfContentGroup({page:layout.page,kind:"image-block",members:[{...edit,id:edit.id,rect:edit.bounds||edit}]}));
+  if(includeEdits){
+    for(const node of nodes){
+      if(node.kind!=="inserted-image")continue;
+      groups.push(createPdfContentGroup({
+        page:layout.page,
+        kind:"image-block",
+        members:[{
+          id:node.id,
+          sourceObjectId:node.sourceObjectId??null,
+          ownerEditId:node.ownerEditId??node.id,
+          kind:"image",
+          rect:node.bounds||node.rect||node
+        }],
+        provenance:node.provenance||"user-authored",
+        confidence:node.confidence??1,
+        semanticParentId:node.parentId??null,
+        readingOrder:node.readingOrder,
+        spatialOrder:node.spatialOrder,
+        metadata:{sourceRefs:[...(node.sourceRefs||[])]}
+      }));
+    }
   }
   return groups;
 }
