@@ -27,8 +27,18 @@ test("committed and editing-existing replacement are exclusive",()=>{
   value=plan({currentEdits:[edit()],activeInteraction:{editingObjectId:"edit:1"}});assert.deepEqual([value.sourcePresentations.length,value.livePresentations.length,value.replacementPresentations.length],[0,1,0]);
 });
 
-test("unchanged interaction with no authored edit remains source-only",()=>{
-  const value=plan({activeInteraction:{sourceObjectId:"source:p1:text:0",liveText:"Original"}});assert.equal(value.objects["source:p1:text:0"].state,PDF_PRESENTATION_STATES.SOURCE_ONLY);assert.equal(value.replacementPresentations.length,0);
+test("untouched source click is LIVE_EDIT while active and returns to SOURCE_ONLY without an authored edit",()=>{
+  let value=plan({activeInteraction:{editingObjectId:"source:p1:text:0",sourceObjectId:"source:p1:text:0",liveText:"Original",sourceOwnershipRect:rect,layoutRect:rect}});
+  const active=value.objects["source:p1:text:0"];
+  assert.equal(active.state,PDF_PRESENTATION_STATES.LIVE_EDIT);
+  assert.deepEqual([active.sourceVisible,active.liveVisible,active.replacementVisible],[false,true,false]);
+  assert.equal(value.livePresentations.length,1);
+  assert.equal(value.replacementPresentations.length,0);
+  assert.equal(value.masks.length,1);
+  value=plan();
+  assert.equal(value.objects["source:p1:text:0"].state,PDF_PRESENTATION_STATES.SOURCE_ONLY);
+  assert.equal(value.replacementPresentations.length,0);
+  assert.equal(value.masks.length,0);
 });
 
 test("historical objects never render or hit test",()=>{
