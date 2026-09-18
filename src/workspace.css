@@ -750,21 +750,32 @@ body.hide-block-headers .compact-drag-handle {
   min-height: 100%;
   overflow: visible;
   color: #111 !important;
-  background: transparent;
-  outline: 2px solid #276ee8;
+  -webkit-text-fill-color: #111 !important;
+  background: transparent !important;
+  outline: none;
   caret-color: #111;
+  line-height: 1.05;
+  opacity: 1 !important;
   user-select: text;
   -webkit-user-select: text;
 }
 .pdf-text-item.is-editing {
   color: #111;
-  background: transparent;
-  z-index: 4;
+  background: transparent !important;
+  z-index: 5;
   overflow: visible;
+  isolation: isolate;
 }
 .pdf-text-edit { color: #111; background: transparent; outline: none; overflow: hidden; z-index: 2; }
-.pdf-text-item.is-editing { background: #fff; color: #111; z-index: 5; }
-.pdf-text-item.is-editing .pdf-edit-text { display: block; min-width: 100%; min-height: 100%; color: #111; background: #fff; opacity: 1; }
+.pdf-text-item.is-editing .pdf-edit-text {
+  display: block;
+  min-width: 100%;
+  min-height: 100%;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  background: transparent !important;
+  opacity: 1 !important;
+}
 .pdf-wrapped-source {
   color: #111;
   background: transparent;

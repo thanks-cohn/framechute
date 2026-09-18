@@ -674,7 +674,10 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   const layerWidth = textLayer.clientWidth;
   const layerHeight = textLayer.clientHeight;
   const scale = Math.max(.25, Number(span.dataset.viewportScale) || viewport.scale || 1);
-  const projected=projectPdfSourceMask(viewport,ownership,{terminalBleed:span.dataset.terminalFragment==="true"?Math.min(3,Math.max(.75,scale)):0});
+  const projected=projectPdfSourceMask(viewport,ownership,{
+    padding:Math.max(1.25,Math.min(2.5,scale*1.1)),
+    terminalBleed:span.dataset.terminalFragment==="true"?Math.min(3,Math.max(.75,scale)):0
+  });
   const rawLeft=projected.x,rawTop=projected.y,rawWidth=projected.width,rawHeight=projected.height;
   const left = Math.max(0, Math.min(layerWidth, rawLeft));
   const top = Math.max(0, Math.min(layerHeight, rawTop));
@@ -1000,7 +1003,34 @@ registerBlockType("pdf", {
       const resolved=resolvePdfVisualTarget({x:event.clientX,y:event.clientY},candidates);
       return resolved.objectId?[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>String(node.dataset.objectId)===String(resolved.objectId))||null:null;
     };
-    const enterPdfTextEditing=(event,span) => {
+    const placePdfCaretFromPointer=(event,text)=>{
+      const doc=text?.ownerDocument||document,selection=doc.getSelection?.()||getSelection();
+      if(!text||!selection)return false;
+      let range=null;
+      const position=doc.caretPositionFromPoint?.(event.clientX,event.clientY);
+      if(position&&text.contains(position.offsetNode)){
+        range=doc.createRange();range.setStart(position.offsetNode,position.offset);range.collapse(true);
+      }else{
+        const legacy=doc.caretRangeFromPoint?.(event.clientX,event.clientY);
+        if(legacy&&text.contains(legacy.startContainer))range=legacy;
+      }
+      if(!range){
+        range=doc.createRange();range.selectNodeContents(text);range.collapse(false);
+      }
+      selection.removeAllRanges();selection.addRange(range);return true;
+    };
+    const showPdfTextControls=(block,span)=>{
+      const runtime=runtimeSources.get(block),index=Number(span?.dataset.index),page=Number(block.dataset.currentPage||1);
+      const existing=runtime?.edits?.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");
+      const original=index>=0?runtime?.pageData?.content?.items?.[index]:null;
+      const fontSize=existing?.fontSize??inferPdfSourceFontSize(original,12),controls=block.querySelector(".pdf-edit-controls");
+      if(!controls)return;
+      controls.hidden=false;
+      controls.querySelector(".pdf-font-size").value=String(Math.round(fontSize*10)/10);
+      controls.querySelector(".pdf-font-family").value=existing?.fontFamily||"Helvetica";
+      if(span?.classList.contains("pdf-text-edit"))selectPdfEdit(block,span);
+    };
+    const enterPdfTextEditing=(event,span,{showControls=false,preserveSelection=false}={}) => {
       if (!pdfEditEnabled(block)) return;
       if (!span) {
         if (block.dataset.pdfHasSourceText === "false") {
@@ -1011,6 +1041,12 @@ registerBlockType("pdf", {
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
       const runtime = runtimeSources.get(block);
+      if(runtime?.truth?.state.interaction==="editing"&&runtime.truth.state.activeSpan===span){
+        if(showControls)showPdfTextControls(block,span);
+        if(!preserveSelection)placePdfCaretFromPointer(event,text);
+        return;
+      }
+      if(runtime?.truth?.state.interaction==="editing")commitActivePdfText(block,"switch-field");
       const beforeGeometry=capturePdfPageGeometry(block,{viewport:runtime?.pageData?.viewport});
       recordPdfGeometry(block,runtime,"dblclick",span);
       pdfTelemetry(runtime).lastPointer=capturePointerHitTest(event,textLayer,{observations:capturePdfPageDomObservations(textLayer,{state:"dblclick"})});
@@ -1023,14 +1059,16 @@ registerBlockType("pdf", {
       const initialFontSize = existing?.fontSize ?? inferPdfSourceFontSize(original, 12);
       text.dataset.pendingFontSize = String(initialFontSize);
       const controls = block.querySelector(".pdf-edit-controls");
-      const fontSizeInput = controls?.querySelector(".pdf-font-size");
-      if (controls) controls.hidden = false;
-      recordPdfMutation(block,runtime,"pdf-edit-controls-revealed",beforeGeometry);
-      if (fontSizeInput) fontSizeInput.value = String(Math.round(initialFontSize * 10) / 10);
+      if (controls) controls.hidden = !showControls;
+      if(showControls){showPdfTextControls(block,span);recordPdfMutation(block,runtime,"pdf-edit-controls-revealed",beforeGeometry);}
       span.style.fontSize = `${initialFontSize * (runtime?.pageData?.viewport?.scale || 1)}px`;
+      span.dataset.editBaseWidth=String(initialDisplay.width);
+      span.dataset.editBaseHeight=String(initialDisplay.height);
       if (index >= 0) createPdfLiveEditMask(textLayer,span,sourceOwnership,runtime.pageData.viewport);
       recordPdfGeometry(block,runtime,"before-contenteditable",span);
-      text.contentEditable = "true"; text.dataset.before = text.textContent; text.closest(".pdf-text-item")?.classList.add("is-editing");interactiveOutline.hidden=true;
+      text.contentEditable = "true"; text.dataset.before = text.textContent;
+      Object.assign(text.style,{color:"#111",WebkitTextFillColor:"#111",background:"transparent",opacity:"1"});
+      text.closest(".pdf-text-item")?.classList.add("is-editing");interactiveOutline.hidden=true;
       beginPdfTextInteraction(runtime.truth,{element:text,span,edit:existing,context:{
         sourceOwnershipRect:sourceOwnership,
         getEdit:()=>runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image")||null,
@@ -1039,43 +1077,46 @@ registerBlockType("pdf", {
         removeLiveMask:()=>removePdfLiveEditMask(textLayer)
       }});
       recordPdfGeometry(block,runtime,"after-contenteditable",span);
-      text.focus();
+      text.focus({preventScroll:true});
       recordPdfGeometry(block,runtime,"after-focus",span);
-      const range = document.createRange(); range.selectNodeContents(text);
-      const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      if(!preserveSelection)placePdfCaretFromPointer(event,text);
       recordPdfGeometry(block,runtime,"selection-created",span);
     };
     textLayer.addEventListener("click", event => {
       if(!pdfEditEnabled(block))return;
       const span=visualTextTarget(event);
-      selectPdfEdit(block,span);
-      if(span&&(!event.detail||event.detail===1))enterPdfTextEditing(event,span);
+      if(!span||event.detail>1)return;
+      block.querySelectorAll(".pdf-text-item.is-selected").forEach(node=>node.classList.remove("is-selected"));
+      const controls=block.querySelector(".pdf-edit-controls");if(controls)controls.hidden=true;
+      enterPdfTextEditing(event,span,{showControls:false});
     });
-    textLayer.addEventListener("dblclick", async (event) => {
+    textLayer.addEventListener("dblclick", (event) => {
       if (!pdfEditEnabled(block)) return;
-      const span=visualTextTarget(event);if(!span)return;
-      const runtime=runtimeSources.get(block),text=span.querySelector('.pdf-edit-text[contenteditable="true"]');
-      const committed=text?commitActivePdfText(block,"double-click"):null;
-      let currentSpan=span,objectId=committed?.edit?.id||span.dataset.objectId;
-      if(committed?.changed&&committed.edit){await setPdfPage(block,block.dataset.currentPage);currentSpan=[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>node.dataset.objectId===objectId)||null;}
-      if(!currentSpan?.querySelector(".pdf-move-handle")||!currentSpan.querySelector(".pdf-resize-handle"))return;
-      selectPdfEdit(block,currentSpan);
-      currentSpan.dataset.interactionState="manipulating";
-      beginPdfManipulation(runtime?.truth,{objectId,cause:"double-click"});
-      recordPdfGeometry(block,runtime,"dblclick",currentSpan);
+      const span=event.target.closest?.(".pdf-text-item")||visualTextTarget(event);if(!span)return;
+      const text=span.querySelector(".pdf-edit-text");
+      if(!text?.isContentEditable)enterPdfTextEditing(event,span,{showControls:true,preserveSelection:true});
+      else showPdfTextControls(block,span);
+      // Double-click enhances the same editing session; it never commits or
+      // switches modes. Native contenteditable keeps the user's word selection.
+      recordPdfGeometry(block,runtimeSources.get(block),"dblclick",span);
     });
     textLayer.addEventListener("input", event=>{
       const text=event.target.closest?.('.pdf-edit-text[contenteditable="true"]');if(!text)return;
       const span=text.closest(".pdf-text-item"),left=Number.parseFloat(span.style.left)||0,top=Number.parseFloat(span.style.top)||0;
       const previousText=text.dataset.liveText??text.dataset.before??"";
-      const computed=getComputedStyle(text),fontSize=Number.parseFloat(computed.fontSize)||12,lineHeight=Number.parseFloat(computed.lineHeight)||fontSize*1.2;
+      Object.assign(text.style,{color:"#111",WebkitTextFillColor:"#111",background:"transparent",opacity:"1"});
+      const computed=getComputedStyle(text),fontSize=Number.parseFloat(computed.fontSize)||12;
+      const baseHeight=Math.max(2,Number(span.dataset.editBaseHeight)||fontSize);
+      const lineHeight=Math.max(baseHeight,Number.parseFloat(computed.lineHeight)||fontSize*1.05);
       const probe=document.createElement("canvas").getContext("2d");probe.font=computed.font;
       const runtime=runtimeSources.get(block),layout=pdfLayoutForPage(runtime,Number(block.dataset.currentPage||1));
       const legalBounds=runtime.marginState.constraintsEnabled&&layout?projectPdfContentRect(runtime.pageData.viewport,layout.contentRect):null;
-      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:Number.parseFloat(span.style.width)||16,height:Number.parseFloat(span.style.height)||lineHeight},contentRect:legalBounds||{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:lineHeight+2,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):null,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
+      const currentWidth=Number.parseFloat(span.style.width)||Number(span.dataset.editBaseWidth)||16;
+      const currentHeight=Number.parseFloat(span.style.height)||baseHeight;
+      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:currentWidth,height:currentHeight},contentRect:legalBounds||{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:baseHeight,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):currentWidth,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
       text.dataset.liveText=text.innerText;
       span.dataset.autofitTrace=JSON.stringify(autofit.trace);
-      Object.assign(span.style,{width:`${autofit.rect.width}px`,height:`${autofit.rect.height}px`});
+      Object.assign(span.style,{width:`${currentWidth}px`,height:`${Math.max(baseHeight,autofit.rect.height)}px`});
       const activeEdit=runtime.edits.find(edit=>edit.id===span.dataset.objectId)||null;
       const ownership=capturePdfSourceOwnership({edit:activeEdit,sourceRect:runtime.truth?.state.activeContext?.sourceOwnershipRect});
       createPdfLiveEditMask(textLayer,span,ownership,runtime.pageData.viewport);
