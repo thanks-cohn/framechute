@@ -21,6 +21,15 @@ const PDF_FONT_MAP = new Map(PDF_STANDARD_FONTS);
 
 export function resolvePdfStandardFont(name) { return PDF_FONT_MAP.get(name) || StandardFonts.Helvetica; }
 
+export function inferPdfSourceFontFamily(item, styles = {}) {
+  const family=String(styles?.[item?.fontName]?.fontFamily||"");
+  const signature=`${item?.fontName||""} ${family}`.toLowerCase();
+  const bold=/bold|black|semibold|demi/.test(signature),italic=/italic|oblique/.test(signature);
+  if(/courier|mono/.test(signature))return bold?"Courier Bold":italic?"Courier Oblique":"Courier";
+  if(/times|serif|roman|schoolbook|georgia/.test(signature))return bold?"Times Bold":italic?"Times Italic":"Times Roman";
+  return bold?"Helvetica Bold":italic?"Helvetica Oblique":"Helvetica";
+}
+
 /** Deterministic width-aware wrapping that preserves explicit lines and whitespace. */
 export function wrapPdfText(text, font, size, maxWidth) {
   const width = Math.max(2, Number(maxWidth) || 2), lines = [];
@@ -326,8 +335,8 @@ function currentVersionManifest(edits,inherited=null){
 }
 function createPdfEditIdForManifest(){return globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;}
 
-function semanticSourceRun(viewport, item, index, pageNumber) {
-  const box=sourceTextBoxForItem(viewport,item,index);
+function semanticSourceRun(viewport, item, index, pageNumber, styles = {}) {
+  const box=sourceTextBoxForItem(viewport,item,index,styles);
   if(!box)return null;
   return {
     sourceIndex:index, sourceRef:`p${pageNumber}:text:${index}`, text:item.str, bounds:box,
@@ -604,9 +613,14 @@ export function pdfPageMaskPlan(layout, edits, wrapEdits, pageNumber) {
     ...maskEdits.filter(edit=>edit.page===pageNumber&&(edit.kind||"replacement")==="replacement"),
     ...(wrapEdits||[])
   ];
-  return Object.freeze([
-    ...semanticLiveSourceMasks(layout,sourceMaskEdits,pageNumber)
-  ]);
+  // The immutable source-ownership rectangle is the erase authority.
+  // It is captured from the exact source presentation when editing begins and
+  // therefore cannot drift with line reconstruction, block grouping, or layout.
+  // Keep semantic line masks diagnostic-only; committed preview/save must erase
+  // the precise source object before drawing its replacement.
+  return Object.freeze(
+    sourceMaskEdits.flatMap(edit=>replacementMasksForEdit(edit))
+  );
 }
 
 export function clampPdfRectToBox(rect, box) {

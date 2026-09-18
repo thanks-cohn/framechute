@@ -54,3 +54,25 @@ test("single-line autofit does not manufacture a second row",()=>{
   assert.equal(result.trace.newLineCount,1);
   assert.equal(result.rect.height,12);
 });
+
+
+test("committing a replacement installs persistent source coverage before transient live mask is removed",()=>{
+  const start=workspace.indexOf("function commitActivePdfText");
+  const end=workspace.indexOf("function selectedPdfEdit",start);
+  const block=workspace.slice(start,end);
+  const sync=block.indexOf("syncPdfReplacementSourceMask");
+  const remove=block.indexOf("removePdfLiveEditMask");
+  assert.ok(sync>=0&&remove>sync,"persistent source mask is installed before transient mask removal");
+});
+
+test("first PDF edit preserves inferred source family instead of forcing Helvetica",()=>{
+  assert.match(workspace,/inferPdfSourceFontFamily\(original,runtime\.pageData\.content\.styles\)/);
+  const applyStart=workspace.indexOf("function applyPdfTextCommit");
+  const applyEnd=workspace.indexOf("function commitActivePdfText",applyStart);
+  const applyBlock=workspace.slice(applyStart,applyEnd);
+  assert.equal(applyBlock.includes('fontFamily:"Helvetica"'),false);
+});
+
+test("legacy automatic margin reconstruction edits are discarded during runtime initialization",()=>{
+  assert.match(workspace,/state\.edits\.filter\(edit=>edit\?\.marginReconstructed!==true\)/);
+});
