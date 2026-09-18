@@ -1226,3 +1226,14 @@ body.hide-block-headers .compact-drag-handle {
   .pdf-block:not(.is-maximized) .pdf-toolbar .pdf-zoom-in,
   .pdf-block:not(.is-maximized) .pdf-toolbar .pdf-organize-menu { display: none; }
 }
+
+/* PDF margins are editor chrome. The page-sized layer is transparent; only
+   compact handles deliberately participate in hit testing. */
+.pdf-margin-guide-layer { position:absolute; inset:0; z-index:6; pointer-events:none; overflow:hidden; }
+.pdf-margin-guide { position:absolute; border-color:color-mix(in srgb, #2372b8 72%, CanvasText); opacity:.78; pointer-events:none; }
+.pdf-margin-guide-left, .pdf-margin-guide-right { border-left:1px dashed currentColor; }
+.pdf-margin-guide-top, .pdf-margin-guide-bottom { border-top:1px dashed currentColor; }
+.pdf-margin-handle { position:absolute; pointer-events:auto; width:14px; height:14px; min-width:0; min-height:0; padding:0; border:1px solid color-mix(in srgb, #2372b8 70%, CanvasText); border-radius:50%; background:Canvas; color:transparent; box-shadow:0 1px 2px #0003; }
+.pdf-margin-guide-left .pdf-margin-handle, .pdf-margin-guide-right .pdf-margin-handle { left:-7px; top:50%; transform:translateY(-50%); cursor:ew-resize; }
+.pdf-margin-guide-top .pdf-margin-handle, .pdf-margin-guide-bottom .pdf-margin-handle { left:50%; top:-7px; transform:translateX(-50%); cursor:ns-resize; }
+.pdf-margins-toggle { white-space:nowrap; }
