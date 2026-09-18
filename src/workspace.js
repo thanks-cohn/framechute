@@ -1983,8 +1983,23 @@ function activePdfAgentMirror(block=null) {
   const runtime=runtimeSources.get(target),renderedPlan=runtime?.pageData?.presentationPlan;
   if(!target||!runtime||!renderedPlan)return null;
   const sourceObjects=Object.values(renderedPlan.objects).filter(object=>object.sourceObjectId&&object.presentationState!=="HISTORICAL").map(object=>({id:object.sourceObjectId,sourceObjectId:object.sourceObjectId,page:renderedPlan.pageNumber,text:object.sourceText,pdfRect:object.geometryAncestry?.sourcePdfRect||object.sourceOwnershipRect,sourceOwnershipRect:object.sourceOwnershipRect,semanticRole:object.semanticRole}));
-  const plan=buildPdfPresentationPlan({pageNumber:renderedPlan.pageNumber,sourceObjects,currentEdits:runtime.edits,activeInteraction:runtime.truth?.state?.interaction==="editing"?{editingObjectId:runtime.truth.state.editingObjectId,liveText:runtime.truth.state.liveText}:null,selectedObjectId:target.dataset.selectedPdfObjectId||null,viewport:renderedPlan.viewport,historicalObjects:Object.values(renderedPlan.objects).filter(object=>object.presentationState==="HISTORICAL")});
-  return buildPdfAgentPageMirror({plan,documentId:runtime.model?.documentVersionId||target.dataset.blockId||null,pageBounds:pdfPageBounds(runtime),contentRect:runtime.marginDiagnostics?.contentRect||null,interaction:{selectedObjectId:target.dataset.selectedPdfObjectId||null,editingObjectId:runtime.truth?.state.editingObjectId||null,manipulatingObjectId:runtime.truth?.state.manipulatingObjectId||null},recentCausalEvents:runtime.truth?.journal?.snapshot?.()||[]});
+  const state=runtime.truth?.state,activeSpan=state?.activeSpan;
+  const activeInteraction=state?.interaction==="editing"?{
+    editingObjectId:state.editingObjectId,
+    sourceObjectId:activeSpan?.dataset?.sourceObjectId||activeSpan?.dataset?.objectId||null,
+    liveText:state.liveText,
+    sourceOwnershipRect:state.activeContext?.sourceOwnershipRect||null,
+    layoutRect:state.activeContext?.readLayoutRect&&activeSpan&&runtime.pageData?.viewport
+      ? viewportRectToPdf(runtime.pageData.viewport,state.activeContext.readLayoutRect(activeSpan))
+      : null
+  }:null;
+  const plan=buildPdfPresentationPlan({pageNumber:renderedPlan.pageNumber,sourceObjects,currentEdits:runtime.edits,activeInteraction,selectedObjectId:target.dataset.selectedPdfObjectId||null,viewport:renderedPlan.viewport,historicalObjects:Object.values(renderedPlan.objects).filter(object=>object.presentationState==="HISTORICAL")});
+  const root=target.querySelector(".pdf-text-layer"),observations=root?capturePdfPageDomObservations(root,{state:state?.interaction==="editing"?"editing":"idle"}):[];
+  const mirror=buildPdfAgentPageMirror({plan,documentId:runtime.model?.documentVersionId||target.dataset.blockId||null,pageBounds:pdfPageBounds(runtime),contentRect:runtime.marginDiagnostics?.contentRect||null,interaction:{selectedObjectId:target.dataset.selectedPdfObjectId||null,editingObjectId:state?.editingObjectId||null,manipulatingObjectId:state?.manipulatingObjectId||null},recentCausalEvents:runtime.truth?.journal?.snapshot?.()||[]});
+  mirror.observations=observations;
+  mirror.pageGeometry=capturePdfPageGeometry(target,{viewport:runtime.pageData?.viewport});
+  mirror.observedMasks=[...root?.querySelectorAll(".pdf-source-mask,.pdf-live-edit-mask")||[]].map(mask=>({id:mask.dataset.objectId||mask.dataset.ownerEditId||null,ownerEditId:mask.dataset.ownerEditId||null,sourceObjectIds:(mask.dataset.sourceObjectIds||mask.dataset.sourceObjectId||"").split(/\s+/).filter(Boolean),className:mask.className,clientRect:{x:mask.getBoundingClientRect().x,y:mask.getBoundingClientRect().y,width:mask.getBoundingClientRect().width,height:mask.getBoundingClientRect().height}}));
+  return mirror;
 }
 
 window.FrameChuteWorkspace = Object.freeze({
