@@ -1793,3 +1793,287 @@ without guessing from screenshots.
 Do not optimize for a small patch.
 
 Build the observability foundation that makes future PDF layout work **mechanically explainable and scientifically diagnosable by humans and agents**.
+
+
+---
+
+# 49. CURRENT VERSION MUST BE THE ONLY LIVE EDITABLE VERSION
+
+A reopened Substrate-saved PDF must not behave like:
+
+~~~text
+old original source text
++ current replacement text
++ invisible historical field waiting underneath
+~~~
+
+The ordinary live/editor view must contain **one current document truth**.
+
+Historical versions may be preserved for future recovery/version-history features,
+but they must be quarantined from the current page model.
+
+The current live page must never expose historical content through:
+
+- rendering,
+- hit testing,
+- hover,
+- selection,
+- contenteditable,
+- move/resize handles,
+- search results presented as current,
+- collision/layout participation,
+- accidental DOM overlays.
+
+If historical state is retained for future Settings / Version History, store it
+as explicit historical/version data, conceptually:
+
+~~~text
+Current Document
+  -> exactly one current object/version per semantic source
+
+Version History
+  -> historical snapshots / superseded objects
+  -> not rendered
+  -> not hit-testable
+  -> not editable
+  -> not part of current layout
+  -> only activated through explicit restore/version-history action
+~~~
+
+Do NOT implement "history" as invisible live fields underneath current content.
+
+Add invariants:
+
+- PDF_CURRENT_VIEW_HAS_SINGLE_VERSION_TRUTH
+- PDF_HISTORICAL_OBJECT_RENDERED_IN_CURRENT_VIEW
+- PDF_HISTORICAL_OBJECT_HIT_TESTABLE
+- PDF_HISTORICAL_OBJECT_EDITABLE
+- PDF_REOPENED_REPLACEMENT_HAS_HIDDEN_LEGACY_FIELD
+- PDF_MULTIPLE_CURRENT_OBJECTS_FOR_ONE_SOURCE
+
+For each semantic source identity, diagnostics should be able to answer:
+
+- current object ID,
+- superseded object IDs,
+- which version is render-authoritative,
+- which version is edit-authoritative,
+- whether any historical version is currently represented in the live DOM,
+- whether any historical version is receiving pointer events.
+
+Acceptance:
+
+1. edit a source field,
+2. save,
+3. reopen the saved PDF,
+4. visually see only the current replacement,
+5. click/hover around the old source location,
+6. no hidden historical editable field is selectable,
+7. no old text becomes visible,
+8. no duplicate text appears,
+9. version history, if preserved, remains data-only until explicitly restored.
+
+If this requires separating currentVersionManifest from a future
+versionHistoryManifest, do so.
+
+Current state and historical state must not be conflated.
+
+---
+
+# 50. REOPENED CURRENT OBJECTS MUST HYDRATE AS EDITABLE CURRENT OBJECTS
+
+A Substrate-saved replacement that is reopened must immediately retain its
+current identity and manipulation capabilities.
+
+Do not require the user to type a new character merely to recreate an in-memory
+edit object.
+
+If the saved/current manifest says an object is a current replacement, reopening
+must hydrate or reconstruct the canonical editable object state immediately.
+
+The reopened object must already know:
+
+- object ID,
+- sourceObjectId,
+- sourceOwnershipRect,
+- layoutRect,
+- text,
+- font size/family when known,
+- page,
+- versionState=current,
+- semantic/layout membership,
+- manipulation capability.
+
+Do not treat a known current replacement merely as anonymous PDF.js source text.
+
+Add:
+
+- PDF_REOPENED_CURRENT_OBJECT_NOT_HYDRATED
+- PDF_REOPENED_OBJECT_REQUIRES_TEXT_MUTATION_BEFORE_MANIPULATION
+
+Acceptance:
+
+1. create replacement,
+2. save,
+3. reopen,
+4. do NOT type anything,
+5. object is already current/editable/manipulable,
+6. its stable identity matches saved current-version metadata as far as the
+   serialization contract permits.
+
+---
+
+# 51. INTERACTION GRAMMAR — SINGLE CLICK EDITS, DOUBLE CLICK MANIPULATES
+
+Adopt a clear interaction model for current text fields, including reopened
+saved replacements.
+
+## Single click
+
+Single click on a current text field should enter inline text editing.
+
+Expected state:
+
+- caret/editing becomes active,
+- current text is immediately visible,
+- formatting controls may follow selection,
+- sourceOwnershipRect remains unchanged,
+- move/resize handles are not required for basic typing.
+
+## Double click
+
+Double click on a current text field should enter explicit manipulation mode
+and show the move/resize controls immediately.
+
+Expected state:
+
+- move handle visible,
+- resize handle visible,
+- object selected for geometry manipulation,
+- no text mutation required,
+- this must work for a freshly reopened saved PDF.
+
+Do not require:
+
+~~~text
+double click
+-> type a character
+-> only then get handles
+~~~
+
+That is a state-hydration bug.
+
+Model the states explicitly, for example:
+
+~~~text
+idle
+editing
+manipulating
+~~~
+
+or another clear equivalent.
+
+Do not overload "selected" to ambiguously mean all three.
+
+Because browser dblclick is preceded by click events, coordinate the event
+transition deliberately so double click deterministically ends in manipulation
+mode rather than leaving competing edit/manipulation states.
+
+Possible transition model:
+
+~~~text
+idle
+  single click -> editing
+
+editing
+  double click -> manipulating
+
+manipulating
+  single click -> editing
+
+Escape
+  -> idle
+~~~
+
+Exact transition details may differ if a better conflict-free implementation
+exists, but the visible contract is mandatory:
+
+> **single click edits text; double click exposes move/resize manipulation.**
+
+Record these transitions in the forensic interaction journal.
+
+Add issue codes:
+
+- PDF_SINGLE_CLICK_DID_NOT_ENTER_EDITING
+- PDF_DOUBLE_CLICK_DID_NOT_ENTER_MANIPULATION
+- PDF_MANIPULATION_HANDLES_MISSING
+- PDF_EDIT_AND_MANIPULATION_STATE_CONFLICT
+
+---
+
+# 52. TESTS — REOPENED VERSION / INTERACTION STATE
+
+Add regression coverage for:
+
+~~~text
+edit source field
+save
+reopen
+single click
+~~~
+
+Expected:
+
+- enters editing immediately,
+- current replacement text is visible,
+- no old source field becomes interactive.
+
+Then:
+
+~~~text
+reopen
+double click current saved replacement
+~~~
+
+Expected:
+
+- move handle visible,
+- resize handle visible,
+- no new character typed,
+- no edit object fabricated only because of a text mutation.
+
+Then:
+
+~~~text
+move reopened replacement
+~~~
+
+Expected:
+
+- its saved/current identity remains coherent,
+- old source text does not reappear,
+- no historical hidden field becomes active,
+- manipulation is immediately available.
+
+Add a current-vs-history test proving historical data can remain recoverable
+without being part of the live current document.
+
+---
+
+# 53. ADDITIONAL ARCHITECTURAL LAWS
+
+## Law 23
+The live editor has exactly one current document truth.
+
+## Law 24
+Historical versions are explicit data, never invisible live fields.
+
+## Law 25
+A reopened current object is immediately editable/manipulable without requiring
+a new text mutation.
+
+## Law 26
+Single click edits current text; double click exposes geometry manipulation.
+
+## Law 27
+Current-version authority survives Save/reopen.
+
