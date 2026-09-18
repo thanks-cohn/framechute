@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "../src/vendor/pdf-lib.mjs";
-import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, pdfPageMaskPlan, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText } from "../src/documents/pdf-document.js";
+import { wrapPdfText, wrapPdfTextBoxAroundImage, semanticWrapTarget, imageWrapEditsForPage, semanticLiveSourceMasks, pdfPageMaskPlan, clampPdfRectToBox, replacementMasksForEdit, inferPdfSourceFontSize, normalizePdfEdit, PDF_STANDARD_FONTS, resolvePdfStandardFont, serializeEditedPdf, updatePdfFreeText, reflowPdfTextEditGeometry, openPdfDocument, extractSemanticPdfText, sourceTextDisplayBoxForItem } from "../src/documents/pdf-document.js";
 
 test("PDF font choices resolve only to packaged standard fonts", () => {
   assert.equal(PDF_STANDARD_FONTS.length, 9);
@@ -234,4 +234,12 @@ test("semantic PDF extraction places a later replacement at its source position"
     assert.equal(text,"First\nChanged\nLast");
     assert.ok(model.layoutCache.size<=3);
   } finally { await model.pdf.destroy(); }
+});
+
+
+test("PDF source semantic box uses the same baseline and ascent geometry as the live text layer",()=>{
+  const viewport={scale:1,transform:[1,0,0,1,0,0]};
+  const item={str:"Hello",fontName:"f1",transform:[10,0,0,10,100,200],width:50};
+  const box=sourceTextDisplayBoxForItem(viewport,item,{f1:{ascent:.8,fontFamily:"Century Schoolbook"}});
+  assert.deepEqual(box,{left:100,top:192,width:50,height:10,angle:0,fontFamily:"Century Schoolbook",ascent:.8});
 });
