@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument, StandardFonts } from "../src/vendor/pdf-lib.mjs";
 import { createPdfPageLayout } from "../src/documents/pdf-layout.js";
-import { buildPdfSourceMarginReconciliation, remapPdfCurrentManifestForPageOperation } from "../src/documents/pdf-runtime-truth.js";
-import { openPdfDocument, serializeEditedPdf, transformPdfPages } from "../src/documents/pdf-document.js";
+import { buildPdfSourceMarginReconciliation, hydrateReopenedPdfCurrentObjects, remapPdfCurrentManifestForPageOperation } from "../src/documents/pdf-runtime-truth.js";
+import { extractPdfPages, mergePdfBytes, openPdfDocument, serializeEditedPdf, transformPdfPages } from "../src/documents/pdf-document.js";
 
-const source=(sourceIndex,text,x,y,width=60)=>({sourceIndex,sourceRef:`p1:text:${sourceIndex}`,text,bounds:{x,y,width,height:12},fontSize:12,paintOrder:sourceIndex});
+const source=(sourceIndex,text,x,y,width=60,overrides={})=>({sourceIndex,sourceRef:`p1:text:${sourceIndex}`,text,bounds:{x,y,width,height:12},fontSize:12,paintOrder:sourceIndex,...overrides});
 
 test("production page layout ancestry drives coherent block reconciliation and real roles",()=>{
   const layout=createPdfPageLayout({page:1,pageBounds:{x:0,y:0,width:300,height:400},sourceRuns:[
@@ -23,9 +23,22 @@ test("production page layout ancestry drives coherent block reconciliation and r
   assert.equal(moved.semanticUnit,"block");
   assert.deepEqual(new Set(moved.memberIds),new Set(body.map(run=>run.id)));
   assert.deepEqual(new Set(moved.members.map(member=>member.after.x-member.before.x)),new Set([20]));
-  assert.equal(layout.nodes.find(node=>node.text==="12").semanticRole,"PAGE_NUMBER");
-  assert.equal(layout.nodes.find(node=>node.text==="Running title").semanticRole,"HEADER");
-  assert.equal(plan.edits.some(edit=>edit.original==="12"||edit.original==="Running title"),false);
+  const pageNumber=layout.nodes.find(node=>node.text==="12"),runningTitle=layout.nodes.find(node=>node.text==="Running title");
+  assert.equal(pageNumber.semanticRole,"PAGE_NUMBER");assert.equal(pageNumber.allowOutsideContentBounds,true);
+  assert.equal(runningTitle.semanticRole,"HEADER");assert.equal(runningTitle.allowOutsideContentBounds,false,"geometry-only header inference is provisional, not a margin exemption");
+  assert.ok(runningTitle.roleEvidence.includes("provisional-furniture-role-not-margin-exempt"));
+  assert.equal(plan.edits.some(edit=>edit.original==="12"),false);
+  assert.equal(plan.edits.some(edit=>edit.original==="Running title"),true,"provisional edge text remains margin-constrained");
+});
+
+test("explicit imported page furniture remains exempt from margin reconciliation",()=>{
+  const layout=createPdfPageLayout({page:1,pageBounds:{x:0,y:0,width:300,height:400},sourceRuns:[
+    source(0,"Explicit header",80,384,100,{semanticRole:"HEADER",roleConfidence:1,allowOutsideContentBounds:true})
+  ]});
+  const run=layout.nodes.find(node=>node.kind==="source-text-run");
+  assert.equal(run.semanticRole,"HEADER");assert.equal(run.allowOutsideContentBounds,true);
+  const plan=buildPdfSourceMarginReconciliation({layout,contentRect:{x:30,y:30,width:240,height:330}});
+  assert.equal(plan.edits.length,0);
 });
 
 test("pure current-manifest remapper covers insertion, deletion, movement, rotation, and clone identity",()=>{
@@ -36,7 +49,11 @@ test("pure current-manifest remapper covers insertion, deletion, movement, rotat
   assert.deepEqual(remapPdfCurrentManifestForPageOperation(manifest,3,{type:"rotate",page:2}).objects.map(o=>o.page),[1,2,3]);
   const duplicated=remapPdfCurrentManifestForPageOperation(manifest,3,{type:"duplicate",page:2});
   assert.equal(new Set(duplicated.objects.map(o=>o.id)).size,4);
-  assert.deepEqual(duplicated.objects.find(o=>o.cloneProvenance)?.cloneProvenance,{sourceObjectId:"b",originPage:2,duplicatePage:3,operation:"duplicate-page"});
+  assert.equal(duplicated.objects.find(o=>o.id==="c").page,4,"pages after the duplicate shift forward");
+  assert.equal(duplicated.objects.find(o=>o.id==="b").page,2,"original edited page keeps its location");
+  const clone=duplicated.objects.find(o=>o.cloneProvenance);
+  assert.equal(clone.page,3);
+  assert.deepEqual(clone.cloneProvenance,{sourceObjectId:"b",originPage:2,duplicatePage:3,operation:"duplicate-page"});
 });
 
 async function savedThreePagePdf(editPage=2){
@@ -56,5 +73,29 @@ test("resulting transformed PDF bytes persist current page permutations across r
   bytes=await savedThreePagePdf(2);bytes=await transformPdfPages(bytes,{type:"add",page:1});reopened=await openPdfDocument(bytes);assert.equal(reopened.reopenedCurrent.objects[0].page,3);await reopened.pdf.destroy();
   bytes=await savedThreePagePdf(2);bytes=await transformPdfPages(bytes,{type:"delete",page:2});reopened=await openPdfDocument(bytes);assert.equal(reopened.reopenedCurrent.objects.length,0);await reopened.pdf.destroy();
   bytes=await savedThreePagePdf(2);bytes=await transformPdfPages(bytes,{type:"duplicate",page:2});reopened=await openPdfDocument(bytes);
-  assert.deepEqual(reopened.reopenedCurrent.objects.map(o=>o.page),[2,3]);assert.equal(new Set(reopened.reopenedCurrent.objects.map(o=>o.id)).size,2);assert.ok(reopened.reopenedCurrent.objects[1].cloneProvenance);await reopened.pdf.destroy();
+  assert.deepEqual(reopened.reopenedCurrent.objects.map(o=>o.page),[2,3]);assert.equal(new Set(reopened.reopenedCurrent.objects.map(o=>o.id)).size,2);assert.ok(reopened.reopenedCurrent.objects[1].cloneProvenance);
+  const duplicateHydration=hydrateReopenedPdfCurrentObjects(reopened);
+  assert.deepEqual(duplicateHydration.edits.map(edit=>edit.page),[2,3],"original and duplicate hydrate as separate live current objects");
+  assert.equal(new Set(duplicateHydration.edits.map(edit=>edit.id)).size,2);
+  await reopened.pdf.destroy();
+});
+
+test("duplicate remapping shifts later current objects in persisted bytes",async()=>{
+  let bytes=await savedThreePagePdf(3),reopened;
+  bytes=await transformPdfPages(bytes,{type:"duplicate",page:1});reopened=await openPdfDocument(bytes);
+  assert.equal(reopened.reopenedCurrent.objects.find(object=>object.id==="edit:stable").page,4);
+  await reopened.pdf.destroy();
+});
+
+test("extract and merge preserve current manifest page truth",async()=>{
+  let bytes=await savedThreePagePdf(2),reopened;
+  const extracted=await extractPdfPages(bytes,[2]);reopened=await openPdfDocument(extracted);
+  assert.equal(reopened.pageCount,1);assert.equal(reopened.reopenedCurrent.objects.length,1);assert.equal(reopened.reopenedCurrent.objects[0].page,1);
+  await reopened.pdf.destroy();
+
+  bytes=await savedThreePagePdf(3);
+  const addedPdf=await PDFDocument.create();addedPdf.addPage([300,300]);
+  const merged=await mergePdfBytes(bytes,new Uint8Array(await addedPdf.save()),1);reopened=await openPdfDocument(merged);
+  assert.equal(reopened.pageCount,4);assert.equal(reopened.reopenedCurrent.objects.find(object=>object.id==="edit:stable").page,4,"base current objects after insertion shift by added page count");
+  await reopened.pdf.destroy();
 });
