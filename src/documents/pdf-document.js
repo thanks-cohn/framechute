@@ -5,7 +5,7 @@ import { createPdfLayoutCache, createPdfPageLayout, layoutSemanticFlow } from ".
 import { contentGroupsFromPdfLayout } from "./pdf-content-groups.js";
 import { buildPdfDiagnosticSnapshot, createOwnedMask, currentPdfEdits, ensurePdfEditIdentity, reconcileReopenedPdfObjects } from "./pdf-observability.js";
 import { buildPdfForensicPage } from "./pdf-forensics.js";
-import { buildPdfSourceMarginReconciliation } from "./pdf-runtime-truth.js";
+import { buildPdfSourceMarginReconciliation, remapPdfCurrentManifestForPageOperation } from "./pdf-runtime-truth.js";
 export { pdfRectToViewport, viewportRectToPdf } from "./pdf-geometry.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.mjs", import.meta.url).href;
@@ -297,7 +297,9 @@ function parseCurrentVersionKeywords(keywords){
 function currentVersionManifest(edits,inherited=null){
   const authored=currentPdfEdits(edits).filter(edit=>["replacement","text","wrap"].includes(edit.kind||"replacement")).map(edit=>({
     id:edit.id,kind:edit.kind||"replacement",page:Number(edit.page),text:String(edit.text??edit.replacement??""),sourceObjectId:edit.sourceObjectId||null,sourceLineId:edit.sourceLineId||null,
-    pdfRect:{x:Number(edit.x),y:Number(edit.y),width:Number(edit.width),height:Number(edit.height)},sourceOwnershipRect:{x:Number(edit.sourceX??edit.x),y:Number(edit.sourceY??edit.y),width:Number(edit.sourceWidth??edit.width),height:Number(edit.sourceHeight??edit.height)},fontSize:Number(edit.fontSize)||12,fontFamily:edit.fontFamily||"Helvetica",rotation:Number(edit.rotation)||0,index:Number.isFinite(Number(edit.index))?Number(edit.index):-1,original:String(edit.original??""),versionState:"current"
+    pdfRect:{x:Number(edit.x),y:Number(edit.y),width:Number(edit.width),height:Number(edit.height)},sourceOwnershipRect:{x:Number(edit.sourceX??edit.x),y:Number(edit.sourceY??edit.y),width:Number(edit.sourceWidth??edit.width),height:Number(edit.sourceHeight??edit.height)},fontSize:Number(edit.fontSize)||12,fontFamily:edit.fontFamily||"Helvetica",rotation:Number(edit.rotation)||0,index:Number.isFinite(Number(edit.index))?Number(edit.index):-1,original:String(edit.original??""),versionState:"current",
+    semanticRole:edit.semanticRole||null,roleConfidence:Number(edit.roleConfidence)||0,roleEvidence:[...(edit.roleEvidence||[])],parentLineId:edit.parentLineId||edit.sourceLineId||null,parentBlockId:edit.parentBlockId||null,reconciliationSemanticUnit:edit.reconciliationSemanticUnit||null,
+    originPage:Number(edit.originPage)||Number(edit.page),cloneProvenance:edit.cloneProvenance||null
   }));
   if(!authored.length&&inherited?.objects?.length)return inherited;
   const replacedSources=new Set(authored.map(object=>object.sourceObjectId).filter(Boolean));
@@ -797,6 +799,8 @@ export async function transformPdfPages(bytes, operation) {
     const target = Math.max(0, Math.min(count - 1, Number(operation.to) - 1));
     if (target !== pageIndex) { const [copy] = await pdf.copyPages(pdf, [pageIndex]); pdf.removePage(pageIndex); pdf.insertPage(target, copy); }
   } else throw new Error(`Unsupported PDF page operation: ${operation.type}`);
+  const manifest=parseCurrentVersionKeywords(pdf.getKeywords());
+  if(manifest){const remapped=remapPdfCurrentManifestForPageOperation(manifest,count,operation),prior=pdf.getKeywords()?.split(/,\s*/).filter(keyword=>!keyword.startsWith(CURRENT_VERSION_KEYWORD))||[];pdf.setKeywords([...prior,`${CURRENT_VERSION_KEYWORD}${encodeBase64Url(JSON.stringify(remapped))}`]);}
   return new Uint8Array(await pdf.save());
 }
 

@@ -161,8 +161,37 @@ function sourceNode(run, index, page) {
     paintOrder:number(run.paintOrder, index), spatialOrder:null, readingOrder:null,
     provenance:"source", confidence:number(run.confidence, 1), editable:true, protected:false,
     text:String(run.text ?? ""), style:Object.freeze({ fontSize:number(run.fontSize, run.bounds?.height || 12), angle }),
-    metadata:Object.freeze({ sourceIndex:number(run.sourceIndex, index), sourceRef:String(sourceKey) })
+    semanticRole:run.semanticRole || null, roleConfidence:number(run.roleConfidence,0),
+    roleEvidence:Object.freeze([...(run.roleEvidence||[])]), allowOutsideContentBounds:run.allowOutsideContentBounds===true,
+    metadata:{ sourceIndex:number(run.sourceIndex, index), sourceRef:String(sourceKey),
+      importedSemanticRole:run.semanticRole||null, allowOutsideContentBounds:run.allowOutsideContentBounds===true }
   };
+}
+
+export const PDF_SEMANTIC_PAGE_ROLES=Object.freeze(["BODY_CONTENT","HEADER","FOOTER","PAGE_NUMBER","WATERMARK","BACKGROUND","PRINT_MARK","UNKNOWN_PAGE_FURNITURE"]);
+
+/** Conservative, deterministic role classification on the real reconstructed
+ * hierarchy. Explicit importer metadata wins; geometry alone only identifies
+ * furniture in narrow page-edge bands (or a strongly watermark-like run). */
+function classifySourceRoles({runs,lines,blocks,pageBounds}) {
+  const lineById=new Map(lines.map(line=>[line.id,line])),blockById=new Map(blocks.map(block=>[block.id,block]));
+  const bottom=pageBounds.y,top=pageBounds.y+pageBounds.height,edge=Math.max(18,pageBounds.height*.075);
+  for(const run of runs){
+    const line=lineById.get(run.parentId),block=blockById.get(line?.parentId),centerY=run.bounds.y+run.bounds.height/2;
+    const explicit=PDF_SEMANTIC_PAGE_ROLES.includes(run.semanticRole)?run.semanticRole:null;
+    let role=explicit,confidence=explicit?Math.max(.9,run.roleConfidence||0):0,evidence=explicit?["explicit-import-metadata",...run.roleEvidence]:[];
+    if(!role&&/^[\s\-–—]*[ivxlcdm\d]+[\s\-–—]*$/i.test(run.text)&&centerY<=bottom+edge){role="PAGE_NUMBER";confidence=.94;evidence=["isolated-page-number-pattern","bottom-page-band"];}
+    else if(!role&&Math.abs(run.style.angle||0)>=15&&Math.abs(run.style.angle||0)<=75&&centerY>bottom+pageBounds.height*.2&&centerY<top-pageBounds.height*.2){role="WATERMARK";confidence=.86;evidence=["diagonal-text","interior-page-position"];}
+    else if(!role&&centerY>=top-edge&&block?.childIds?.length<=2){role="HEADER";confidence=.72;evidence=["top-page-band","isolated-from-primary-body-flow"];}
+    else if(!role&&centerY<=bottom+edge&&block?.childIds?.length<=2){role="FOOTER";confidence=.72;evidence=["bottom-page-band","isolated-from-primary-body-flow"];}
+    else {role||="BODY_CONTENT";confidence||=.98;evidence.length||evidence.push("primary-body-flow-or-insufficient-furniture-evidence");}
+    const furniture=["HEADER","FOOTER","PAGE_NUMBER","WATERMARK","BACKGROUND","PRINT_MARK"].includes(role);
+    const exempt=run.allowOutsideContentBounds===true||furniture;
+    Object.assign(run,{semanticRole:role,roleConfidence:round(confidence),roleEvidence:Object.freeze(evidence),allowOutsideContentBounds:exempt});
+    run.metadata=Object.freeze({...run.metadata,semanticRole:role,roleConfidence:round(confidence),roleEvidence:Object.freeze(evidence),allowOutsideContentBounds:exempt,parentLineId:line?.id||null,parentBlockId:block?.id||null});
+  }
+  for(const line of lines){const members=line.childIds.map(id=>runs.find(run=>run.id===id)).filter(Boolean),roles=new Set(members.map(run=>run.semanticRole));const role=roles.size===1?members[0]?.semanticRole:"BODY_CONTENT";Object.assign(line,{semanticRole:role,roleConfidence:Math.min(...members.map(run=>run.roleConfidence)),roleEvidence:Object.freeze([...new Set(members.flatMap(run=>run.roleEvidence))]),allowOutsideContentBounds:members.length>0&&members.every(run=>run.allowOutsideContentBounds)});}
+  for(const block of blocks){const members=block.childIds.map(id=>lineById.get(id)).filter(Boolean),roles=new Set(members.map(line=>line.semanticRole));const role=roles.size===1?members[0]?.semanticRole:"BODY_CONTENT";Object.assign(block,{semanticRole:role,roleConfidence:Math.min(...members.map(line=>line.roleConfidence)),roleEvidence:Object.freeze([...new Set(members.flatMap(line=>line.roleEvidence))]),allowOutsideContentBounds:members.length>0&&members.every(line=>line.allowOutsideContentBounds)});}
 }
 
 function readingGeometry(node) {
@@ -383,6 +412,7 @@ export function createPdfPageLayout({ page=1, pageBounds, sourceRuns=[], edits=[
   for (const line of lines) line.parentId = blockByLine.get(line.id)?.id || null;
   for (const block of blocks) block.parentId = pageNode.id;
   for (const node of [...editNodes,...regionNodes]) node.parentId ||= pageNode.id;
+  classifySourceRoles({runs,lines,blocks,pageBounds:bounds});
 
   const freeTextNodes=editNodes.filter(node=>node.kind==="free-text");
   const readingBlocks = assignReadingOrder([...blocks,...freeTextNodes],bounds);
