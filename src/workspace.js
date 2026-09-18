@@ -1041,6 +1041,12 @@ registerBlockType("pdf", {
       const text = span.querySelector(".pdf-edit-text");
       if (!text) return;
       const runtime = runtimeSources.get(block);
+      if(runtime?.truth?.state.interaction==="editing"&&runtime.truth.state.activeSpan===span){
+        if(showControls)showPdfTextControls(block,span);
+        if(!preserveSelection)placePdfCaretFromPointer(event,text);
+        return;
+      }
+      if(runtime?.truth?.state.interaction==="editing")commitActivePdfText(block,"switch-field");
       const beforeGeometry=capturePdfPageGeometry(block,{viewport:runtime?.pageData?.viewport});
       recordPdfGeometry(block,runtime,"dblclick",span);
       pdfTelemetry(runtime).lastPointer=capturePointerHitTest(event,textLayer,{observations:capturePdfPageDomObservations(textLayer,{state:"dblclick"})});
