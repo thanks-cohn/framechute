@@ -57,6 +57,19 @@ test("single-line autofit does not manufacture a second row",()=>{
 });
 
 
+test("unchanged PDF edit exit clears transient live text visibility so source glyphs do not double",()=>{
+  const start=workspace.indexOf("function commitActivePdfText");
+  const end=workspace.indexOf("function selectedPdfEdit",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/const activeText=truth\.state\.activeElement/);
+  assert.match(block,/if\(!result\.changed&&activeText\)/);
+  assert.match(block,/removeProperty\("color"\)/);
+  assert.match(block,/removeProperty\("-webkit-text-fill-color"\)/);
+  assert.match(block,/removeProperty\("background"\)/);
+  assert.match(block,/removeProperty\("opacity"\)/);
+  assert.match(block,/delete activeText\.dataset\.liveText/);
+});
+
 test("committing a replacement installs persistent source coverage before transient live mask is removed",()=>{
   const start=workspace.indexOf("function commitActivePdfText");
   const end=workspace.indexOf("function selectedPdfEdit",start);
