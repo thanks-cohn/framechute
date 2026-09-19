@@ -472,7 +472,8 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   // yet. Keep those, but canonical replacement masks come only from the plan.
   const visibleMasks=[...legacyMasks.filter(mask=>!mask.ownerEditId),...presentationPlan.masks.map(mask=>({...mask,...mask.layoutRect}))];
   for (const mask of visibleMasks) {
-    const raw = pdfRectToViewport(viewport, mask);
+    const maskGeometry=mask.ownerEditId?(mask.sourceOwnershipRect||mask):mask;
+    const raw = pdfRectToViewport(viewport, maskGeometry);
     let rawLeft=raw[0],rawTop=raw[1],rawRight=raw[2],rawBottom=raw[3];
     // The presentation plan proves semantic source ownership. Rendering adds
     // bounded visual bleed so committed replacements hide the same antialiased
@@ -487,8 +488,10 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
       const nextItem=sourceIndex>=0?content.items.slice(sourceIndex+1).find(candidate=>candidate.str?.trim()):null;
       const terminal=Boolean(item)&&(!nextItem||Math.abs((Number(nextItem.transform?.[5])||0)-(Number(item.transform?.[5])||0))>Math.max(1,Math.abs(Number(item.transform?.[3])||0)*.35));
-      const terminalBleed=terminal?Math.min(8,Math.max(2.5,(viewport.scale||1)*2.2)):0;
-      rawTop-=topBleed;rawBottom+=bottomBleed;rawRight+=terminalBleed;
+      const scale=Math.max(.25,viewport.scale||1),horizontalPad=Math.max(1,1.5*scale);
+      const terminalBleed=terminal?Math.min(8,Math.max(2.5,scale*2.2)):0;
+      rawLeft-=horizontalPad;rawRight+=horizontalPad+terminalBleed;
+      rawTop-=topBleed;rawBottom+=bottomBleed;
     }
     const left = Math.max(0, Math.min(viewport.width, rawLeft));
     const top = Math.max(0, Math.min(viewport.height, rawTop));
