@@ -473,10 +473,27 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
   const visibleMasks=[...legacyMasks.filter(mask=>!mask.ownerEditId),...presentationPlan.masks.map(mask=>({...mask,...mask.layoutRect}))];
   for (const mask of visibleMasks) {
     const raw = pdfRectToViewport(viewport, mask);
-    const left = Math.max(0, Math.min(viewport.width, raw[0]));
-    const top = Math.max(0, Math.min(viewport.height, raw[1]));
-    const right = Math.max(left, Math.min(viewport.width, raw[2]));
-    const bottom = Math.max(top, Math.min(viewport.height, raw[3]));
+    let rawLeft=raw[0],rawTop=raw[1],rawRight=raw[2],rawBottom=raw[3];
+    // The presentation plan proves semantic source ownership. Rendering adds
+    // bounded visual bleed so committed replacements hide the same antialiased
+    // source ink that the live-edit mask hid before Enter/focusout.
+    if(mask.ownerEditId){
+      const sourceId=mask.sourceObjectId||mask.sourceObjectIds?.[0]||"";
+      const match=String(sourceId).match(/:text:(\d+)$/),sourceIndex=match?Number(match[1]):-1;
+      const item=sourceIndex>=0?content.items[sourceIndex]:null;
+      const sourceDisplay=item?sourceTextDisplayBoxForItem(viewport,item,content.styles):null;
+      const fieldHeight=Math.max(1,sourceDisplay?.height||Math.abs(rawBottom-rawTop)||12);
+      const topBleed=Math.max(3,Math.min(10,fieldHeight*.34));
+      const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
+      const nextItem=sourceIndex>=0?content.items.slice(sourceIndex+1).find(candidate=>candidate.str?.trim()):null;
+      const terminal=Boolean(item)&&(!nextItem||Math.abs((Number(nextItem.transform?.[5])||0)-(Number(item.transform?.[5])||0))>Math.max(1,Math.abs(Number(item.transform?.[3])||0)*.35));
+      const terminalBleed=terminal?Math.min(8,Math.max(2.5,(viewport.scale||1)*2.2)):0;
+      rawTop-=topBleed;rawBottom+=bottomBleed;rawRight+=terminalBleed;
+    }
+    const left = Math.max(0, Math.min(viewport.width, rawLeft));
+    const top = Math.max(0, Math.min(viewport.height, rawTop));
+    const right = Math.max(left, Math.min(viewport.width, rawRight));
+    const bottom = Math.max(top, Math.min(viewport.height, rawBottom));
     if (right <= left || bottom <= top) continue;
     const element = document.createElement("div");
     element.className = "pdf-source-mask";
