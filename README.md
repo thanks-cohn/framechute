@@ -57,7 +57,11 @@ A PDF may need behavior an image does not. A video may need timing machinery a D
 
 If repeating architecture and shared primitives can let a roughly 10 MB system provide work that would otherwise require a pile of isolated tools approaching 1 GB, that is a win. Compactness is not the only goal, but **simplicity, reuse, and elegance are architectural NEEDS rather than afterthoughts.**
 
-The goal is not to reproduce every professional feature in Photoshop, Word, Acrobat, Premiere, Excel, or Blender.
+The goal is not to reproduce every professional feature in Photoshop, Word, Acrobat, Premiere, Excel, or Blender. It is to make a small number of foundational controls extraordinarily dependable: select an object, edit it, position it freely or numerically, set its dimensions and appearance, arrange it with other objects, and preserve the result.
+
+**Why should I need all that just to do my homework, fill out a form, fix a sentence, or add a picture?** That question is the design brief. SUBSTRATE is for people who want a straightforward path through everyday work, whether they are students, educators, researchers, office workers, artists, or experienced users who need precise controls. Basic tasks should not demand specialist knowledge; precision should not demand a wall of permanent buttons. Support different devices, accessibility needs, and levels of expertise where feasible, without claiming every specialist workflow has already been implemented.
+
+See the [small-controls, foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md). A **Padding** control is currently proposed **only for page margins**, with px/% and top/right/bottom/left settings. It must not be confused with the PDF's source-glyph erasure masks or automatically rearrange untouched imported content.
 
 The goal is to make a very large class of ordinary file work feel immediate:
 
@@ -69,15 +73,19 @@ The goal is to make a very large class of ordinary file work feel immediate:
 
 SUBSTRATE is in **active development**. FrameChute, its current Manifest V3 Chrome/Chromium extension implementation, is already usable from source, while the project is still in the stage where interaction rules, document fidelity, export behavior, and workspace primitives are being hardened aggressively.
 
-**Current extension version:** `1.0.14`
+**Current extension version:** `1.0.15` (as recorded in manifest.json on 2026-09-19)
 
 **Primary target:** Chrome / Chromium desktop
 
 **Architecture:** browser-side JavaScript/CSS/HTML, local-first, no required cloud backend, no native companion
 
-**Repository status:** the latest document-interaction stabilization work has been merged into `main` through PR #56.
+**Repository status (2026-09-19):** PDF text-interaction stabilization has been merged into main through PR #96. Text editing and image placement still have important fidelity and document-flow gaps; this is an actively tested working editor, not a claim of complete PDF or Acrobat parity.
 
-The most important recent milestone was not another giant feature dump. It was making the existing surface behave more like one coherent system.
+The most important recent milestone has not been another giant feature dump. It has been making the existing surface behave more like one coherent system.
+
+**Recent development pace:** PRs #88 through #96 were nine consecutive PDF-focused merges between late September 18 and early September 19, 2026 (UTC), roughly four hours from the first to the last merge. They addressed live text visibility, click/field handles, no-op superimposition, horizontal typing growth, source-glyph masking, and hover/drag visibility. That is a fast feedback-and-iteration cycle, **not** a release-quality claim: successive real-browser tests exposed new interactions among those fixes. The next milestone is whole-page image-aware text reflow and faithful save/reopen, rather than another stack of narrow mask patches.
+
+**Known visual limitation:** adding a large image to an imported, text-heavy PDF can still leave overlapping or unreadably fragmented text. The existing image-wrap path is not yet a dependable whole-paragraph/page layout engine. The [current image-flow bug and acceptance plan](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) records the failure and the next work needed.
 
 Recent stabilization includes:
 
@@ -220,7 +228,7 @@ Finally try both concepts:
 | Images | view, move, resize, crop, rotate, flip, convert, annotate, paint/edit, batch operations, save |
 | Video | local playback, seek, frame extraction, workspace arrangement, advanced timing/sync |
 | Audio | local playback, workspace arrangement, advanced timing/sync |
-| PDF | rendering, page operations, text replacement, image edits, merge/extract/crop, save |
+| PDF | rendering, page operations, editable replacement/free-text fields, positioned image edits, partial image-wrap support, merge/extract/crop, save; **full image-aware paragraph/page reflow is not yet reliable** |
 | DOCX | practical text editing, formatting, lists/tables, embedded images, image insertion/movement, save |
 | Text | notes, editing, find/replace, comparison, conversion |
 | ZIP | browse supported entries and open them as workspace objects |
@@ -315,7 +323,9 @@ Current PDF work includes:
 - undo/redo for supported edits
 - Save / Save As
 
-The PDF replacement system is intentionally useful before it is exhaustive.
+The PDF replacement system is intentionally useful before it is exhaustive. It currently relies on cover-and-redraw for source text and can position images, but it does not yet guarantee coherent reflow of surrounding paragraphs when an image is added or resized. Dense imported pages and difficult source PDFs may require explicit editing or a safe fallback. Do not assume that a visually clean live preview proves externally faithful export.
+
+**Next PDF gate:** an image inserted into supported flowing text should make the affected paragraph move naturally around or below it, preserving every word and reading order. The resulting layout must survive drag/resize, undo, save, and reopen without text collisions. Intentional image-over-text overlay must remain an explicit choice, not the only outcome of insertion. See the [image-flow bug report](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) and [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md).
 
 ---
 
@@ -456,7 +466,7 @@ The editor supports a practical subset, not every Microsoft Word feature. Rich l
 
 ### PDF editing
 
-Replacement text is currently a practical cover-and-redraw system. This is not arbitrary low-level editing of every original PDF object.
+Replacement text is currently a practical cover-and-redraw system. This is not arbitrary low-level editing of every original PDF object. The September 19 image-and-text screenshot demonstrates that existing positioned-image wrapping can still produce crowded and overlapping text; deterministic whole-region reflow and externally faithful save/reopen are next-stage work, not shipped guarantees.
 
 Very large PDFs do not yet have the full range-loading, virtual-page, and bounded-cache architecture needed for truly enormous documents.
 
@@ -482,13 +492,21 @@ Save As, directory access, capture behavior, and codecs depend on the browser an
 
 The project is moving from **many useful capabilities** toward **a small number of universal, dependable primitives**.
 
+**Current sequence: master ordinary PDF work → add a lightweight CSV editor → develop our own portable content/scene format.** Existing DOCX and workspace work continue, but we should not let a growing menu outrun basic correctness. "Master" means common text, image, margin, form-like, and page edits feel direct, do not scramble surrounding content, and save/reopen faithfully on representative documents. Specialized signatures, security, redaction, complex prepress, and full accessibility remediation need separate validation rather than optimistic equivalence claims.
+
 The roadmap follows one rule:
 
 > **Do not build twenty separate applications. Build enough universal primitives that twenty useful workflows emerge.**
 
-## Near term: make documents feel normal
+## First gate: PDF editing that behaves like a document
 
-The next major pass is the structured-text/document experience.
+The next critical task is image-aware text flow. The present wrap path can try to shift individual source text runs around inserted images; it does not consistently rebuild a readable affected paragraph or carry its overflow forward. On normal supported text, inserted or resized images should occupy real layout space: complete words flow into readable side lanes, clear below when the lanes are too narrow, and continue onto subsequent lines/pages where necessary. Original content outside the affected region must remain unchanged; ambiguous PDFs get an explicit safe fallback rather than a mangled automatic conversion.
+
+A small contextual property model should cover positioning (drag or exact X/Y), dimensions, font and text size, and page-only margin Padding in px or %. Hover, live drag, commit, undo, export, and reopen must agree. The [bug report](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) defines acceptance tests. The [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md) gives the product rules.
+
+## Continuing in parallel: make documents feel normal
+
+The next broader pass is the structured-text/document experience.
 
 The target is for a normal DOCX user to find the basic things they expect without hunting:
 
@@ -565,20 +583,19 @@ The useful primitive set is comparatively small:
 
 If those objects obey the same workspace rules as files, much richer workflows emerge naturally.
 
-## Structured data
+## After the PDF gate: a lightweight CSV editor
 
-Structured grid and spreadsheet-style editing are future work.
+CSV currently opens as plain text; it does **not** yet have a native grid. The next planned document/data surface is intentionally small: open ordinary CSV, see rows and columns, select and edit cells with the keyboard or pointer, add/remove rows and columns, find data, perform simple optional sort/filter operations, and save a correctly escaped, interoperable CSV.
 
-A future grid primitive can grow toward:
+Preserve headers, quoted separators, line breaks inside quoted fields, encodings where supported, and numeric-looking IDs or leading zeros as text unless the user explicitly asks for a conversion. Keep this local-first and responsive on modest machines. Do not turn this milestone into an Excel clone: formulas, complex workbook features, and charts are not prerequisites for a useful CSV editor.
 
-- cells
-- formulas
-- references
-- sorting/filtering
-- charts
-- lightweight spreadsheet-style work
+The same foundational selection, direct manipulation, numerical precision, undo, and import/export rules should apply to the grid without imposing paragraph layout on tabular data.
 
-without requiring FrameChute to become a separate spreadsheet application internally.
+## Then: our own portable content format
+
+After the ordinary PDF experience and lightweight CSV editor are dependable, define a documented native representation for mixed text, images, geometry, layout constraints, and eventually interactive scenes. Earlier proposals use **WEBX** as a working name; its final name and schema are not settled. The format should express reusable objects and rules rather than baking every page into anonymous pixels.
+
+This is **not** a rebranding of the existing FCX workspace-session format. FCX currently preserves the desk; the future native content/scene format would describe the material itself and its layout. Ordinary PDF, DOCX, CSV, image, and web exports must remain useful: the user should not need our format or a subscription simply to retrieve their work.
 
 ## Longer term
 
@@ -614,6 +631,8 @@ tests/
 scripts/
   package-web-store.sh
 agents/codex/prompts/
+Proposals/       product and architecture proposals
+bugs/latest/     timestamped observed failures and next-stage handoffs
 ```
 
 A recurring architectural preference is to pull invariants into small testable modules instead of letting `workspace.js` become the implementation of everything.
