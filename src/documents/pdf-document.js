@@ -483,7 +483,7 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       const item=sourceIndex>=0?content.items[sourceIndex]:null;
       const sourceDisplay=item?sourceTextDisplayBoxForItem(viewport,item,content.styles):null;
       const fieldHeight=Math.max(1,sourceDisplay?.height||Math.abs(rawBottom-rawTop)||12);
-      const topBleed=Math.max(1.5,Math.min(4.5,fieldHeight*.14));
+      const topBleed=Math.max(.5,Math.min(2,fieldHeight*.06));
       const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
       const nextItem=sourceIndex>=0?content.items.slice(sourceIndex+1).find(candidate=>candidate.str?.trim()):null;
       const terminal=Boolean(item)&&(!nextItem||Math.abs((Number(nextItem.transform?.[5])||0)-(Number(item.transform?.[5])||0))>Math.max(1,Math.abs(Number(item.transform?.[3])||0)*.35));
