@@ -721,7 +721,7 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   // so adjacent words are untouched, but deliberately over-cover vertically.
   // A slightly larger top bleed removes the persistent "cap fragments" that
   // otherwise remain visible above the live replacement.
-  const topBleed=Math.max(1.5,Math.min(4.5,fieldHeight*.14));
+  const topBleed=Math.max(.5,Math.min(2,fieldHeight*.06));
   const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
   const projected=projectPdfSourceMask(viewport,ownership,{
     padding:horizontalPad,
@@ -760,7 +760,7 @@ function syncPdfReplacementSourceMask(textLayer, edit, viewport) {
   const ownedDisplay={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};
   const sourceSpan=[...textLayer.querySelectorAll(".pdf-text-item")].find(node=>node.dataset.sourceObjectId===edit.sourceObjectId||Number(node.dataset.index)===Number(edit.index));
   const fieldHeight=Math.max(1,Number.parseFloat(sourceSpan?.style.height)||ownedDisplay.height||12);
-  const topBleed=Math.max(1.5,Math.min(4.5,fieldHeight*.14));
+  const topBleed=Math.max(.5,Math.min(2,fieldHeight*.06));
   const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
   const terminalBleed=sourceSpan?.dataset.terminalFragment==="true"?Math.min(8,Math.max(2.5,scale*2.2)):0;
   const left = Math.max(0, Math.min(layerWidth, ownedDisplay.left - pad));
