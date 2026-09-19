@@ -716,16 +716,18 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   const scale = Math.max(.25, Number(span.dataset.viewportScale) || viewport.scale || 1);
   const horizontalPad=Math.max(1.25,Math.min(2.5,scale*1.1));
   const fieldHeight=Math.max(1,Number.parseFloat(span.style.height)||12);
-  // PDF font ink can extend above/below the nominal source run box. Keep the
-  // horizontal mask tight to avoid erasing neighbors, but add vertical bleed
-  // so ascenders/descenders from the immutable canvas cannot peek around the
-  // live-edit mask while replacement text is being typed.
-  const verticalBleed=Math.max(2,Math.min(6,fieldHeight*.18));
+  // Canvas glyph ink regularly escapes the nominal PDF run box, especially
+  // above caps/ascenders and below descenders. Keep horizontal coverage tight
+  // so adjacent words are untouched, but deliberately over-cover vertically.
+  // A slightly larger top bleed removes the persistent "cap fragments" that
+  // otherwise remain visible above the live replacement.
+  const topBleed=Math.max(3,Math.min(10,fieldHeight*.34));
+  const bottomBleed=Math.max(3,Math.min(9,fieldHeight*.28));
   const projected=projectPdfSourceMask(viewport,ownership,{
     padding:horizontalPad,
     terminalBleed:span.dataset.terminalFragment==="true"?Math.min(3,Math.max(.75,scale)):0
   });
-  const rawLeft=projected.x,rawTop=projected.y-verticalBleed,rawWidth=projected.width,rawHeight=projected.height+verticalBleed*2;
+  const rawLeft=projected.x,rawTop=projected.y-topBleed,rawWidth=projected.width,rawHeight=projected.height+topBleed+bottomBleed;
   const left = Math.max(0, Math.min(layerWidth, rawLeft));
   const top = Math.max(0, Math.min(layerHeight, rawTop));
   const right = Math.max(left, Math.min(layerWidth, rawLeft + rawWidth));
