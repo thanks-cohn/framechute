@@ -659,8 +659,17 @@ function applyPdfTextCommit(block, span, { text, layoutRect, before, sourceOwner
 
 function commitActivePdfText(block,cause="commit",{cancel=false,rerender=false}={}){
   const runtime=runtimeSources.get(block),truth=runtime?.truth;if(!truth)return {changed:false,reason:"no-runtime-truth"};
+  // Capture the live DOM field before commitPdfTextEdit clears runtime truth.
+  // A no-op source edit made this element visibly black while editing; if we
+  // remove the white live mask without also clearing those transient inline
+  // styles, the DOM copy remains painted on top of the original canvas glyphs.
+  const activeText=truth.state.activeElement;
   const result=commitPdfTextEdit(truth,{cause,cancel});
   const textLayer=block.querySelector(".pdf-text-layer");
+  if(!result.changed&&activeText){
+    for(const property of ["color","-webkit-text-fill-color","background","opacity"])activeText.style.removeProperty(property);
+    delete activeText.dataset.liveText;
+  }
   if(result.changed&&result.edit?.kind==="replacement"&&runtime?.pageData?.viewport){
     // Never expose one frame where the replacement and original canvas glyph
     // are both visible. Install the persistent ownership mask before removing
