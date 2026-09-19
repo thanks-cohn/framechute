@@ -743,7 +743,22 @@ body.hide-block-headers .compact-drag-handle {
 .pdf-interactive-outline { position:absolute; pointer-events:none; z-index:5; outline:1px dashed #276ee8; background:#eaf2ff66; }
 .pdf-interactive-outline[hidden],
 .pdf-text-item.is-editing ~ .pdf-interactive-outline { display:none; }
-.pdf-text-item:hover { outline: none; background: transparent; color: transparent; }
+.pdf-text-item:not(.pdf-text-edit):not(.is-editing):hover { outline: none; background: transparent; color: transparent; }
+.pdf-text-item.pdf-text-edit:hover,
+.pdf-text-item.pdf-text-edit.is-selected,
+.pdf-text-item.is-manipulating {
+  color: #111;
+  -webkit-text-fill-color: #111;
+  background: transparent;
+}
+.pdf-text-item.is-manipulating { z-index: 6; }
+.pdf-text-item.is-manipulating .pdf-edit-text {
+  position: relative;
+  z-index: 2;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  opacity: 1 !important;
+}
 .pdf-text-item.pdf-search-match { background: #ffeb3b99; color: #111; outline: 1px solid #d99b00; }
 .pdf-edit-text[contenteditable="true"] {
   min-width: 100%;
