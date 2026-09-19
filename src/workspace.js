@@ -723,8 +723,10 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   // otherwise remain visible above the live replacement.
   const topBleed=Math.max(.5,Math.min(2,fieldHeight*.06));
   const bottomBleed=Math.max(5,Math.min(14,fieldHeight*.44));
+  const verticalPad=Math.max(.25,Math.min(.75,scale*.3));
   const projected=projectPdfSourceMask(viewport,ownership,{
-    padding:horizontalPad,
+    horizontalPadding:horizontalPad,
+    verticalPadding:verticalPad,
     terminalBleed:span.dataset.terminalFragment==="true"?Math.min(8,Math.max(2.5,scale*2.2)):0
   });
   const rawLeft=projected.x,rawTop=projected.y-topBleed,rawWidth=projected.width,rawHeight=projected.height+topBleed+bottomBleed;
