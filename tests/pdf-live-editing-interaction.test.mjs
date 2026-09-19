@@ -59,6 +59,15 @@ test("live typing grows field width instead of locking to the original box",()=>
   assert.equal(block.includes('userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):currentWidth'),false);
 });
 
+test("live mask uses directional padding so horizontal cleanup does not erase the line above",()=>{
+  const start=workspace.indexOf("function createPdfLiveEditMask");
+  const end=workspace.indexOf("function syncPdfReplacementSourceMask",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/horizontalPadding:horizontalPad/);
+  assert.match(block,/verticalPadding:verticalPad/);
+  assert.match(block,/verticalPad=Math\.max\(\.25,Math\.min\(\.75,scale\*\.3\)\)/);
+});
+
 test("live source mask adds vertical-only glyph bleed",()=>{
   const start=workspace.indexOf("function createPdfLiveEditMask");
   const end=workspace.indexOf("function syncPdfReplacementSourceMask",start);
@@ -143,10 +152,12 @@ test("rerendered persistent PDF mask preserves bottom and terminal visual bleed"
   const start=pdfDocument.indexOf("for (const mask of visibleMasks)");
   const end=pdfDocument.indexOf("content.items.forEach",start);
   const block=pdfDocument.slice(start,end);
+  assert.match(block,/maskGeometry=mask\.ownerEditId\?\(mask\.sourceOwnershipRect\|\|mask\):mask/);
   assert.match(block,/if\(mask\.ownerEditId\)/);
   assert.match(block,/bottomBleed=Math\.max\(5,Math\.min\(14,fieldHeight\*\.44\)\)/);
   assert.match(block,/rawBottom\+=bottomBleed/);
-  assert.match(block,/rawRight\+=terminalBleed/);
+  assert.match(block,/rawLeft-=horizontalPad/);
+  assert.match(block,/rawRight\+=horizontalPad\+terminalBleed/);
 });
 
 test("committing a replacement installs persistent source coverage before transient live mask is removed",()=>{
