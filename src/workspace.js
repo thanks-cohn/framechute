@@ -620,12 +620,20 @@ function selectPdfEdit(block, span) {
   block.querySelectorAll(".pdf-text-item.is-selected").forEach(node=>node.classList.remove("is-selected"));
   const controls=block.querySelector(".pdf-edit-controls");
   if (!pdfEditEnabled(block)) span = null;
-  if(!span?.classList.contains("pdf-text-edit")){controls.hidden=true;delete block.dataset.selectedPdfIndex;delete block.dataset.selectedPdfObjectId;return;}
+  const isImage=span?.classList.contains("pdf-image-edit");
+  const isTextField=Boolean(span?.matches?.(".pdf-text-item")&&span.querySelector?.(".pdf-edit-text"));
+  if(!isImage&&!isTextField){controls.hidden=true;delete block.dataset.selectedPdfIndex;delete block.dataset.selectedPdfObjectId;return;}
   span.classList.add("is-selected");block.dataset.selectedPdfIndex=span.dataset.index;block.dataset.selectedPdfObjectId=span.dataset.objectId||"";
-  const runtime=runtimeSources.get(block),edit=runtime?.edits.find(item=>item.id===span.dataset.objectId)||runtime?.edits.find(item=>item.page===Number(block.dataset.currentPage)&&item.index===Number(span.dataset.index));
-  controls.hidden = edit?.kind === "image";
-  if(edit?.kind !== "image")controls.querySelector(".pdf-font-size").value=String(Math.round(edit.fontSize*10)/10);
-  if(edit?.kind !== "image")controls.querySelector(".pdf-font-family").value=edit.fontFamily || "Helvetica";
+  const runtime=runtimeSources.get(block),index=Number(span.dataset.index),page=Number(block.dataset.currentPage||1);
+  const edit=runtime?.edits.find(item=>item.id===span.dataset.objectId)||runtime?.edits.find(item=>item.page===page&&item.index===index);
+  controls.hidden=isImage||edit?.kind==="image";
+  if(!controls.hidden){
+    const original=index>=0?runtime?.pageData?.content?.items?.[index]:null;
+    const fontSize=edit?.fontSize??inferPdfSourceFontSize(original,12);
+    const fontFamily=edit?.fontFamily??inferPdfSourceFontFamily(original,runtime?.pageData?.content?.styles);
+    controls.querySelector(".pdf-font-size").value=String(Math.round(fontSize*10)/10);
+    controls.querySelector(".pdf-font-family").value=fontFamily;
+  }
 }
 
 function applyPdfTextCommit(block, span, { text, layoutRect, before, sourceOwnershipRect }) {
@@ -681,6 +689,20 @@ function commitActivePdfText(block,cause="commit",{cancel=false,rerender=false}=
   return result;
 }
 function selectedPdfEdit(block) { const runtime=runtimeSources.get(block),id=block.dataset.selectedPdfObjectId,index=Number(block.dataset.selectedPdfIndex),page=Number(block.dataset.currentPage);return runtime?.edits.find(edit=>id&&edit.id===id)||runtime?.edits.find(edit=>edit.page===page&&edit.index===index); }
+function materializePdfSourceEdit(block,span){
+  const runtime=runtimeSources.get(block),index=Number(span?.dataset.index),page=Number(block.dataset.currentPage||1);
+  if(!runtime?.pageData||!span||index<0)return selectedPdfEdit(block)||null;
+  const existing=runtime.edits.find(edit=>edit.page===page&&edit.index===index&&edit.kind!=="image");if(existing)return existing;
+  const original=runtime.pageData.content.items[index];if(!original)return null;
+  const display={left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};
+  const geometry=viewportRectToPdf(runtime.pageData.viewport,display),field=span.querySelector(".pdf-edit-text");
+  const fontSize=Math.max(4,Math.min(144,Number(field?.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12)));
+  const fontFamily=field?.dataset.pendingFontFamily||inferPdfSourceFontFamily(original,runtime.pageData.content.styles);
+  const edit=ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement:original.str,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily,fontSize,rotation:0});
+  runtime.edits.push(edit);
+  block.dataset.selectedPdfObjectId=edit.id;span.dataset.ownerEditId=edit.id;
+  return edit;
+}
 
 function removePdfLiveEditMask(textLayer) {
   textLayer?.querySelectorAll(".pdf-live-edit-mask").forEach(mask => mask.remove());
@@ -1057,7 +1079,7 @@ registerBlockType("pdf", {
       controls.hidden=false;
       controls.querySelector(".pdf-font-size").value=String(Math.round(fontSize*10)/10);
       controls.querySelector(".pdf-font-family").value=fontFamily;
-      if(span?.classList.contains("pdf-text-edit"))selectPdfEdit(block,span);
+      selectPdfEdit(block,span);
     };
     const enterPdfTextEditing=(event,span,{showControls=false,preserveSelection=false}={}) => {
       if (!pdfEditEnabled(block)) return;
@@ -1115,22 +1137,31 @@ registerBlockType("pdf", {
       if(!preserveSelection)placePdfCaretFromPointer(event,text);
       recordPdfGeometry(block,runtime,"selection-created",span);
     };
+    const selectWholePdfTextField=text=>{
+      const doc=text?.ownerDocument||document,selection=doc.getSelection?.()||getSelection();
+      if(!text||!selection)return false;
+      const range=doc.createRange();range.selectNodeContents(text);
+      selection.removeAllRanges();selection.addRange(range);
+      text.closest(".pdf-text-item")?.setAttribute("data-pdf-selection-mode","field");
+      return true;
+    };
     textLayer.addEventListener("click", event => {
       if(!pdfEditEnabled(block))return;
       const span=visualTextTarget(event);
       if(!span||event.detail>1)return;
-      block.querySelectorAll(".pdf-text-item.is-selected").forEach(node=>node.classList.remove("is-selected"));
-      const controls=block.querySelector(".pdf-edit-controls");if(controls)controls.hidden=true;
-      enterPdfTextEditing(event,span,{showControls:false});
+      span.dataset.pdfSelectionMode="caret";
+      enterPdfTextEditing(event,span,{showControls:true});
     });
     textLayer.addEventListener("dblclick", (event) => {
       if (!pdfEditEnabled(block)) return;
       const span=event.target.closest?.(".pdf-text-item")||visualTextTarget(event);if(!span)return;
-      const text=span.querySelector(".pdf-edit-text");
-      if(!text?.isContentEditable)enterPdfTextEditing(event,span,{showControls:true,preserveSelection:true});
+      const text=span.querySelector(".pdf-edit-text");if(!text)return;
+      event.preventDefault();
+      if(!text.isContentEditable)enterPdfTextEditing(event,span,{showControls:true,preserveSelection:true});
       else showPdfTextControls(block,span);
-      // Double-click enhances the same editing session; it never commits or
-      // switches modes. Native contenteditable keeps the user's word selection.
+      selectWholePdfTextField(text);
+      // Double-click promotes caret editing to whole-field selection without
+      // committing or manufacturing an edit simply because the field was selected.
       recordPdfGeometry(block,runtimeSources.get(block),"dblclick",span);
     });
     textLayer.addEventListener("input", event=>{
@@ -1185,8 +1216,13 @@ registerBlockType("pdf", {
     });
     textLayer.addEventListener("pointerdown",event=>{
       if (!pdfEditEnabled(block)) return;
-      const handle=event.target.closest(".pdf-move-handle,.pdf-resize-handle"),span=handle?.closest(".pdf-text-edit"),runtime=runtimeSources.get(block),edit=selectedPdfEdit(block);if(!handle||!span||!edit)return;
-      event.preventDefault();event.stopPropagation();const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};pushPdfHistory(runtime);handle.setPointerCapture(event.pointerId);
+      const handle=event.target.closest(".pdf-move-handle,.pdf-resize-handle"),span=handle?.closest(".pdf-text-item"),runtime=runtimeSources.get(block);if(!handle||!span||!runtime)return;
+      let edit=selectedPdfEdit(block);
+      event.preventDefault();event.stopPropagation();
+      if(!edit&&Number(span.dataset.index)>=0){pushPdfHistory(runtime);edit=materializePdfSourceEdit(block,span);}
+      else if(edit)pushPdfHistory(runtime);
+      if(!edit)return;
+      const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};handle.setPointerCapture(event.pointerId);
       const before={x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)};
       beginPdfManipulation(runtime.truth,{objectId:edit.id,cause:"pointerdown"});
       const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);runtime.truth?.generations.advance("semantic");runtime.truth?.generations.advance("replacement");const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});syncPdfReplacementSourceMask(textLayer,edit,runtime.pageData.viewport);runtime.truth?.record(isMove?"move-update":"resize-update",{objectId:edit.id,before,requested:next,actual:{...next,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)},downstreamEffects:["replacement-layout","fixed-source-mask"]});};
