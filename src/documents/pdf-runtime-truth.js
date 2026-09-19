@@ -232,11 +232,14 @@ export function capturePdfSourceOwnership({ edit = null, sourceRect = null } = {
   return Object.freeze(rect(owned));
 }
 
-export function projectPdfSourceMask(viewport, ownership, { padding = 0, terminalBleed = 0 } = {}) {
+export function projectPdfSourceMask(viewport, ownership, { padding = 0, horizontalPadding = null, verticalPadding = null, terminalBleed = 0 } = {}) {
   const projected = projectPdfContentRect(viewport, ownership);
   if (!projected) return null;
-  const pad=Math.max(0,Number(padding)||0),bleed=Math.max(0,Number(terminalBleed)||0);
-  return Object.freeze({x:projected.x-pad,y:projected.y-pad,width:projected.width+pad*2+bleed,height:projected.height+pad*2,maskRole:"source-ownership"});
+  const fallback=Math.max(0,Number(padding)||0);
+  const padX=Math.max(0,horizontalPadding==null?fallback:Number(horizontalPadding)||0);
+  const padY=Math.max(0,verticalPadding==null?fallback:Number(verticalPadding)||0);
+  const bleed=Math.max(0,Number(terminalBleed)||0);
+  return Object.freeze({x:projected.x-padX,y:projected.y-padY,width:projected.width+padX*2+bleed,height:projected.height+padY*2,maskRole:"source-ownership"});
 }
 
 /** Reconstruct source BODY_CONTENT at legal geometry. The semantic reconciler
