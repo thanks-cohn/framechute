@@ -7,6 +7,34 @@ import { isNativeImageName } from "./media-types.js";
 // Native FileSystemHandles continue to use the durable handle store.
 const transientHandles = new Map();
 const SYNTHETIC_IMAGE_HANDLE = "framechute-synthetic-image-v1";
+const DOCUMENT_WORKING_COPY = "framechute-document-working-copy-v1";
+const DOCUMENT_EXTENSIONS = /\.(?:pdf|docx)$/i;
+
+function isPersistableDocument(file) {
+  return file instanceof Blob && (DOCUMENT_EXTENSIONS.test(String(file.name || "")) ||
+    ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(String(file.type || "").toLowerCase()));
+}
+
+export async function putDocumentWorkingCopy(handleKey, blob, metadata = {}) {
+  if (!handleKey || !(blob instanceof Blob)) throw new TypeError("A document key and Blob are required");
+  const record = {
+    version: 1,
+    kind: DOCUMENT_WORKING_COPY,
+    name: String(metadata.name || blob.name || "Document"),
+    type: String(metadata.type || blob.type || "application/octet-stream"),
+    lastModified: Number(metadata.lastModified) || Date.now(),
+    updatedAt: new Date().toISOString(),
+    blob
+  };
+  await putContent(`${handleKey}:working-copy`, record);
+  return record;
+}
+
+export async function getDocumentWorkingCopy(handleKey) {
+  if (!handleKey) return null;
+  const record = await getContent(`${handleKey}:working-copy`);
+  return record?.kind === DOCUMENT_WORKING_COPY && record.blob instanceof Blob ? record : null;
+}
 
 export function isTransientSyntheticHandle(handle) {
   return Boolean(handle?.__framechuteSyntheticFile instanceof Blob || handle?.__framechuteSyntheticDirectory === true);
@@ -79,6 +107,17 @@ export async function storeHandle(handleKey, handle) {
         // The live drag must continue working even if browser quota is full.
         console.warn("FrameChute could not preserve this dropped image for later restore:", error);
       }
+    }
+
+    // Browser-created PDF/DOCX Files (drop, clipboard, generated documents and
+    // the input fallback) have no reconnectable native handle. Their bytes are
+    // therefore a required working copy, not a best-effort cache.
+    if (isPersistableDocument(synthetic)) {
+      await putDocumentWorkingCopy(handleKey, synthetic, {
+        name: handle.name || synthetic.name,
+        type: synthetic.type,
+        lastModified: synthetic.lastModified
+      });
     }
 
     return handleKey;

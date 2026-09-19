@@ -147,6 +147,9 @@ function inferredSource(block, sourceMap, handlesByName) {
 }
 
 async function captureLiveSnapshot() {
+  const checkpoint = {};
+  window.dispatchEvent(new CustomEvent("framechute:checkpoint-documents", { detail: checkpoint }));
+  await checkpoint.promise;
   const [sourceMap, handlesByName] = await Promise.all([
     sourceMapFromNamedSnapshots(),
     storedHandlesByName()
@@ -160,16 +163,22 @@ async function captureLiveSnapshot() {
     name: "Current workspace",
     createdAt: new Date().toISOString(),
     appearance: detail.appearance ?? null,
-    blocks: [...workspace.querySelectorAll(".block")].map((block) => ({
-      id: block.dataset.blockId,
-      type: block.dataset.blockType,
-      name: block.querySelector(".block-name")?.value?.trim() || "Untitled",
-      geometry: readGeometry(block),
-      source: inferredSource(block, sourceMap, handlesByName),
-      state: captureState(block),
-      timedMotion: block.dataset.timedMotion ? JSON.parse(block.dataset.timedMotion) : null,
-      layerRule: block.dataset.layerRuleData ? JSON.parse(block.dataset.layerRuleData) : null
-    }))
+    blocks: [...workspace.querySelectorAll(".block")].map((block) => {
+      // Use the canonical type registry so live autosave retains the same PDF
+      // edit state and complete DOCX block model as a named workspace.
+      const captured = window.FrameChuteWorkspace?.captureBlock?.(block);
+      if (captured) return { ...captured, source: captured.source || inferredSource(block, sourceMap, handlesByName) };
+      return {
+        id: block.dataset.blockId,
+        type: block.dataset.blockType,
+        name: block.querySelector(".block-name")?.value?.trim() || "Untitled",
+        geometry: readGeometry(block),
+        source: inferredSource(block, sourceMap, handlesByName),
+        state: captureState(block),
+        timedMotion: block.dataset.timedMotion ? JSON.parse(block.dataset.timedMotion) : null,
+        layerRule: block.dataset.layerRuleData ? JSON.parse(block.dataset.layerRuleData) : null
+      };
+    })
   };
 }
 
@@ -183,6 +192,8 @@ async function saveLiveNow() {
     hideLiveOption();
   } catch (error) {
     console.warn("Could not autosave current Flashframe workspace:", error);
+    const status = document.querySelector("#status");
+    if (status) status.textContent = "Working-copy checkpoint failed. Keep this tab open and use Save As; this document may not recover after restart.";
   }
 }
 

@@ -11,7 +11,9 @@ import {
   pickVideoFile,
   requestReadPermission,
   resolveHandle,
-  storeHandle
+  storeHandle,
+  getDocumentWorkingCopy,
+  putDocumentWorkingCopy
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, inferPdfSourceFontFamily, extractSemanticPdfText, createPdfPageDiagnostics, createPdfFreeTextElement } from "./documents/pdf-document.js";
@@ -191,6 +193,32 @@ async function storedReadableHandle(source) {
   return (await hasReadPermission(handle)) ? handle : null;
 }
 
+async function storedDocumentCopy(source) {
+  if (!source?.handleKey) return null;
+  try { return await getDocumentWorkingCopy(source.handleKey); }
+  catch (error) { console.warn("FrameChute could not read the document working copy:", error); return null; }
+}
+
+async function checkpointDocument(block) {
+  if (!block || !["pdf", "docx"].includes(block.dataset.blockType)) return;
+  if (block.dataset.documentCheckpointed === "true" && block.dataset.documentCheckpointPending !== "true") return;
+  const source = getSourceRecord(block), runtime = runtimeSources.get(block);
+  if (!source?.handleKey || !runtime?.serialize) return;
+  const blob = await runtime.serialize();
+  await putDocumentWorkingCopy(source.handleKey, blob, {
+    name: block.querySelector(".block-name")?.value || source.displayName,
+    type: blob.type
+  });
+  block.dataset.documentCheckpointed = "true";
+  block.dataset.documentCheckpointPending = "false";
+}
+
+async function checkpointDocuments() {
+  for (const block of workspace.querySelectorAll('.block[data-block-type="pdf"], .block[data-block-type="docx"]')) {
+    await checkpointDocument(block);
+  }
+}
+
 async function reconnectSource(block, picker, loader) {
   const source = getSourceRecord(block);
   let handle = source?.handleKey ? await resolveHandle(source.handleKey) : null;
@@ -218,6 +246,7 @@ async function reconnectSource(block, picker, loader) {
     }
 
     await loader(handle, picked);
+    await checkpointDocument(block);
   } catch (error) {
     if (!isPickerCancel(error)) throw error;
   }
@@ -490,6 +519,7 @@ window.addEventListener("framechute:object-command", event => {
 
 function setDocumentDirty(block, dirty) {
   block.dataset.documentDirty = String(Boolean(dirty));
+  if (dirty) block.dataset.documentCheckpointPending = "true";
   const indicator = block.querySelector(".document-dirty");
   if (indicator) indicator.hidden = !dirty;
 }
@@ -505,6 +535,11 @@ async function saveNativeDocument(block, saveAs = false) {
   const result = await saveDocument({ serialize: runtime.serialize, handle: runtime.handle, saveAs,
     saveAsWriter: (blob) => saveDocumentAs({ ...options, blob }) });
   if (!result.saved) return;
+  if (source?.handleKey) {
+    await putDocumentWorkingCopy(source.handleKey, result.blob, { name: filename, type: result.blob.type });
+    block.dataset.documentCheckpointed = "true";
+    block.dataset.documentCheckpointPending = "false";
+  }
   if (result.handle) {
     runtime.handle = result.handle;
     setSourceRecord(block, { kind: "file", handleKey: source?.handleKey, displayName: result.handle.name || filename });
@@ -847,7 +882,7 @@ async function loadPdfHandle(block, handle, state = {}) {
   setDocumentDirty(block, Boolean(state.dirty));
   await setPdfPage(block, state.page ?? block.dataset.currentPage ?? 1);
 }
-async function loadPdfBytes(block, bytes, state={}) { const model=await openPdfDocument(bytes);await initializePdfRuntime(block,{model,state});setPdfEditMode(block,state.editMode!==false);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
+async function loadPdfBytes(block, bytes, state={}, handle=null) { const model=await openPdfDocument(bytes);await initializePdfRuntime(block,{model,state,handle});setPdfEditMode(block,state.editMode!==false);clearSourceUnavailable(block);setDocumentDirty(block,Boolean(state.dirty));await setPdfPage(block,state.page??1); }
 
 async function applyPdfPageOperation(block, operation) {
   const previous = runtimeSources.get(block); if (!previous?.model) return;
@@ -1298,17 +1333,21 @@ registerBlockType("pdf", {
 
   capture(block) {
     const runtime = runtimeSources.get(block);
-    return { page: clampInteger(block.querySelector(".pdf-page").value, 1), zoom:runtime?.zoom, fitMode:runtime?.fitMode, editMode:pdfEditEnabled(block), pdfLayoutMargins:structuredClone(runtime?.marginState||createPdfMarginState()), edits: structuredClone(runtime?.edits || []), dirty: block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty), embeddedBlob:(!getSourceRecord(block)||runtime?.structurallyDirty)&&runtime?.model?.bytes?new Blob([runtime.model.bytes],{type:"application/pdf"}):null };
+    return { page: clampInteger(block.querySelector(".pdf-page").value, 1), zoom:runtime?.zoom, fitMode:runtime?.fitMode, editMode:pdfEditEnabled(block), pdfLayoutMargins:structuredClone(runtime?.marginState||createPdfMarginState()), edits: structuredClone(runtime?.edits || []), dirty: block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty) };
   },
 
   async restore(block, state = {}, source = null) {
     setPdfPage(block, state.page ?? 1);
-    const handle = await storedReadableHandle(source);
+    const copy = await storedDocumentCopy(source);
 
     if(state.embeddedBlob instanceof Blob)await loadPdfBytes(block,new Uint8Array(await state.embeddedBlob.arrayBuffer()),state);
     else if(state.embeddedPdfBase64)await loadPdfBytes(block,base64ToBytes(state.embeddedPdfBase64),state);
-    else if (handle) await loadPdfHandle(block, handle, state);
-    else setSourceUnavailable(block, `Reconnect ${source?.displayName ?? "this PDF"} to display it.`);
+    else if(copy)await loadPdfBytes(block,new Uint8Array(await copy.blob.arrayBuffer()),state,source?.handleKey ? await resolveHandle(source.handleKey) : null);
+    else {
+      const handle = await storedReadableHandle(source);
+      if (handle) { await loadPdfHandle(block, handle, state); await checkpointDocument(block); }
+      else setSourceUnavailable(block, `The original and browser working copy for ${source?.displayName ?? "this PDF"} are unavailable. Reconnect it to recover.`);
+    }
   }
 });
 
@@ -1855,8 +1894,8 @@ registerBlockType("docx", {
     const updateToolbar=()=>{if(document.activeElement!==editor&&!editor.contains(document.activeElement))return;for(const [selector,name] of [[".docx-bold","bold"],[".docx-italic","italic"],[".docx-underline","underline"],[".docx-strike","strikeThrough"]])block.querySelector(selector).setAttribute("aria-pressed",String(document.queryCommandState(name)));};document.addEventListener("selectionchange",updateToolbar);block.addEventListener("framechute:release-resources",()=>document.removeEventListener("selectionchange",updateToolbar),{once:true});
     block.querySelector(".reconnect-source").addEventListener("click", async () => { try { await reconnectSource(block, pickDocxFile, (handle) => loadDocxHandle(block, handle, this.capture(block))); } catch (error) { console.error(error); setStatus("Could not reconnect that DOCX."); } });
   },
-  capture(block) { const runtime=runtimeSources.get(block),editor=block.querySelector(".docx-editor"),viewport=block.querySelector(".docx-viewport");return { blocks: docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop: viewport?.scrollTop||0, scrollLeft: viewport?.scrollLeft||0, dirty: block.dataset.documentDirty === "true", embeddedBlob:getSourceRecord(block)?null:runtime?.serialize?.()||null }; },
-  async restore(block, state = {}, source = null) { if (state.blocks) renderDocxEditor(block, state.blocks); setDocumentDirty(block, Boolean(state.dirty)); const handle = await storedReadableHandle(source); if(state.embeddedBlob instanceof Blob){const file=new File([state.embeddedBlob],block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);}else if (handle) await loadDocxHandle(block, handle, state); else setSourceUnavailable(block, `Reconnect ${source?.displayName ?? "this DOCX"} to continue editing and save it.`); }
+  capture(block) { const editor=block.querySelector(".docx-editor"),viewport=block.querySelector(".docx-viewport");return { blocks: docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop: viewport?.scrollTop||0, scrollLeft: viewport?.scrollLeft||0, dirty: block.dataset.documentDirty === "true" }; },
+  async restore(block, state = {}, source = null) { if (state.blocks) renderDocxEditor(block, state.blocks); setDocumentDirty(block, Boolean(state.dirty)); const copy=await storedDocumentCopy(source); if(state.embeddedBlob instanceof Blob){const file=new File([state.embeddedBlob],block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);}else if(copy){const original=source?.handleKey ? await resolveHandle(source.handleKey) : null,file=new File([copy.blob],copy.name||block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);runtimeSources.get(block).handle=original;}else {const handle=await storedReadableHandle(source);if(handle){await loadDocxHandle(block,handle,state);await checkpointDocument(block);}else setSourceUnavailable(block, `The original and browser working copy for ${source?.displayName ?? "this DOCX"} are unavailable. Reconnect it to recover.`);} }
 });
 
 registerBlockType("gallery", {
@@ -2168,6 +2207,9 @@ async function restoreWorkspace(snapshot) {
 window.addEventListener("framechute:capture-workspace", (event) => {
   event.detail.snapshot = captureWorkspace(event.detail.name || "FrameChute workspace");
 });
+window.addEventListener("framechute:checkpoint-documents", (event) => {
+  event.detail.promise = checkpointDocuments();
+});
 window.addEventListener("framechute:restore-workspace", (event) => {
   event.detail.promise = restoreWorkspace(event.detail.snapshot);
 });
@@ -2215,6 +2257,7 @@ async function addPickedBlock({ type, picker, initialState }) {
     if (type === "gallery") await loadGalleryHandle(block, picked.handle, { currentIndex: 0 });
     if (type === "video") await loadVideoHandle(block, picked.handle, { currentTime: 0, paused: true });
 
+    if (type === "pdf" || type === "docx") await checkpointDocument(block);
     setStatus(`${picked.handle.name} added.`);
   } catch (error) {
     if (isPickerCancel(error)) return;
@@ -2287,6 +2330,7 @@ window.addEventListener("framechute:open-document-handle", (event) => {
     const handleKey = makeHandleKey(type); await storeHandle(handleKey, handle);
     const block = await createBlock({ type, name: file?.name || handle.name, source: { kind: "file", handleKey, displayName: file?.name || handle.name }, geometry: point ? { ...defaultGeometry(type), x: point.x, y: point.y } : undefined });
     if (type === "pdf") await loadPdfHandle(block, handle, { page: 1 }); else await loadDocxHandle(block, handle, {});
+    await checkpointDocument(block);
     setStatus(`${file?.name || handle.name} opened for editing.`);
   })();
 });
@@ -2297,9 +2341,12 @@ window.addEventListener("framechute:open-result-file", (event) => {
     const type = kind === "pdf" ? "pdf" : (kind === "video" || kind === "audio") ? "video" : kind === "docx" ? "docx" : null;
     if (!type) { window.dispatchEvent(new CustomEvent("framechute:save-result-file",{detail:{blob:file,name:file.name}})); return; }
     const handle = { kind: "file", name: file.name, __framechuteSyntheticFile: file };
+    const handleKey = makeHandleKey(type); await storeHandle(handleKey, handle);
     const state=type==="pdf"?{page:1,embeddedBlob:file}:type==="docx"?{}:{currentTime:0,paused:true,embeddedBlob:file};
-    const block = await createBlock({ type, name: file.name, state });
+    const source = (type === "pdf" || type === "docx") ? {kind:"file",handleKey,displayName:file.name} : null;
+    const block = await createBlock({ type, name: file.name, source, state });
     if (type === "pdf") await loadPdfHandle(block, handle, state); else if(type==="docx")await loadDocxHandle(block,handle,state);else await loadVideoHandle(block, handle, state);
+    if (type === "pdf" || type === "docx") await checkpointDocument(block);
   })();
 });
 
@@ -2309,6 +2356,7 @@ saveFrameButton.addEventListener("click", async () => {
   if (name == null) return;
 
   try {
+    await checkpointDocuments();
     const snapshot = captureWorkspace(name.trim() || defaultName);
     await saveSnapshot(snapshot);
     await refreshSnapshotList(snapshot.id);

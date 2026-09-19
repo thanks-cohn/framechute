@@ -999,3 +999,37 @@ That is the new persistence contract.
 **IndexedDB is cache.**
 
 **The user's FrameChute folder is memory.**
+
+---
+
+## PDF/DOCX browser working copies
+
+PDF and DOCX blocks also keep a keyed working-copy Blob in the existing
+IndexedDB `content` store. The original `FileSystemFileHandle` remains a
+separate, optional link used for explicit Save. Restore reads the working copy
+first and therefore neither queries nor requests original-file permission just
+to display a document. A legacy snapshot that has only a readable handle is
+migrated by writing its first working copy after it opens.
+
+The live autosave and named-workspace save paths serialize document working
+copies before committing snapshot metadata. DOCX snapshots use the canonical
+block capture (including formatting and image relationship references), while
+PDF snapshots retain page, geometry, edits, margins, and dirty state. This also
+avoids embedding another full document Blob in every snapshot.
+
+Browser storage is still subject to quota and deliberate profile-data deletion.
+A failed checkpoint is reported in the workspace status instead of claiming
+recovery is available. The configured external durable-folder and FCX paths
+remain additional portability mechanisms; a browser working copy does not
+grant permission to overwrite its original.
+
+### Verification
+
+1. Open one PDF and one DOCX, edit both, move/resize their frames, and switch
+   the PDF page. Close and reopen the extension; both should restore directly.
+2. Repeat with generic **Open File** and drag-and-drop. Restart again without
+   granting source permission; neither document should show **Reconnect**.
+3. Use **Save** after restore. Chrome may request write permission for the
+   original; denying it must leave the original unchanged and retain Save As.
+4. Delete site/extension storage only as a destructive check: without an FCX or
+   configured durable folder, the browser working copy is expected to be lost.
