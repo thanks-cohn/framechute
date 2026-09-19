@@ -529,6 +529,11 @@ export async function renderPdfPage(model, pageNumber, canvas, textLayer, edits 
       // layer; using it here removes the first (baseline -> CSS top) divergence.
       Object.assign(span.style, { left: `${sourceLeft}px`, top: `${sourceTop}px`, width: `${sourceWidth}px`, height: `${height}px`, fontSize: `${height}px`, fontFamily: sourceFontFamily, transform: angle?`rotate(${angle}rad)`:"none" });
       span.dataset.geometryDerivation="pdf-baseline-font-ascent";
+      // Source text is selectable interaction truth even before it becomes an
+      // authored replacement. Handles stay hidden until the field is selected.
+      const move=document.createElement("button");move.type="button";move.className="pdf-move-handle";move.title="Move source text";move.textContent="↕";
+      const resize=document.createElement("button");resize.type="button";resize.className="pdf-resize-handle";resize.title="Resize source text";resize.setAttribute("aria-label","Resize source text");
+      span.append(move,resize);
     }
     textLayer.append(span);
   });
