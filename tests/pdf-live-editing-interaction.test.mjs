@@ -214,6 +214,18 @@ test("free-text DOM has no competing local focusout/contenteditable lifecycle",(
   assert.equal(block.includes('removeAttribute("contenteditable")'),false);
 });
 
+test("PDF checkpoints snapshot active field text without committing or blurring it",()=>{
+  const start=workspace.indexOf("function pdfCheckpointEdits");
+  const end=workspace.indexOf("function capturePdfState",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/truth\?\.state\.interaction !== "editing"/);
+  assert.match(block,/truth\.state\.activeElement\.innerText/);
+  assert.match(block,/structuredClone\(runtime\?\.edits/);
+  assert.equal(block.includes("commitActivePdfText"),false);
+  assert.equal(block.includes("blur("),false);
+  assert.equal(block.includes("setPdfPage"),false);
+});
+
 test("new PDF free text is one-line sized and does not rerender the source canvas",()=>{
   const start=workspace.indexOf('if(action==="add-text")');
   const end=workspace.indexOf('} else if(!edit && action==="delete"',start);

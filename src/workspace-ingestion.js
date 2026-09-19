@@ -26,7 +26,22 @@ async function openFiles() {
     if (typeof showOpenFilePicker === "function") {
       const handles = await showOpenFilePicker({ multiple: true });
       const files = await Promise.all(handles.map(handle => handle.getFile()));
-      routeFiles(files);
+      // Preserve the existing all-or-nothing FCX routing rules before opening
+      // any ordinary native document handles.
+      if (files.some(file => /\.fcx$/i.test(file.name || ""))) {
+        routeFiles(files);
+        return;
+      }
+      const ordinary = [];
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index], handle = handles[index];
+        if (/\.(?:pdf|docx)$/i.test(file.name || "")) {
+          const detail = { handle, file, point: point() };
+          window.dispatchEvent(new CustomEvent("framechute:open-document-handle", { detail }));
+          await detail.promise;
+        } else ordinary.push(file);
+      }
+      if (ordinary.length) routeFiles(ordinary);
       return;
     }
     const picker = document.createElement("input");

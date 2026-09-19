@@ -212,7 +212,7 @@ test("real first /pdf fixture serialize to reopen hydrates exactly one stable cu
   assert.ok(fixture,"repository must contain a PDF fixture");
   const originalBytes=new Uint8Array(await readFile(join(fixtureDirectory,fixture)));
   const model=await openPdfDocument(originalBytes);
-  let reopened;
+  let reopened, reopenedAgain;
   try{
     const pages=[];const counts=new Map();
     for(let pageNumber=1;pageNumber<=model.pageCount;pageNumber++){const page=await model.pdf.getPage(pageNumber),content=await page.getTextContent();pages.push({pageNumber,page,content});for(const item of content.items){const value=String(item.str||"").trim();if(value)counts.set(value,(counts.get(value)||0)+1);}}
@@ -247,8 +247,18 @@ test("real first /pdf fixture serialize to reopen hydrates exactly one stable cu
     assert.equal(currentText.split(replacement).length-1,1,"replacement is current exactly once");
     assert.equal(hydration.edits[0].manipulationCapability.move,true);
     assert.equal(hydration.edits[0].manipulationCapability.resize,true);
+    const secondBlob=await serializeEditedPdf(reopened,hydration.edits);
+    reopenedAgain=await openPdfDocument(await secondBlob.arrayBuffer());
+    let physicalMatches=0;
+    for(let number=1;number<=reopenedAgain.pageCount;number++){
+      const text=await (await reopenedAgain.pdf.getPage(number)).getTextContent();
+      physicalMatches+=text.items.filter(item=>String(item.str||"")===replacement).length;
+    }
+    assert.equal(physicalMatches,1,"an unchanged reopened edit is not painted into the PDF a second time");
+    assert.equal(reopenedAgain.reopenedCurrent.objects.filter(object=>object.id===edit.id).length,1,"the editable manifest also retains one identity");
   } finally {
     await model.pdf.destroy();
     await reopened?.pdf.destroy();
+    await reopenedAgain?.pdf.destroy();
   }
 });
