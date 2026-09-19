@@ -64,9 +64,10 @@ test("live source mask adds vertical-only glyph bleed",()=>{
   const end=workspace.indexOf("function syncPdfReplacementSourceMask",start);
   const block=workspace.slice(start,end);
   assert.match(block,/topBleed=Math\.max\(3,Math\.min\(10,fieldHeight\*\.34\)\)/);
-  assert.match(block,/bottomBleed=Math\.max\(4,Math\.min\(12,fieldHeight\*\.38\)\)/);
+  assert.match(block,/bottomBleed=Math\.max\(5,Math\.min\(14,fieldHeight\*\.44\)\)/);
   assert.match(block,/rawTop=projected\.y-topBleed/);
   assert.match(block,/rawHeight=projected\.height\+topBleed\+bottomBleed/);
+  assert.match(block,/terminalBleed:span\.dataset\.terminalFragment==="true"\?Math\.min\(8,Math\.max\(2\.5,scale\*2\.2\)\):0/);
 });
 
 test("live PDF typing is explicitly visible without a white field rectangle",()=>{
