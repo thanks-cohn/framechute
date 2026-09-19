@@ -64,7 +64,7 @@ test("live source mask adds vertical-only glyph bleed",()=>{
   const end=workspace.indexOf("function syncPdfReplacementSourceMask",start);
   const block=workspace.slice(start,end);
   assert.match(block,/topBleed=Math\.max\(3,Math\.min\(10,fieldHeight\*\.34\)\)/);
-  assert.match(block,/bottomBleed=Math\.max\(3,Math\.min\(9,fieldHeight\*\.28\)\)/);
+  assert.match(block,/bottomBleed=Math\.max\(4,Math\.min\(12,fieldHeight\*\.38\)\)/);
   assert.match(block,/rawTop=projected\.y-topBleed/);
   assert.match(block,/rawHeight=projected\.height\+topBleed\+bottomBleed/);
 });

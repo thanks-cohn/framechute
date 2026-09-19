@@ -722,7 +722,7 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   // A slightly larger top bleed removes the persistent "cap fragments" that
   // otherwise remain visible above the live replacement.
   const topBleed=Math.max(3,Math.min(10,fieldHeight*.34));
-  const bottomBleed=Math.max(3,Math.min(9,fieldHeight*.28));
+  const bottomBleed=Math.max(4,Math.min(12,fieldHeight*.38));
   const projected=projectPdfSourceMask(viewport,ownership,{
     padding:horizontalPad,
     terminalBleed:span.dataset.terminalFragment==="true"?Math.min(3,Math.max(.75,scale)):0
