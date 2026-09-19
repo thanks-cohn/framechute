@@ -700,7 +700,17 @@ function materializePdfSourceEdit(block,span){
   const fontFamily=field?.dataset.pendingFontFamily||inferPdfSourceFontFamily(original,runtime.pageData.content.styles);
   const edit=ensurePdfEditIdentity({kind:"replacement",id:createPdfEditId(),sourceObjectId:span.dataset.sourceObjectId||undefined,page,index,original:original.str,replacement:original.str,...geometry,sourceX:geometry.x,sourceY:geometry.y,sourceWidth:geometry.width,sourceHeight:geometry.height,fontFamily,fontSize,rotation:0});
   runtime.edits.push(edit);
-  block.dataset.selectedPdfObjectId=edit.id;span.dataset.ownerEditId=edit.id;
+  // The source canvas will be masked as soon as manipulation starts, so the
+  // existing DOM field must become the visible replacement immediately rather
+  // than waiting for pointer-up rerender. Otherwise drag = white mask +
+  // transparent source text.
+  span.classList.add("pdf-text-edit");
+  span.dataset.objectId=edit.id;
+  span.dataset.ownerEditId=edit.id;
+  span.dataset.presentationTruthKind="dom-replacement-text";
+  const liveText=span.querySelector(".pdf-edit-text");
+  if(liveText)Object.assign(liveText.style,{color:"#111",WebkitTextFillColor:"#111",opacity:"1"});
+  block.dataset.selectedPdfObjectId=edit.id;
   return edit;
 }
 
@@ -1247,9 +1257,10 @@ registerBlockType("pdf", {
       if(!edit)return;
       const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};handle.setPointerCapture(event.pointerId);
       const before={x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)};
+      span.classList.add("is-manipulating");
       beginPdfManipulation(runtime.truth,{objectId:edit.id,cause:"pointerdown"});
       const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);runtime.truth?.generations.advance("semantic");runtime.truth?.generations.advance("replacement");const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});if(!isMove){span.dataset.userWidth=String(display.width);span.dataset.userHeight=String(display.height);}syncPdfReplacementSourceMask(textLayer,edit,runtime.pageData.viewport);runtime.truth?.record(isMove?"move-update":"resize-update",{objectId:edit.id,before,requested:next,actual:{...next,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)},downstreamEffects:["replacement-layout","fixed-source-mask"]});};
-      handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);endPdfManipulation(runtime.truth,{objectId:edit.id,kind:handle.matches(".pdf-move-handle")?"move":"resize",before,actual:{x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)}});setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
+      handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);span.classList.remove("is-manipulating");endPdfManipulation(runtime.truth,{objectId:edit.id,kind:handle.matches(".pdf-move-handle")?"move":"resize",before,actual:{x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)}});setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));
     block.querySelector(".pdf-redo").addEventListener("click",()=>void travelPdfHistory(block,"redo"));

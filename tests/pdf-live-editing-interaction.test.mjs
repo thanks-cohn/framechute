@@ -34,6 +34,30 @@ test("double click selects the entire PDF text field instead of a native word",(
   assert.match(block,/showPdfTextControls/);
 });
 
+test("authored PDF text stays visible on hover",()=>{
+  assert.match(css,/\.pdf-text-item:not\(\.pdf-text-edit\):not\(\.is-editing\):hover/);
+  assert.match(css,/\.pdf-text-item\.pdf-text-edit:hover[\s\S]*color:\s*#111/);
+});
+
+test("materializing source text for drag immediately promotes it to visible replacement DOM",()=>{
+  const start=workspace.indexOf("function materializePdfSourceEdit");
+  const end=workspace.indexOf("function removePdfLiveEditMask",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/span\.classList\.add\("pdf-text-edit"\)/);
+  assert.match(block,/span\.dataset\.objectId=edit\.id/);
+  assert.match(block,/presentationTruthKind="dom-replacement-text"/);
+  assert.match(block,/WebkitTextFillColor:"#111"/);
+});
+
+test("PDF text manipulation keeps field above its source mask until pointer up",()=>{
+  const start=workspace.indexOf('textLayer.addEventListener("pointerdown"');
+  const end=workspace.indexOf('block.querySelector(".pdf-undo")',start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/span\.classList\.add\("is-manipulating"\)/);
+  assert.match(block,/span\.classList\.remove\("is-manipulating"\)/);
+  assert.match(css,/\.pdf-text-item\.is-manipulating\s*\{\s*z-index:\s*6/);
+});
+
 test("untouched source text carries hidden interaction handles without becoming a persisted edit",()=>{
   const sourceStart=pdfDocument.indexOf('span.dataset.geometryDerivation="pdf-baseline-font-ascent"');
   const sourceBlock=pdfDocument.slice(sourceStart,sourceStart+1200);
