@@ -24,6 +24,8 @@ export async function putDocumentWorkingCopy(handleKey, blob, metadata = {}) {
     type: String(metadata.type || blob.type || "application/octet-stream"),
     lastModified: Number(metadata.lastModified) || Date.now(),
     updatedAt: new Date().toISOString(),
+    editorState: metadata.editorState ? structuredClone(metadata.editorState) : null,
+    revision: Number(metadata.revision) || 0,
     blob
   };
   await putContent(`${handleKey}:working-copy`, record);

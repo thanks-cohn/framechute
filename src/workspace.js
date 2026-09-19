@@ -16,6 +16,7 @@ import {
   putDocumentWorkingCopy
 } from "./file-access.js";
 import { saveDocument, saveDocumentAs } from "./documents/document-save.js";
+import { createDocumentCheckpointCoordinator } from "./document-checkpoint.mjs";
 import { openPdfDocument, renderPdfPage, serializeEditedPdf, viewportRectToPdf, transformPdfPages, extractPdfPages, mergePdfBytes, cropPdfMargins, conservativelyCompressPdf, chooseSmallerPdf, PDF_STANDARD_FONTS, repositionPdfImage, reflowPdfTextEditGeometry, searchCurrentPdfDocument, pdfDocumentProperties, inferPdfSourceFontSize, inferPdfSourceFontFamily, extractSemanticPdfText, createPdfPageDiagnostics, createPdfFreeTextElement } from "./documents/pdf-document.js";
 import { calculatePdfTextAutofit, sourceOwnershipRectForEdit } from "./documents/pdf-forensics.js";
 import { beginPdfManipulation, beginPdfTextInteraction, capturePdfSourceOwnership, commitPdfTextEdit, createPdfRuntimeTruth, endPdfManipulation, projectPdfContentRect, projectPdfSourceMask, restorePdfRuntimeTruth, runtimeTruthDiagnostics, updatePdfLiveText } from "./documents/pdf-runtime-truth.js";
@@ -199,18 +200,63 @@ async function storedDocumentCopy(source) {
   catch (error) { console.warn("FrameChute could not read the document working copy:", error); return null; }
 }
 
+function pdfCheckpointEdits(block) {
+  const runtime = runtimeSources.get(block), edits = structuredClone(runtime?.edits || []), truth = runtime?.truth;
+  if (truth?.state.interaction !== "editing" || !truth.state.activeElement || !runtime?.pageData) return edits;
+  const span = truth.state.activeSpan, index = Number(span?.dataset.index), page = Number(block.dataset.currentPage || 1);
+  const text = String(truth.state.activeElement.innerText ?? truth.state.activeElement.textContent ?? truth.state.liveText ?? "").replace(/\r\n?/g, "\n");
+  const layoutRect = truth.state.activeContext?.readLayoutRect?.(span);
+  const geometry = layoutRect ? viewportRectToPdf(runtime.pageData.viewport, layoutRect) : null;
+  let edit = edits.find(item => item.id === span?.dataset.objectId) || edits.find(item => item.page === page && item.index === index && item.kind !== "image");
+  if (index < 0 && edit) edit.text = text;
+  else if (index >= 0) {
+    const original = runtime.pageData.content.items[index];
+    if (!original || text === original.str) {
+      if (edit) edits.splice(edits.indexOf(edit), 1);
+      return edits;
+    }
+    if (!edit) {
+      const ownership = truth.state.activeContext?.sourceOwnershipRect || geometry;
+      edit = ensurePdfEditIdentity({ kind:"replacement", id:span?.dataset.objectId || createPdfEditId(), sourceObjectId:span?.dataset.sourceObjectId||undefined, page, index, original:original.str, replacement:text, ...geometry,
+        sourceX:ownership?.x, sourceY:ownership?.y, sourceWidth:ownership?.width, sourceHeight:ownership?.height,
+        fontFamily:truth.state.activeElement.dataset.pendingFontFamily||inferPdfSourceFontFamily(original,runtime.pageData.content.styles), fontSize:Number(truth.state.activeElement.dataset.pendingFontSize)||inferPdfSourceFontSize(original,12), rotation:0 });
+      edits.push(edit);
+    } else edit.replacement = text;
+  }
+  if (edit && geometry) Object.assign(edit, geometry);
+  if (edit) reflowPdfTextEditGeometry(edit);
+  return edits;
+}
+
+function capturePdfState(block, edits = pdfCheckpointEdits(block)) {
+  const runtime = runtimeSources.get(block);
+  return { page:clampInteger(block.querySelector(".pdf-page").value,1), zoom:runtime?.zoom, fitMode:runtime?.fitMode, editMode:pdfEditEnabled(block), pdfLayoutMargins:structuredClone(runtime?.marginState||createPdfMarginState()), edits, dirty:block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty) };
+}
+
+function captureDocxState(block) {
+  const editor=block.querySelector(".docx-editor"),viewport=block.querySelector(".docx-viewport");
+  return { blocks:docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop:viewport?.scrollTop||0, scrollLeft:viewport?.scrollLeft||0, dirty:block.dataset.documentDirty === "true" };
+}
+
+const documentCheckpoints = createDocumentCheckpointCoordinator({
+  async capture(block) {
+    const runtime=runtimeSources.get(block),type=block.dataset.blockType;
+    if (!runtime) throw new Error("Document runtime is unavailable");
+    if (type === "pdf") return { blob:new Blob([runtime.model.bytes],{type:"application/pdf"}), editorState:capturePdfState(block) };
+    return { blob:await runtime.serialize(), editorState:captureDocxState(block) };
+  },
+  async write(block, value, revision) {
+    const source=getSourceRecord(block);
+    if (!source?.handleKey) return;
+    await putDocumentWorkingCopy(source.handleKey,value.blob,{name:block.querySelector(".block-name")?.value||source.displayName,type:value.blob.type,editorState:value.editorState,revision});
+  }
+});
+
+function markDocumentChanged(block) { if (block && ["pdf","docx"].includes(block.dataset.blockType)) documentCheckpoints.markChanged(block); }
+
 async function checkpointDocument(block) {
-  if (!block || !["pdf", "docx"].includes(block.dataset.blockType)) return;
-  if (block.dataset.documentCheckpointed === "true" && block.dataset.documentCheckpointPending !== "true") return;
-  const source = getSourceRecord(block), runtime = runtimeSources.get(block);
-  if (!source?.handleKey || !runtime?.serialize) return;
-  const blob = await runtime.serialize();
-  await putDocumentWorkingCopy(source.handleKey, blob, {
-    name: block.querySelector(".block-name")?.value || source.displayName,
-    type: blob.type
-  });
-  block.dataset.documentCheckpointed = "true";
-  block.dataset.documentCheckpointPending = "false";
+  if (!block || !["pdf", "docx"].includes(block.dataset.blockType) || !getSourceRecord(block)?.handleKey) return;
+  await documentCheckpoints.checkpoint(block);
 }
 
 async function checkpointDocuments() {
@@ -519,7 +565,7 @@ window.addEventListener("framechute:object-command", event => {
 
 function setDocumentDirty(block, dirty) {
   block.dataset.documentDirty = String(Boolean(dirty));
-  if (dirty) block.dataset.documentCheckpointPending = "true";
+  if (dirty) markDocumentChanged(block);
   const indicator = block.querySelector(".document-dirty");
   if (indicator) indicator.hidden = !dirty;
 }
@@ -535,11 +581,7 @@ async function saveNativeDocument(block, saveAs = false) {
   const result = await saveDocument({ serialize: runtime.serialize, handle: runtime.handle, saveAs,
     saveAsWriter: (blob) => saveDocumentAs({ ...options, blob }) });
   if (!result.saved) return;
-  if (source?.handleKey) {
-    await putDocumentWorkingCopy(source.handleKey, result.blob, { name: filename, type: result.blob.type });
-    block.dataset.documentCheckpointed = "true";
-    block.dataset.documentCheckpointPending = "false";
-  }
+  if (source?.handleKey) await checkpointDocument(block);
   if (result.handle) {
     runtime.handle = result.handle;
     setSourceRecord(block, { kind: "file", handleKey: source?.handleKey, displayName: result.handle.name || filename });
@@ -1255,6 +1297,7 @@ registerBlockType("pdf", {
         createPdfLiveEditMask(textLayer,span,ownership,runtime.pageData.viewport);
       }else removePdfLiveEditMask(textLayer);
       updatePdfLiveText(runtime.truth,text.innerText,{rect:autofit.rect,cause:event.inputType?.startsWith("delete")?"delete":"input"});
+      setDocumentDirty(block,true);
     });
     textLayer.addEventListener("keydown", (event) => {
       if (!pdfEditEnabled(block)) return;
@@ -1332,21 +1375,22 @@ registerBlockType("pdf", {
   },
 
   capture(block) {
-    const runtime = runtimeSources.get(block);
-    return { page: clampInteger(block.querySelector(".pdf-page").value, 1), zoom:runtime?.zoom, fitMode:runtime?.fitMode, editMode:pdfEditEnabled(block), pdfLayoutMargins:structuredClone(runtime?.marginState||createPdfMarginState()), edits: structuredClone(runtime?.edits || []), dirty: block.dataset.documentDirty === "true", structurallyDirty:Boolean(runtime?.structurallyDirty) };
+    return capturePdfState(block);
   },
 
   async restore(block, state = {}, source = null) {
-    setPdfPage(block, state.page ?? 1);
+    let effectiveState=state;
     const copy = await storedDocumentCopy(source);
+    if(copy?.editorState&&!Array.isArray(state.edits))effectiveState={...copy.editorState,...state};
+    setPdfPage(block, effectiveState.page ?? 1);
 
-    if(state.embeddedBlob instanceof Blob)await loadPdfBytes(block,new Uint8Array(await state.embeddedBlob.arrayBuffer()),state);
-    else if(state.embeddedPdfBase64)await loadPdfBytes(block,base64ToBytes(state.embeddedPdfBase64),state);
-    else if(copy)await loadPdfBytes(block,new Uint8Array(await copy.blob.arrayBuffer()),state,source?.handleKey ? await resolveHandle(source.handleKey) : null);
+    if(effectiveState.embeddedBlob instanceof Blob)await loadPdfBytes(block,new Uint8Array(await effectiveState.embeddedBlob.arrayBuffer()),effectiveState);
+    else if(effectiveState.embeddedPdfBase64)await loadPdfBytes(block,base64ToBytes(effectiveState.embeddedPdfBase64),effectiveState);
     else {
+      if(copy)try{await loadPdfBytes(block,new Uint8Array(await copy.blob.arrayBuffer()),effectiveState,source?.handleKey ? await resolveHandle(source.handleKey) : null);return;}catch(error){console.warn("Stored PDF working copy is corrupt; checking the original source:",error);}
       const handle = await storedReadableHandle(source);
-      if (handle) { await loadPdfHandle(block, handle, state); await checkpointDocument(block); }
-      else setSourceUnavailable(block, `The original and browser working copy for ${source?.displayName ?? "this PDF"} are unavailable. Reconnect it to recover.`);
+      if (handle) { await loadPdfHandle(block, handle, effectiveState); await checkpointDocument(block); }
+      else setSourceUnavailable(block, `${copy?"The browser working copy is corrupt and the original cannot be read":"The original and browser working copy are unavailable"} for ${source?.displayName ?? "this PDF"}. Reconnect it to recover.`);
     }
   }
 });
@@ -1894,8 +1938,16 @@ registerBlockType("docx", {
     const updateToolbar=()=>{if(document.activeElement!==editor&&!editor.contains(document.activeElement))return;for(const [selector,name] of [[".docx-bold","bold"],[".docx-italic","italic"],[".docx-underline","underline"],[".docx-strike","strikeThrough"]])block.querySelector(selector).setAttribute("aria-pressed",String(document.queryCommandState(name)));};document.addEventListener("selectionchange",updateToolbar);block.addEventListener("framechute:release-resources",()=>document.removeEventListener("selectionchange",updateToolbar),{once:true});
     block.querySelector(".reconnect-source").addEventListener("click", async () => { try { await reconnectSource(block, pickDocxFile, (handle) => loadDocxHandle(block, handle, this.capture(block))); } catch (error) { console.error(error); setStatus("Could not reconnect that DOCX."); } });
   },
-  capture(block) { const editor=block.querySelector(".docx-editor"),viewport=block.querySelector(".docx-viewport");return { blocks: docxBlocksFromEditor(editor), pageSetup:editor.dataset.pageSetup||"", scrollTop: viewport?.scrollTop||0, scrollLeft: viewport?.scrollLeft||0, dirty: block.dataset.documentDirty === "true" }; },
-  async restore(block, state = {}, source = null) { if (state.blocks) renderDocxEditor(block, state.blocks); setDocumentDirty(block, Boolean(state.dirty)); const copy=await storedDocumentCopy(source); if(state.embeddedBlob instanceof Blob){const file=new File([state.embeddedBlob],block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);}else if(copy){const original=source?.handleKey ? await resolveHandle(source.handleKey) : null,file=new File([copy.blob],copy.name||block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},state);runtimeSources.get(block).handle=original;}else {const handle=await storedReadableHandle(source);if(handle){await loadDocxHandle(block,handle,state);await checkpointDocument(block);}else setSourceUnavailable(block, `The original and browser working copy for ${source?.displayName ?? "this DOCX"} are unavailable. Reconnect it to recover.`);} }
+  capture(block) { return captureDocxState(block); },
+  async restore(block, state = {}, source = null) {
+    const copy=await storedDocumentCopy(source),effectiveState=copy?.editorState&&!Array.isArray(state.blocks)?{...copy.editorState,...state}:state;
+    if(effectiveState.blocks)renderDocxEditor(block,effectiveState.blocks);setDocumentDirty(block,Boolean(effectiveState.dirty));
+    if(effectiveState.embeddedBlob instanceof Blob){const file=new File([effectiveState.embeddedBlob],block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},effectiveState);return;}
+    if(copy)try{const original=source?.handleKey?await resolveHandle(source.handleKey):null,file=new File([copy.blob],copy.name||block.querySelector(".block-name").value,{type:DOCX_MIME});await loadDocxHandle(block,{kind:"file",name:file.name,__framechuteSyntheticFile:file},effectiveState);runtimeSources.get(block).handle=original;return;}catch(error){console.warn("Stored DOCX working copy is corrupt; checking the original source:",error);}
+    const handle=await storedReadableHandle(source);
+    if(handle){await loadDocxHandle(block,handle,effectiveState);await checkpointDocument(block);}
+    else setSourceUnavailable(block, `${copy?"The browser working copy is corrupt and the original cannot be read":"The original and browser working copy are unavailable"} for ${source?.displayName ?? "this DOCX"}. Reconnect it to recover.`);
+  }
 });
 
 registerBlockType("gallery", {

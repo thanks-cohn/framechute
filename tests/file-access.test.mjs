@@ -77,6 +77,7 @@ test("synthetic DOCX ingestion creates a durable working copy", async () => {
 });
 
 test("a quota failure rejects the document checkpoint instead of claiming persistence", async () => {
+  await putDocumentWorkingCopy("pdf:quota", new Blob(["last valid"], { type: "application/pdf" }));
   memoryDbControl.failWrites = true;
   try {
     await assert.rejects(
@@ -86,4 +87,5 @@ test("a quota failure rejects the document checkpoint instead of claiming persis
   } finally {
     memoryDbControl.failWrites = false;
   }
+  assert.equal(await (await getDocumentWorkingCopy("pdf:quota")).blob.text(), "last valid");
 });

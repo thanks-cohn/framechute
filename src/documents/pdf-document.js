@@ -331,7 +331,8 @@ function currentVersionManifest(edits,inherited=null){
   }));
   if(!authored.length&&inherited?.objects?.length)return inherited;
   const replacedSources=new Set(authored.map(object=>object.sourceObjectId).filter(Boolean));
-  const objects=[...(inherited?.objects||[]).filter(object=>!replacedSources.has(object.sourceObjectId)),...authored];
+  const authoredIds=new Set(authored.map(object=>object.id));
+  const objects=[...(inherited?.objects||[]).filter(object=>!authoredIds.has(object.id)&&!replacedSources.has(object.sourceObjectId)),...authored];
   return {schemaVersion:1,documentVersionId:`document:${createPdfEditIdForManifest()}`,objects};
 }
 function createPdfEditIdForManifest(){return globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;}
@@ -805,6 +806,22 @@ export async function serializeEditedPdf(model, edits) {
   const output = await PDFDocument.load(model.bytes.slice(), { ignoreEncryption: false });
   const manifest=currentVersionManifest(edits,model.reopenedCurrent),prior=output.getKeywords()?.split(/,\s*/).filter(keyword=>!keyword.startsWith(CURRENT_VERSION_KEYWORD))||[];
   output.setKeywords([...prior,`${CURRENT_VERSION_KEYWORD}${encodeBase64Url(JSON.stringify(manifest))}`]);
+  // A reopened manifest describes objects already painted into model.bytes.
+  // Repainting an unchanged object would duplicate glyphs/images and masks on
+  // every autosave/reopen cycle. Only paint new or materially changed edits;
+  // the complete current manifest above remains the editable source of truth.
+  const inheritedById=new Map((model.reopenedCurrent?.objects||[]).map(object=>[object.id,object]));
+  const sameNumber=(a,b)=>Math.abs((Number(a)||0)-(Number(b)||0))<1e-6;
+  edits=edits.filter(edit=>{
+    const saved=inheritedById.get(edit.id);if(!saved)return true;
+    const bounds=saved.pdfRect||saved.layoutRect||saved;
+    return String(edit.text??edit.replacement??"")!==String(saved.text??saved.replacement??"")||
+      Number(edit.page)!==Number(saved.page)||!sameNumber(edit.x,bounds.x)||!sameNumber(edit.y,bounds.y)||
+      !sameNumber(edit.width,bounds.width)||!sameNumber(edit.height,bounds.height)||
+      !sameNumber(edit.fontSize,saved.fontSize)||String(edit.fontFamily||"Helvetica")!==String(saved.fontFamily||"Helvetica")||
+      !sameNumber(edit.rotation,saved.rotation);
+  });
+  if(!edits.length&&model.reopenedCurrent?.objects?.length)return new Blob([model.bytes.slice()],{type:"application/pdf"});
   const fonts = new Map();
   const wrapByImage = new Map();
   const wrappedSourceEditIds = new Set();

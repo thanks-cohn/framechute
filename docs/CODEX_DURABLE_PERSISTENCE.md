@@ -1011,11 +1011,20 @@ first and therefore neither queries nor requests original-file permission just
 to display a document. A legacy snapshot that has only a readable handle is
 migrated by writing its first working copy after it opens.
 
-The live autosave and named-workspace save paths serialize document working
-copies before committing snapshot metadata. DOCX snapshots use the canonical
-block capture (including formatting and image relationship references), while
-PDF snapshots retain page, geometry, edits, margins, and dirty state. This also
-avoids embedding another full document Blob in every snapshot.
+The live autosave and named-workspace save paths checkpoint document working
+copies before committing snapshot metadata. DOCX stores its serialized package
+plus canonical block state (including formatting and image relationship
+references). PDF deliberately stores its current base bytes plus editable
+instructions, rather than bytes with those same instructions already painted;
+this prevents edits and masks from being applied twice after reopen. PDF state
+retains page, geometry, edits, margins, and dirty state. This also avoids
+embedding another full document Blob in every snapshot.
+
+Checkpoint writes are serialized per document and revisioned. If editing
+continues during an IndexedDB transaction, the completed older write cannot
+acknowledge the newer revision; the coordinator immediately captures and writes
+the newer state. Active PDF text is copied from the live field for checkpoint
+purposes without blurring, committing, rerendering, or changing selection.
 
 Browser storage is still subject to quota and deliberate profile-data deletion.
 A failed checkpoint is reported in the workspace status instead of claiming
