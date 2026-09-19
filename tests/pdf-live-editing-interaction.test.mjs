@@ -130,6 +130,25 @@ test("unchanged PDF edit exit clears transient live text visibility so source gl
   assert.match(block,/delete activeText\.dataset\.liveText/);
 });
 
+test("committed replacement mask keeps live bottom and terminal glyph bleed",()=>{
+  const start=workspace.indexOf("function syncPdfReplacementSourceMask");
+  const end=workspace.indexOf("function capturePdfTextSourceOwnership",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/bottomBleed=Math\.max\(5,Math\.min\(14,fieldHeight\*\.44\)\)/);
+  assert.match(block,/terminalBleed=sourceSpan\?\.dataset\.terminalFragment==="true"\?Math\.min\(8,Math\.max\(2\.5,scale\*2\.2\)\):0/);
+  assert.match(block,/ownedDisplay\.top\+ownedDisplay\.height\+bottomBleed/);
+});
+
+test("rerendered persistent PDF mask preserves bottom and terminal visual bleed",()=>{
+  const start=pdfDocument.indexOf("for (const mask of visibleMasks)");
+  const end=pdfDocument.indexOf("content.items.forEach",start);
+  const block=pdfDocument.slice(start,end);
+  assert.match(block,/if\(mask\.ownerEditId\)/);
+  assert.match(block,/bottomBleed=Math\.max\(5,Math\.min\(14,fieldHeight\*\.44\)\)/);
+  assert.match(block,/rawBottom\+=bottomBleed/);
+  assert.match(block,/rawRight\+=terminalBleed/);
+});
+
 test("committing a replacement installs persistent source coverage before transient live mask is removed",()=>{
   const start=workspace.indexOf("function commitActivePdfText");
   const end=workspace.indexOf("function selectedPdfEdit",start);
