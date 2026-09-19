@@ -9,23 +9,39 @@ const [workspace,css,pdfDocument]=await Promise.all([
   readFile(new URL("../src/documents/pdf-document.js",import.meta.url),"utf8")
 ]);
 
-test("single click enters PDF text editing without selecting the entire source run",()=>{
+test("single click enters caret editing and shows field controls and handles",()=>{
   assert.match(workspace,/placePdfCaretFromPointer/);
   assert.match(workspace,/caretPositionFromPoint/);
-  const start=workspace.indexOf("const enterPdfTextEditing=");
-  const end=workspace.indexOf('textLayer.addEventListener("click"',start);
+  const start=workspace.indexOf('textLayer.addEventListener("click"');
+  const end=workspace.indexOf('textLayer.addEventListener("dblclick"',start);
   const block=workspace.slice(start,end);
-  assert.equal(block.includes("range.selectNodeContents(text)"),false);
-  assert.match(block,/showControls=false/);
+  assert.match(block,/pdfSelectionMode="caret"/);
+  assert.match(block,/enterPdfTextEditing\(event,span,\{showControls:true\}\)/);
+  assert.equal(block.includes("controls.hidden=true"),false);
+  assert.match(css,/\.pdf-text-item\.is-selected \.pdf-move-handle/);
+  assert.match(css,/\.pdf-text-item\.is-selected \.pdf-resize-handle/);
 });
 
-test("double click stays in the same text editing session and only reveals controls",()=>{
-  const start=workspace.indexOf('textLayer.addEventListener("dblclick"');
+test("double click selects the entire PDF text field instead of a native word",()=>{
+  const helperStart=workspace.indexOf("const selectWholePdfTextField=");
+  const start=workspace.indexOf('textLayer.addEventListener("dblclick"',helperStart);
   const end=workspace.indexOf('textLayer.addEventListener("input"',start);
-  const block=workspace.slice(start,end);
+  const helper=workspace.slice(helperStart,start),block=workspace.slice(start,end);
+  assert.match(helper,/range\.selectNodeContents\(text\)/);
+  assert.match(helper,/data-pdf-selection-mode/);
+  assert.match(block,/event\.preventDefault\(\)/);
+  assert.match(block,/selectWholePdfTextField\(text\)/);
   assert.match(block,/showPdfTextControls/);
-  assert.equal(block.includes("commitActivePdfText"),false);
-  assert.equal(block.includes("beginPdfManipulation"),false);
+});
+
+test("untouched source text carries hidden interaction handles without becoming a persisted edit",()=>{
+  const sourceStart=pdfDocument.indexOf('span.dataset.geometryDerivation="pdf-baseline-font-ascent"');
+  const sourceBlock=pdfDocument.slice(sourceStart,sourceStart+1200);
+  assert.match(sourceBlock,/pdf-move-handle/);
+  assert.match(sourceBlock,/pdf-resize-handle/);
+  assert.equal(sourceBlock.includes('span.classList.add("pdf-text-edit")'),false);
+  assert.match(workspace,/function materializePdfSourceEdit/);
+  assert.match(workspace,/if\(!edit&&Number\(span\.dataset\.index\)>=0\).*materializePdfSourceEdit/s);
 });
 
 test("live PDF typing is explicitly visible without a white field rectangle",()=>{
