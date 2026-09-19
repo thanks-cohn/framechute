@@ -85,7 +85,7 @@ The most important recent milestone has not been another giant feature dump. It 
 
 **Recent development pace:** PRs #88 through #96 were nine consecutive PDF-focused merges between late September 18 and early September 19, 2026 (UTC), roughly four hours from the first to the last merge. They addressed live text visibility, click/field handles, no-op superimposition, horizontal typing growth, source-glyph masking, and hover/drag visibility. That is a fast feedback-and-iteration cycle, **not** a release-quality claim: successive real-browser tests exposed new interactions among those fixes. The next milestone is whole-page image-aware text reflow and faithful save/reopen, rather than another stack of narrow mask patches.
 
-**Known visual limitation:** adding a large image to an imported, text-heavy PDF can still leave overlapping or unreadably fragmented text. The existing image-wrap path is not yet a dependable whole-paragraph/page layout engine. The [current image-flow bug and acceptance plan](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) records the failure and the next work needed.
+**Known visual limitation:** adding a large image to an imported, text-heavy PDF can still leave overlapping or unreadably fragmented text. The existing image-wrap path is not yet a dependable whole-paragraph/page layout engine. The [current image-flow bug and acceptance plan](bugs/latest/2026-09-19_01-55_CDT_pdf-image-reflow-and-layout-collisions.md) records the failure and the next work needed.
 
 Recent stabilization includes:
 
@@ -325,7 +325,7 @@ Current PDF work includes:
 
 The PDF replacement system is intentionally useful before it is exhaustive. It currently relies on cover-and-redraw for source text and can position images, but it does not yet guarantee coherent reflow of surrounding paragraphs when an image is added or resized. Dense imported pages and difficult source PDFs may require explicit editing or a safe fallback. Do not assume that a visually clean live preview proves externally faithful export.
 
-**Next PDF gate:** an image inserted into supported flowing text should make the affected paragraph move naturally around or below it, preserving every word and reading order. The resulting layout must survive drag/resize, undo, save, and reopen without text collisions. Intentional image-over-text overlay must remain an explicit choice, not the only outcome of insertion. See the [image-flow bug report](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) and [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md).
+**Next PDF gate:** an image inserted into supported flowing text should make the affected paragraph move naturally around or below it, preserving every word and reading order. The resulting layout must survive drag/resize, undo, save, and reopen without text collisions. Intentional image-over-text overlay must remain an explicit choice, not the only outcome of insertion. See the [image-flow bug report](bugs/latest/2026-09-19_01-55_CDT_pdf-image-reflow-and-layout-collisions.md) and [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md).
 
 ---
 
@@ -502,7 +502,7 @@ The roadmap follows one rule:
 
 The next critical task is image-aware text flow. The present wrap path can try to shift individual source text runs around inserted images; it does not consistently rebuild a readable affected paragraph or carry its overflow forward. On normal supported text, inserted or resized images should occupy real layout space: complete words flow into readable side lanes, clear below when the lanes are too narrow, and continue onto subsequent lines/pages where necessary. Original content outside the affected region must remain unchanged; ambiguous PDFs get an explicit safe fallback rather than a mangled automatic conversion.
 
-A small contextual property model should cover positioning (drag or exact X/Y), dimensions, font and text size, and page-only margin Padding in px or %. Hover, live drag, commit, undo, export, and reopen must agree. The [bug report](bugs/latest/2026-09-19_01-38_CDT_pdf-image-reflow-and-layout-collisions.md) defines acceptance tests. The [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md) gives the product rules.
+A small contextual property model should cover positioning (drag or exact X/Y), dimensions, font and text size, and page-only margin Padding in px or %. Hover, live drag, commit, undo, export, and reopen must agree. The [bug report](bugs/latest/2026-09-19_01-55_CDT_pdf-image-reflow-and-layout-collisions.md) defines acceptance tests. The [foundational-editor proposal](Proposals/foundational-editor-small-controls-image-aware-documents.md) gives the product rules.
 
 ## Continuing in parallel: make documents feel normal
 
