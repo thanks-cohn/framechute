@@ -714,11 +714,20 @@ function createPdfLiveEditMask(textLayer, span, ownership, viewport) {
   const layerWidth = textLayer.clientWidth;
   const layerHeight = textLayer.clientHeight;
   const scale = Math.max(.25, Number(span.dataset.viewportScale) || viewport.scale || 1);
+  const horizontalPad=Math.max(1.25,Math.min(2.5,scale*1.1));
+  const fieldHeight=Math.max(1,Number.parseFloat(span.style.height)||12);
+  // Canvas glyph ink regularly escapes the nominal PDF run box, especially
+  // above caps/ascenders and below descenders. Keep horizontal coverage tight
+  // so adjacent words are untouched, but deliberately over-cover vertically.
+  // A slightly larger top bleed removes the persistent "cap fragments" that
+  // otherwise remain visible above the live replacement.
+  const topBleed=Math.max(3,Math.min(10,fieldHeight*.34));
+  const bottomBleed=Math.max(3,Math.min(9,fieldHeight*.28));
   const projected=projectPdfSourceMask(viewport,ownership,{
-    padding:Math.max(1.25,Math.min(2.5,scale*1.1)),
+    padding:horizontalPad,
     terminalBleed:span.dataset.terminalFragment==="true"?Math.min(3,Math.max(.75,scale)):0
   });
-  const rawLeft=projected.x,rawTop=projected.y,rawWidth=projected.width,rawHeight=projected.height;
+  const rawLeft=projected.x,rawTop=projected.y-topBleed,rawWidth=projected.width,rawHeight=projected.height+topBleed+bottomBleed;
   const left = Math.max(0, Math.min(layerWidth, rawLeft));
   const top = Math.max(0, Math.min(layerHeight, rawTop));
   const right = Math.max(left, Math.min(layerWidth, rawLeft + rawWidth));
@@ -1177,10 +1186,17 @@ registerBlockType("pdf", {
       const legalBounds=runtime.marginState.constraintsEnabled&&layout?projectPdfContentRect(runtime.pageData.viewport,layout.contentRect):null;
       const currentWidth=Number.parseFloat(span.style.width)||Number(span.dataset.editBaseWidth)||16;
       const currentHeight=Number.parseFloat(span.style.height)||baseHeight;
-      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:currentWidth,height:currentHeight},contentRect:legalBounds||{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:baseHeight,userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):currentWidth,userHeight:span.dataset.userHeight?Number(span.dataset.userHeight):null});
+      const userWidth=span.dataset.userWidth?Number(span.dataset.userWidth):null;
+      const userHeight=span.dataset.userHeight?Number(span.dataset.userHeight):null;
+      const autofit=calculatePdfTextAutofit({text:text.innerText,previousText,fontSize,lineHeight,measureText:value=>probe.measureText(value).width,previousRect:{x:left,y:top,width:currentWidth,height:currentHeight},contentRect:legalBounds||{x:0,y:0,width:textLayer.clientWidth,height:textLayer.clientHeight},minWidth:16,minHeight:baseHeight,userWidth,userHeight});
       text.dataset.liveText=text.innerText;
       span.dataset.autofitTrace=JSON.stringify(autofit.trace);
-      Object.assign(span.style,{width:`${currentWidth}px`,height:`${Math.max(baseHeight,autofit.rect.height)}px`});
+      // Ordinary typing is not a manual width lock. Grow along the current
+      // line until the page/content boundary; only a user-resized field keeps
+      // a fixed width and therefore wraps earlier.
+      const baseWidth=Number(span.dataset.editBaseWidth)||16;
+      const liveWidth=userWidth==null?Math.max(baseWidth,autofit.rect.width):autofit.rect.width;
+      Object.assign(span.style,{width:`${liveWidth}px`,height:`${Math.max(baseHeight,autofit.rect.height)}px`});
       const activeEdit=runtime.edits.find(edit=>edit.id===span.dataset.objectId)||null;
       if(Number(span.dataset.index)>=0){
         const ownership=capturePdfSourceOwnership({edit:activeEdit,sourceRect:runtime.truth?.state.activeContext?.sourceOwnershipRect});
@@ -1225,7 +1241,7 @@ registerBlockType("pdf", {
       const start={x:event.clientX,y:event.clientY,left:parseFloat(span.style.left),top:parseFloat(span.style.top),width:parseFloat(span.style.width),height:parseFloat(span.style.height)};handle.setPointerCapture(event.pointerId);
       const before={x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)};
       beginPdfManipulation(runtime.truth,{objectId:edit.id,cause:"pointerdown"});
-      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);runtime.truth?.generations.advance("semantic");runtime.truth?.generations.advance("replacement");const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});syncPdfReplacementSourceMask(textLayer,edit,runtime.pageData.viewport);runtime.truth?.record(isMove?"move-update":"resize-update",{objectId:edit.id,before,requested:next,actual:{...next,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)},downstreamEffects:["replacement-layout","fixed-source-mask"]});};
+      const move=moveEvent=>{const dx=moveEvent.clientX-start.x,dy=moveEvent.clientY-start.y,isMove=handle.matches(".pdf-move-handle");let next=viewportRectToPdf(runtime.pageData.viewport,{left:start.left+(isMove?dx:0),top:start.top+(isMove?dy:0),width:Math.max(2,start.width+(isMove?0:dx)),height:Math.max(2,start.height+(isMove?0:dy))});const layout=pdfLayoutForPage(runtime,edit.page);if(runtime.marginState.constraintsEnabled&&layout)next=isMove?constrainTranslationToLayoutBounds(edit,{dx:next.x-edit.x,dy:next.y-edit.y},layout.contentRect).rect:constrainResizeToLayoutBounds(edit,next,layout.contentRect,{minimumWidth:2,minimumHeight:2,preserveAspectRatio:edit.kind==="image"}).rect;Object.assign(edit,next);runtime.truth?.generations.advance("semantic");runtime.truth?.generations.advance("replacement");const projected=pdfRectToViewport(runtime.pageData.viewport,next),display={left:projected[0],top:projected[1],width:projected[2]-projected[0],height:projected[3]-projected[1]};Object.assign(span.style,{left:`${display.left}px`,top:`${display.top}px`,width:`${display.width}px`,height:`${display.height}px`});if(!isMove){span.dataset.userWidth=String(display.width);span.dataset.userHeight=String(display.height);}syncPdfReplacementSourceMask(textLayer,edit,runtime.pageData.viewport);runtime.truth?.record(isMove?"move-update":"resize-update",{objectId:edit.id,before,requested:next,actual:{...next,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)},downstreamEffects:["replacement-layout","fixed-source-mask"]});};
       handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",()=>{handle.removeEventListener("pointermove",move);endPdfManipulation(runtime.truth,{objectId:edit.id,kind:handle.matches(".pdf-move-handle")?"move":"resize",before,actual:{x:edit.x,y:edit.y,width:edit.width,height:edit.height,sourceOwnershipRect:sourceOwnershipRectForEdit(edit)}});setDocumentDirty(block,true);void setPdfPage(block,block.dataset.currentPage);},{once:true});
     });
     block.querySelector(".pdf-undo").addEventListener("click",()=>void travelPdfHistory(block,"undo"));

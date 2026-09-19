@@ -44,6 +44,31 @@ test("untouched source text carries hidden interaction handles without becoming 
   assert.match(workspace,/if\(!edit&&Number\(span\.dataset\.index\)>=0\).*materializePdfSourceEdit/s);
 });
 
+test("selected editing field remains above the live source mask",()=>{
+  assert.match(css,/\.pdf-text-item\.is-selected\.is-editing\s*\{\s*z-index:\s*6/);
+  assert.match(css,/\.pdf-live-edit-mask\s*\{\s*z-index:\s*3/);
+});
+
+test("live typing grows field width instead of locking to the original box",()=>{
+  const start=workspace.indexOf('textLayer.addEventListener("input"');
+  const end=workspace.indexOf('textLayer.addEventListener("keydown"',start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/const userWidth=span\.dataset\.userWidth\?Number\(span\.dataset\.userWidth\):null/);
+  assert.match(block,/const liveWidth=userWidth==null\?Math\.max\(baseWidth,autofit\.rect\.width\):autofit\.rect\.width/);
+  assert.match(block,/width:\`\$\{liveWidth\}px\`/);
+  assert.equal(block.includes('userWidth:span.dataset.userWidth?Number(span.dataset.userWidth):currentWidth'),false);
+});
+
+test("live source mask adds vertical-only glyph bleed",()=>{
+  const start=workspace.indexOf("function createPdfLiveEditMask");
+  const end=workspace.indexOf("function syncPdfReplacementSourceMask",start);
+  const block=workspace.slice(start,end);
+  assert.match(block,/topBleed=Math\.max\(3,Math\.min\(10,fieldHeight\*\.34\)\)/);
+  assert.match(block,/bottomBleed=Math\.max\(3,Math\.min\(9,fieldHeight\*\.28\)\)/);
+  assert.match(block,/rawTop=projected\.y-topBleed/);
+  assert.match(block,/rawHeight=projected\.height\+topBleed\+bottomBleed/);
+});
+
 test("live PDF typing is explicitly visible without a white field rectangle",()=>{
   assert.match(css,/\.pdf-edit-text\[contenteditable="true"\][\s\S]*-webkit-text-fill-color:\s*#111\s*!important/);
   assert.match(css,/\.pdf-edit-text\[contenteditable="true"\][\s\S]*outline:\s*none/);
@@ -70,6 +95,24 @@ test("single-line autofit does not manufacture a second row",()=>{
   });
   assert.equal(result.trace.newLineCount,1);
   assert.equal(result.rect.height,12);
+});
+
+test("single-line autofit expands horizontally when width is not user locked",()=>{
+  const result=calculatePdfTextAutofit({
+    text:"this text is substantially wider",
+    previousText:"short",
+    fontSize:12,
+    lineHeight:12,
+    measureText:value=>value.length*6,
+    previousRect:{x:0,y:0,width:60,height:12},
+    contentRect:{x:0,y:0,width:400,height:300},
+    minWidth:16,
+    minHeight:12,
+    userWidth:null
+  });
+  assert.equal(result.trace.newLineCount,1);
+  assert.ok(result.rect.width>60);
+  assert.equal(result.trace.wrapped,false);
 });
 
 
