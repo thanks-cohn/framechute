@@ -4,10 +4,7 @@
 
 ## Play
 
-> **GitHub branch note:** The original playable ZIP from the chat contains the prebuilt PNG artwork. This branch contains the source code and the complete reproducible artwork generator, but the binary PNGs have not yet been transferred into the branch. To run a fresh checkout, first generate them from `tiny-rpg-town-files.zip` using the commands below (or copy the `assets/` directory from the playable ZIP).\n\n```bash
-python -m pip install pillow
-python tools/build_assets.py /path/to/tiny-rpg-town-files.zip
-```
+> **Playable on this branch:** The four runtime PNG assets are included, optimized to reduce the repository size. Open `index.html` directly. To regenerate the original full-resolution artwork from the user-supplied free asset ZIP, see `assets/README.md`.
 
 Open `index.html` in Chrome/Chromium/Firefox; if your browser disallows local asset loading, run `python -m http.server 8000` in this folder and open `http://localhost:8000/`. No packages, runtime dependencies, API keys, internet, or sign-in required. Controls: WASD / arrow keys walk; hold Shift to run; E interacts. On touchscreens use the D-pad below the map.
 
@@ -16,7 +13,7 @@ From First Desktop's central square, walk south to the marked **SOUTH GATE**. Cr
 ## Files
 
 - `assets/town.png`, `assets/overworld.png`: custom-composed sample maps made from the CC0 tileset and hand-drawn layout.
-- `assets/hero.png`, `assets/npc.png`: sprite sheets from the supplied CC0 ZIP.
+- `assets/hero.png`, `assets/npc.png`: optimized sprite sheets from the supplied CC0 ZIP.
 - `game.js`, `index.html`, `style.css`: standalone browser game and screen UI. `tools/build_assets.py`: optional reproducible art assembly script if you retain the original ZIP; Pillow is required only to rebuild map assets, not to play.
 
 ## Integration plan (later)
