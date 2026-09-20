@@ -4,6 +4,11 @@
 
 ## Play
 
+> **GitHub branch note:** The original playable ZIP from the chat contains the prebuilt PNG artwork. This branch contains the source code and the complete reproducible artwork generator, but the binary PNGs have not yet been transferred into the branch. To run a fresh checkout, first generate them from `tiny-rpg-town-files.zip` using the commands below (or copy the `assets/` directory from the playable ZIP).\n\n```bash
+python -m pip install pillow
+python tools/build_assets.py /path/to/tiny-rpg-town-files.zip
+```
+
 Open `index.html` in Chrome/Chromium/Firefox; if your browser disallows local asset loading, run `python -m http.server 8000` in this folder and open `http://localhost:8000/`. No packages, runtime dependencies, API keys, internet, or sign-in required. Controls: WASD / arrow keys walk; hold Shift to run; E interacts. On touchscreens use the D-pad below the map.
 
 From First Desktop's central square, walk south to the marked **SOUTH GATE**. Cross the lower edge of the town on the central road to enter the overworld. The east road also exits. On the overworld, return to the western town marker and press **E**; you reenter First Desktop. Click **Start over** to reset. The last map and character location persist locally in the browser.
