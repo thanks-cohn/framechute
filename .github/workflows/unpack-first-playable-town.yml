@@ -1,0 +1,83 @@
+name: Unpack first playable town (one-time)
+on:
+  push:
+    branches: [first-playable-attempt-v0]
+    paths:
+      - .github/workflows/unpack-first-playable-town.yml
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    if: github.repository == 'thanks-cohn/framechute' && github.ref == 'refs/heads/first-playable-attempt-v0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract only the approved prototype files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          archive = Path('SUBSTRATE-town-prototype (1).zip')
+          root = 'SUBSTRATE-town-prototype/'
+          permitted = set('''LICENSE-CODE.md
+README.md
+index.html
+game.js
+style.css
+tools/build_assets.py
+tools/test_logic.mjs
+tools/test_browser.py
+assets/town.png
+assets/pond.png
+assets/hero.png
+assets/trees.png
+assets/overworld.png
+assets/hall.png
+assets/stone.png
+assets/cottage.png
+assets/pine.png
+assets/npc.png
+assets/shrub.png'''.splitlines())
+          destination = Path('experiments/first-playable-attempt-v0')
+          with ZipFile(archive) as z:
+              actual = {info.filename for info in z.infolist()}
+              expected = {root + name for name in permitted}
+              if actual != expected:
+                  raise SystemExit(f'Unexpected archive files: missing={expected-actual}, extra={actual-expected}')
+              if z.testzip() is not None:
+                  raise SystemExit('Archive integrity check failed')
+              for name in sorted(permitted):
+                  data = z.read(root + name)
+                  if len(data) > 10_000_000:
+                      raise SystemExit('Oversized archive member: ' + name)
+                  out = destination / name
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          print(f'Extracted {len(permitted)} verified files to {destination}')
+          PY
+      - name: Verify playable town
+        run: |
+          cd experiments/first-playable-attempt-v0
+          node --check game.js
+          node tools/test_logic.mjs
+          test -f assets/town.png
+          test -f assets/overworld.png
+          test -f assets/hero.png
+      - name: Commit extracted prototype to the feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- experiments/first-playable-attempt-v0
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add extracted playable RPG town and overworld assets'
+            git push origin HEAD:first-playable-attempt-v0
+          else
+            echo 'Town files already match the ZIP.'
+          fi
