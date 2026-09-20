@@ -1,7 +1,8 @@
 name: Unpack first playable town (one-time)
 on:
   push:
-    branches: [first-playable-attempt-v0]
+    branches:
+      - first-playable-attempt-v0
     paths:
       - .github/workflows/unpack-first-playable-town.yml
 
@@ -14,37 +15,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Extract only the approved prototype files
         run: |
-          python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           archive = Path('SUBSTRATE-town-prototype (1).zip')
           root = 'SUBSTRATE-town-prototype/'
-          permitted = set('''LICENSE-CODE.md
-README.md
-index.html
-game.js
-style.css
-tools/build_assets.py
-tools/test_logic.mjs
-tools/test_browser.py
-assets/town.png
-assets/pond.png
-assets/hero.png
-assets/trees.png
-assets/overworld.png
-assets/hall.png
-assets/stone.png
-assets/cottage.png
-assets/pine.png
-assets/npc.png
-assets/shrub.png'''.splitlines())
+          permitted = set([
+            'LICENSE-CODE.md','README.md','index.html','game.js','style.css',
+            'tools/build_assets.py','tools/test_logic.mjs','tools/test_browser.py',
+            'assets/town.png','assets/pond.png','assets/hero.png','assets/trees.png',
+            'assets/overworld.png','assets/hall.png','assets/stone.png','assets/cottage.png',
+            'assets/pine.png','assets/npc.png','assets/shrub.png'
+          ])
           destination = Path('experiments/first-playable-attempt-v0')
           with ZipFile(archive) as z:
               actual = {info.filename for info in z.infolist()}
@@ -61,7 +47,6 @@ assets/shrub.png'''.splitlines())
                   out.parent.mkdir(parents=True, exist_ok=True)
                   out.write_bytes(data)
           print(f'Extracted {len(permitted)} verified files to {destination}')
-          PY
       - name: Verify playable town
         run: |
           cd experiments/first-playable-attempt-v0
