@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUBSTRATE — Little Town Prototype</title>
+<link rel="stylesheet" href="style.css">
+<script src="game.js" defer></script>
+</head>
+<body>
+<main class="shell">
+ <header class="topbar"><div class="brand"><span class="gem" aria-hidden="true">✦</span><div><div class="eyebrow">SUBSTRATE · FIRST PLAYABLE WORLD</div><h1>The Little Town</h1></div></div><div class="status" aria-live="polite"><span class="lamp" aria-hidden="true"></span><span id="mode-label">Loading…</span></div></header>
+ <section class="stage" aria-label="Playable RPG town and overworld">
+  <canvas id="game" width="768" height="576" tabindex="0" aria-label="Town map. Use arrow keys or WASD to move. Walk through the south gate to visit the overworld."></canvas>
+  <div class="overlay top-left"><span class="tag">WORLD 01</span> <strong id="place">First Desktop · Town</strong></div>
+  <div class="overlay bottom-left" id="context-tip" role="status">Walk south through the gate to leave town.</div>
+  <button id="reset" class="overlay reset" type="button" title="Restart at the town square">↺ Start over</button>
+  <div class="fade" id="fade" aria-hidden="true"></div>
+ </section>
+ <div class="bottom"><div class="legend"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> Walk</span><span><kbd>Shift</kbd> Run</span><span><kbd>E</kbd> Interact</span></div><p id="description">Town = one desktop. The southern gate is the exit to the greater world.</p></div>
+ <nav class="touch" aria-label="On-screen movement controls"><button type="button" data-dir="up" aria-label="Move up">▲</button><div><button type="button" data-dir="left" aria-label="Move left">◀</button><button type="button" data-dir="down" aria-label="Move down">▼</button><button type="button" data-dir="right" aria-label="Move right">▶</button></div></nav>
+ <details><summary>Prototype scope and next steps</summary><p>This standalone prototype uses the freely licensed town artwork in your uploaded asset pack. You can move through one town, use two marked exits, explore a small overworld, and return to the same town from its corresponding entrances. The eastern town on the overworld is a future desktop placeholder, not a functioning second desktop. Actual SUBSTRATE frame and document switching, ship controls, sky transitions, and globe mode come later.</p></details>
+</main>
+</body></html>
