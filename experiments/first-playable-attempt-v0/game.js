@@ -84,7 +84,7 @@
  }
  function draw(timestamp,moving){ctx.clearRect(0,0,W,H);
   if(!ready){ctx.fillStyle='#101723';ctx.fillRect(0,0,W,H);ctx.fillStyle='#f2da9c';ctx.font='20px Georgia';ctx.fillText('Loading the little town…',243,283);return;}
-  ctx.drawImage(imgs[map],0,0);
+  ctx.drawImage(imgs[map],0,0,W,H);
   if(map==='town'){
    labelAt('TOWN HALL',355,140);labelAt('SOUTH GATE ↓',385,526);
    labelAt('TO OVERWORLD →',681,318);
