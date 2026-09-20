@@ -6,6 +6,8 @@
 **Name:** **(R)END means render**: render one semantic world in many forms. The name is aspirational, not a claim that the project currently implements a game engine.  
 **Related proposals:** `Proposals/worlds-rend-agent-native-spatial-desktops.md`, `Proposals/living-computing-archive-and-interchangeable-frames.md`, and `Proposals/semantic-world-engine-agent-native-spatial-ir.md`.
 
+**Behavior-language companion:** `Proposals/omni-behavior-language-semantic-action-compiler.md` — the typed intention → validated world action → expressive rendering contract and reusable Book of Behaviors.
+
 ## 1. The guiding idea
 
 SUBSTRATE already has movable, skinnable application frames containing real PDFs, DOCX documents, images, media, and other work. Think of these frames as the first independent little objects or “spheres” in a much larger environment. Build a world beneath and around them: a persistent, spatial desktop with its own geometry, surface, lights, camera, identity, and semantics. The default *world presentation* can look like a tilted, isometric/oblique 2.5D village or diorama, not a featureless, flat top-down rectangle. The default *computing experience* remains functional and readable.
