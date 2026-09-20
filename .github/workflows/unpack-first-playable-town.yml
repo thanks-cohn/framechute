@@ -20,6 +20,7 @@ jobs:
           node-version: '22'
       - name: Extract only the approved prototype files
         run: |
+          python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           archive = Path('SUBSTRATE-town-prototype (1).zip')
@@ -47,6 +48,7 @@ jobs:
                   out.parent.mkdir(parents=True, exist_ok=True)
                   out.write_bytes(data)
           print(f'Extracted {len(permitted)} verified files to {destination}')
+          PY
       - name: Verify playable town
         run: |
           cd experiments/first-playable-attempt-v0
