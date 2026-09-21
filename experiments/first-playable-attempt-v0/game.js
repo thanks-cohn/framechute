@@ -106,6 +106,7 @@
  const valid=new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d','Shift','e','E']);
  window.addEventListener('keydown',ev=>{if(valid.has(ev.key)){ev.preventDefault();if((ev.key==='e'||ev.key==='E')&&!ev.repeat)interact();else held.add(ev.key);}});
  window.addEventListener('keyup',ev=>{held.delete(ev.key);});window.addEventListener('blur',()=>held.clear());
+ window.addEventListener('pagehide',save); // Preserve the last position when leaving the embedded world.
  document.querySelectorAll('.touch button').forEach(btn=>{
   const dir=btn.dataset.dir;
   const down=ev=>{ev.preventDefault();held.add(dir);btn.classList.add('pressed');try{btn.setPointerCapture(ev.pointerId)}catch{}};
