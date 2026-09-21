@@ -8,6 +8,12 @@ body.sne-os-world-active .workspace {
   background: transparent !important;
   background-image: none !important;
 }
+/* The workspace spans the screen even where no windows exist. Let uncovered
+   canvas areas reach the island, while keeping every actual desktop object
+   interactive. Otherwise an invisible workspace box swallows drag/wheel. */
+body.sne-os-world-active .workspace { pointer-events: none; }
+body.sne-os-world-active .workspace > * { pointer-events: auto; }
+body.sne-os-world-active .workspace .block { pointer-events: auto; }
 #sne-os-world[hidden],
 #sne-os-rpg[hidden] { display: none !important; }
 #sne-os-world {
@@ -56,6 +62,11 @@ body.sne-os-world-active .workspace {
   padding: 4px 9px;
   cursor: pointer;
   font: 12px system-ui, sans-serif;
+}
+#sne-os-world #sne-os-zoom-in,
+#sne-os-world #sne-os-zoom-out {
+  min-width: 34px;
+  font: 700 20px/1 system-ui, sans-serif;
 }
 #sne-os-world button:focus-visible,
 #sne-os-world canvas:focus-visible { outline: 2px solid #afe2ff; outline-offset: 2px; }
