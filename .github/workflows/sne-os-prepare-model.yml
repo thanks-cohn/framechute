@@ -1,0 +1,77 @@
+name: Prepare SNE OS island model and local Three.js
+on:
+  push:
+    branches: [sne-os-floating-island-v0]
+    paths:
+      - .github/workflows/sne-os-prepare-model.yml
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'thanks-cohn/framechute'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect uploaded model and its web compatibility
+        run: |
+          python3 - <<'PY'
+          import json, struct
+          from pathlib import Path
+          p=Path('floating_island_stage.glb')
+          with p.open('rb') as f:
+              magic, version, total=struct.unpack('<4sII',f.read(12))
+              n, typ=struct.unpack('<I4s',f.read(8))
+              doc=json.loads(f.read(n))
+          assert magic == b'glTF' and version == 2 and total == p.stat().st_size, 'Invalid GLB header'
+          print('MODEL bytes:',total,'nodes:',len(doc.get('nodes',[])),'meshes:',len(doc.get('meshes',[])),'materials:',len(doc.get('materials',[])),'images:',len(doc.get('images',[])))
+          print('extensionsRequired:',doc.get('extensionsRequired',[]))
+          print('extensionsUsed:',doc.get('extensionsUsed',[]))
+          print('scenes:',doc.get('scenes',[]))
+          print('root scene:',doc.get('scene',0))
+          for i,node in enumerate(doc.get('nodes',[])[:48]):
+              print('node',i,str(node.get('name',''))[:90], 'mesh',node.get('mesh'), 'translation',node.get('translation'),'scale',node.get('scale'))
+          for i,mesh in enumerate(doc.get('meshes',[])[:15]):
+              print('mesh',i,str(mesh.get('name',''))[:60],'primitives',len(mesh.get('primitives',[])))
+          PY
+      - name: Bundle locally hosted Three.js and GLTFLoader
+        run: |
+          npm install --no-save --ignore-scripts --no-audit --no-fund three@0.180.0
+          mkdir -p src/vendor/sne-os assets/worlds
+          cp node_modules/three/build/three.core.js src/vendor/sne-os/three.core.js
+          cp node_modules/three/build/three.module.js src/vendor/sne-os/three.module.js
+          cp node_modules/three/examples/jsm/loaders/GLTFLoader.js src/vendor/sne-os/GLTFLoader.js
+          cp node_modules/three/examples/jsm/utils/BufferGeometryUtils.js src/vendor/sne-os/BufferGeometryUtils.js
+          cp node_modules/three/LICENSE src/vendor/sne-os/THREE-LICENSE
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('src/vendor/sne-os')
+          for name in ('GLTFLoader.js','BufferGeometryUtils.js'):
+              p=root/name
+              s=p.read_text()
+              s=s.replace("from 'three';", "from './three.module.js';")
+              s=s.replace("from '../utils/BufferGeometryUtils.js';", "from './BufferGeometryUtils.js';")
+              assert "from 'three'" not in s and 'from "../' not in s and "from '../" not in s, 'Unknown upstream loader import in '+name
+              p.write_text(s)
+          core=root/'three.module.js'
+          s=core.read_text()
+          s=s.replace("from './three.core.js';", "from './three.core.js';")
+          core.write_text(s)
+          print('Vendored local files:',[(p.name,p.stat().st_size) for p in root.iterdir()])
+          PY
+          cp floating_island_stage.glb assets/worlds/floating_island_stage.glb
+          node --check src/vendor/sne-os/GLTFLoader.js
+          node --check src/vendor/sne-os/three.module.js
+      - name: Commit only world model and runtime, not npm temporary files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/vendor/sne-os assets/worlds/floating_island_stage.glb
+          if ! git diff --cached --quiet; then
+            git commit -m 'Vendor offline Three.js renderer and user island GLB'
+            git push origin HEAD:sne-os-floating-island-v0
+          fi
