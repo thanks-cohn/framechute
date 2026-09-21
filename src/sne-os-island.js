@@ -237,25 +237,12 @@ function animate(timestamp) {
       finishReveal(s);
     } else if (s.revealStage === "stars" &&
                timestamp >= s.bootAt + (intro.starfieldMinimumMs || 2600)) {
+      // The model appears fully dark at its final camera distance; only its
+      // lighting changes. There is no automatic zoom, dolly or camera approach.
       s.model.visible = true;
-      s.revealStage = "silhouette";
-      s.revealStarted = timestamp;
-      status("Otherworld emerging from the stars…");
-    } else if (s.revealStage === "silhouette" &&
-               timestamp - s.revealStarted >= (intro.silhouetteHoldMs || 750)) {
-      s.revealStage = "approach";
-      s.approachStarted = timestamp;
-      status("Approaching the shadowed world…");
-    } else if (s.revealStage === "approach") {
-      const fraction = ease((timestamp - s.approachStarted) / (intro.approachMs || 1150));
-      s.distance = s.definition.camera.initialDistance *
-        (1 - (1 - (intro.approachFactor || 0.88)) * fraction);
-      placeCamera(s);
-      if (fraction >= 1) {
-        s.revealStage = "light";
-        s.lightStarted = timestamp;
-        status("The light slowly reveals Otherworld…");
-      }
+      s.revealStage = "light";
+      s.lightStarted = timestamp;
+      status("Light revealing Otherworld…");
     } else if (s.revealStage === "light") {
       const fraction = clamp((timestamp - s.lightStarted) / (intro.lightRevealMs || 3400), 0, 1);
       setRevealStrength(s, fraction);
@@ -510,8 +497,7 @@ async function startWorld() {
       sunColor:new THREE.Color(definition.lighting.primary.sunColor),
       moonColor:new THREE.Color(definition.lighting.primary.moonColor),
       bootAt: window.SNE_OS_BOOT_AT || performance.now(),
-      mixer, revealMaterials, revealStage: "stars", revealStarted: 0,
-      approachStarted: 0, lightStarted: 0,
+      mixer, revealMaterials, revealStage: "stars", lightStarted: 0,
       distance, raycaster: new THREE.Raycaster(), animationFrame: 0,
       dragging: false, lastTimestamp: 0
     };
