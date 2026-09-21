@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flashframe</title>
   <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="sne-os-island.css">
   <link rel="stylesheet" href="floating.css">
   <link rel="stylesheet" href="actions/quick-actions.css">
   <link rel="stylesheet" href="editor-context-menu.css">
@@ -76,6 +77,10 @@
       <button id="settings-expand" class="dock-expand" type="button" title="Minimize settings" aria-label="Minimize settings">−</button>
     </div>
     <div class="dock-body settings-body">
+      <label class="setting-row sne-os-toggle-row">
+        <input id="setting-sne-os-world" type="checkbox" checked>
+        <span><strong>SNE:OS — Floating 3D Island</strong><small>Show a real, rotatable 3D island in space behind your editable desktop. Turn off to restore the classic canvas.</small><small id="sne-os-settings-status" role="status">Preparing island…</small></span>
+      </label>
       <label class="setting-row">
         <input id="setting-block-headers" type="checkbox" checked>
         <span><strong>Show block headers</strong><small>Hide the title bars on Flashframe blocks.</small></span>
@@ -189,7 +194,19 @@
     </div>
   </aside>
 
-  <main id="workspace" class="workspace" aria-label="Flashframe workspace"></main>
+  <main id="workspace" class="workspace" aria-label="Flashframe workspace">
+    <section id="sne-os-world" aria-label="SNE:OS floating island background" hidden>
+      <div class="sne-os-hud">
+        <span id="sne-os-world-status" role="status">Preparing island…</span>
+        <button id="sne-os-enter-world" type="button">Enter the 2D world ↗</button>
+        <button id="sne-os-reset-view" type="button" title="Reset rotation and zoom">Reset view</button>
+      </div>
+    </section>
+  </main>
+  <dialog id="sne-os-rpg" aria-label="SNE:OS playable town">
+    <button id="sne-os-return" class="sne-os-return" type="button">← Return to desktop island</button>
+    <iframe id="sne-os-rpg-frame" title="SNE:OS playable little town" referrerpolicy="no-referrer" allow="fullscreen"></iframe>
+  </dialog>
 
   <dialog id="fcx-export-choice">
     <form method="dialog">
@@ -228,6 +245,7 @@
   </template>
 
   <script type="module" src="workspace.js"></script>
+  <script type="module" src="sne-os-island.js"></script>
   <script type="module" src="toolbar-paradigm.js"></script>
   <script type="module" src="controls.js"></script>
   <script type="module" src="workspace-extras.js"></script>
