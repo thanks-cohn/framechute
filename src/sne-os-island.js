@@ -9,6 +9,7 @@ import { safeOrbit, orbitAt, clampNumber } from "./sne-os-light-orbit.mjs";
 const SETTINGS_KEY = "sne-os.floating-world.enabled.v1";
 const LIGHT_SETTINGS_KEY = "sne-os.celestial-light.v1";
 const ENTRY_LABEL_KEY = "sne-os.world.entry.label.v1";
+const SHOW_KEY_KEY = "sne-os.world.show-key.v1";
 const DEFAULT_ENTRY_LABEL = "Enter World";
 const host = document.querySelector("#sne-os-world");
 const workspace = document.querySelector("#workspace");
@@ -16,6 +17,10 @@ const enableInput = document.querySelector("#setting-sne-os-world");
 const settingsStatus = document.querySelector("#sne-os-settings-status");
 const worldStatus = document.querySelector("#sne-os-world-status");
 const enterButton = document.querySelector("#sne-os-enter-world");
+const worldKey = document.querySelector(".sne-os-hud");
+const showKeyInput = document.querySelector("#setting-sne-os-show-key");
+const contextMenu = document.querySelector("#sne-os-context-menu");
+const contextEnter = document.querySelector("#sne-os-context-enter");
 const entryLabelInput = document.querySelector("#sne-os-entry-label");
 const entryLabelReset = document.querySelector("#sne-os-entry-label-reset");
 const zoomInButton = document.querySelector("#sne-os-zoom-in");
@@ -43,6 +48,7 @@ function setWorldEntryLabel(input, persist = true) {
   const clean = String(input ?? "").replace(/[\\u0000-\\u001f\\u007f]/g, " ").trim().slice(0, 48) || DEFAULT_ENTRY_LABEL;
   if (entryLabelInput) entryLabelInput.value = clean;
   if (enterButton) { enterButton.textContent = clean; enterButton.setAttribute("aria-label", clean); }
+  if (contextEnter) { contextEnter.textContent = clean; contextEnter.setAttribute("aria-label", clean); }
   if (persist) { try { localStorage.setItem(ENTRY_LABEL_KEY, clean); } catch {} }
   return clean;
 }
@@ -158,6 +164,7 @@ function setWorldAppearance(enabled) {
 }
 
 function stopWorld() {
+  closeWorldMenu();
   token++;
   clearSession();
   setWorldAppearance(false);
@@ -296,6 +303,7 @@ function resetView() {
 }
 
 function openGame() {
+  closeWorldMenu();
   if (!session || !wanted || dialog.open) return;
   const destination = session.definition.destinations.find(item => item.type === "embedded-page");
   if (!destination) return;
@@ -312,6 +320,33 @@ function openGame() {
     session.animationFrame = 0;
   }
   returnButton.focus({ preventScroll: true });
+}
+
+function setWorldKeyVisible(visible, persist = true) {
+  if (worldKey) worldKey.hidden = !visible;
+  if (showKeyInput) showKeyInput.checked = Boolean(visible);
+  if (persist) {
+    try { localStorage.setItem(SHOW_KEY_KEY, String(Boolean(visible))); } catch {}
+  }
+}
+
+function closeWorldMenu() {
+  if (contextMenu) contextMenu.hidden = true;
+}
+
+function openWorldMenu(event) {
+  if (!contextMenu || !contextEnter || !wanted || host.hidden || dialog.open) return;
+  // Never steal right-clicks from actual documents, world controls, or other menus.
+  if (event.target.closest(".sne-os-hud, .sne-os-context-menu, .block")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  contextMenu.hidden = false;
+  const pad = 8;
+  const x = Math.max(pad, Math.min(event.clientX, window.innerWidth - contextMenu.offsetWidth - pad));
+  const y = Math.max(pad, Math.min(event.clientY, window.innerHeight - contextMenu.offsetHeight - pad));
+  contextMenu.style.left = `${x}px`;
+  contextMenu.style.top = `${y}px`;
+  contextEnter.focus({ preventScroll: true });
 }
 
 function closeGame() {
@@ -537,6 +572,22 @@ function setEnabled(enabled) {
 if (host && workspace && enableInput && dialog && gameFrame) {
   enableInput.addEventListener("change", () => setEnabled(enableInput.checked));
   enterButton?.addEventListener("click", openGame);
+  contextEnter?.addEventListener("click", openGame);
+  host.addEventListener("contextmenu", openWorldMenu);
+  showKeyInput?.addEventListener("change", () => setWorldKeyVisible(showKeyInput.checked));
+  let savedShowKey = false;
+  try { savedShowKey = localStorage.getItem(SHOW_KEY_KEY) === "true"; } catch {}
+  setWorldKeyVisible(savedShowKey, false);
+  document.addEventListener("pointerdown", event => {
+    if (contextMenu && !contextMenu.hidden && !contextMenu.contains(event.target)) closeWorldMenu();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && contextMenu && !contextMenu.hidden) {
+      closeWorldMenu();
+      session?.canvas.focus({ preventScroll: true });
+    }
+  });
+  window.addEventListener("blur", closeWorldMenu);
   entryLabelInput?.addEventListener("change", () => setWorldEntryLabel(entryLabelInput.value));
   entryLabelInput?.addEventListener("blur", () => setWorldEntryLabel(entryLabelInput.value));
   entryLabelReset?.addEventListener("click", () => setWorldEntryLabel(DEFAULT_ENTRY_LABEL));
