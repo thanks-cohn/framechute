@@ -21,7 +21,16 @@ for (const token of ["#sne-os-world", "#setting-sne-os-world", "#sne-os-rpg", "#
 for (const token of ['id="sne-os-world"', 'id="setting-sne-os-world"', 'id="sne-os-rpg"', 'id="sne-os-rpg-frame"', 'src="sne-os-island.js"', 'href="sne-os-island.css"']) {
   assert.ok(html.includes(token), "Missing desktop integration: " + token);
 }
-assert.ok(css.includes(".workspace") && css.includes("background: transparent"), "Background must remain behind editable frames");
+assert.ok(css.includes('html {\n  background-color: #000;'), "Root page under the world must default to black, even outside the scrollable workspace");
+assert.ok(css.includes('body.sne-os-world-active[data-framechute-expandable-canvas="true"]') &&
+          css.includes('body.sne-os-boot-pending[data-framechute-expandable-canvas="true"]'),
+          "Expanded-scroll areas must stay black during boot and world mode");
+assert.ok(css.includes('body.sne-os-world-active .workspace[data-expanded-origin="true"]') &&
+          css.includes('background: #000 !important'),
+          "The underlying workspace and its expanded origin must paint black, not a white browser canvas");
+assert.ok(css.includes('scrollbar-color: #394657 #000'), "Root scrollbar track must be dark in world mode");
+assert.ok(css.includes('#sne-os-world .sne-os-sky') && css.includes('background: radial-gradient'),
+          "Decorative starfield must remain above the independently black default background");
 for (const id of ['id="sne-os-zoom-in"', 'id="sne-os-zoom-out"']) {
   assert.ok(html.includes(id), "Missing visible zoom control: " + id);
 }
