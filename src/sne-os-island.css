@@ -175,3 +175,11 @@ body.sne-os-boot-pending .workspace {
 .sne-os-light-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 7px 0; }
 .sne-os-light-actions button { cursor: pointer; }
 #sne-os-light-status { display: block; font-size: 12px; opacity: .85; margin: 6px 0; }
+
+/* World-entry text is authorable without renaming any underlying workspace IDs. */
+.sne-os-entry-settings { display: grid; gap: 6px; margin: 8px 0; padding: 9px 10px; border: 1px solid #8699ae66; border-radius: 9px; }
+.sne-os-entry-settings label { display: grid; gap: 3px; }
+.sne-os-entry-settings small { font-size: 12px; opacity: .82; }
+.sne-os-entry-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#sne-os-entry-label { box-sizing: border-box; flex: 1 1 130px; min-width: 0; max-width: 250px; padding: 5px 7px; border: 1px solid #8699ae66; border-radius: 5px; background: Canvas; color: CanvasText; }
+.sne-os-entry-actions button { cursor: pointer; }
