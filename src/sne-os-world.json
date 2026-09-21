@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "id": "sne-os-first-island",
-  "title": "SNE:OS — First Floating World",
-  "asset": "../assets/worlds/floating_island_stage.glb",
+  "title": "SNE:OS — Otherworld: The Last Stronghold",
+  "asset": "../assets/worlds/otherworld/the_last_stronghold_animated.glb",
   "appearance": {
     "spaceColor": "#02040b",
-    "starCount": 180,
+    "starCount": 96,
     "ambientIntensity": 1.55,
     "sunIntensity": 2.2,
     "sunPosition": [
-      -5,
-      9,
-      6
+      0,
+      6,
+      10
     ],
     "maxPixelRatio": 1.5
   },
@@ -33,5 +33,14 @@
       "type": "embedded-page",
       "page": "../experiments/first-playable-attempt-v0/index.html"
     }
-  ]
+  ],
+  "reveal": {
+    "starfieldMinimumMs": 2800,
+    "silhouetteHoldMs": 750,
+    "approachMs": 1150,
+    "approachFactor": 0.88,
+    "lightRevealMs": 3400,
+    "lightDirection": "camera",
+    "visibleLightBody": false
+  }
 }
