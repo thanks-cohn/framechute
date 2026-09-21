@@ -163,3 +163,15 @@ body.sne-os-boot-pending .workspace {
   #sne-os-world .sne-os-star { animation-duration: 0.01s; animation-delay: 0s; }
   #sne-os-world .sne-os-meteor { animation: none; }
 }
+
+
+/* Compact creator-facing controls; all orbital variables remain runtime data. */
+.sne-os-light-settings { margin: 8px 0; border: 1px solid #8699ae66; border-radius: 9px; padding: 8px 10px; }
+.sne-os-light-settings summary { cursor: pointer; font-weight: 650; }
+.sne-os-light-settings p { font-size: 12px; line-height: 1.5; opacity: .85; }
+.sne-os-light-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 10px 0; }
+.sne-os-light-grid label { display: grid; gap: 4px; font-size: 12px; }
+.sne-os-light-grid input { width: 100%; box-sizing: border-box; min-width: 0; padding: 5px; border-radius: 5px; border: 1px solid #8396aa66; background: Canvas; color: CanvasText; }
+.sne-os-light-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 7px 0; }
+.sne-os-light-actions button { cursor: pointer; }
+#sne-os-light-status { display: block; font-size: 12px; opacity: .85; margin: 6px 0; }
