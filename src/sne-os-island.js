@@ -431,12 +431,52 @@ async function startWorld() {
     );
     const worldRadius = new THREE.Box3().setFromObject(model).getBoundingSphere(new THREE.Sphere()).radius;
     const orbit = safeOrbit(activeLightSettings(definition), worldRadius);
+    // The uploaded Stronghold stores its actual painted colors in EMISSIVE maps
+    // while all ten materials advertise KHR_materials_unlit and zero baseColor.
+    // Basic/unlit materials ignore directional sunlight entirely. Rebuild them as
+    // physically lit PBR materials using their baked color textures as diffuse
+    // maps, preserving alpha and skinning on the original mesh objects.
+    const materialDefinitions = gltf.parser.json.materials || [];
+    const sourceMaterialAssociations = gltf.parser.associations;
+    const preparedMaterials = await Promise.all(materialDefinitions.map(async originalDefinition => {
+      if (!originalDefinition.extensions?.KHR_materials_unlit) return null;
+      const colorIndex = originalDefinition.emissiveTexture?.index ??
+        originalDefinition.pbrMetallicRoughness?.baseColorTexture?.index;
+      let colorMap = null;
+      if (Number.isInteger(colorIndex)) {
+        colorMap = (await gltf.parser.getDependency("texture", colorIndex)).clone();
+        colorMap.colorSpace = THREE.SRGBColorSpace;
+        colorMap.needsUpdate = true;
+      }
+      return new THREE.MeshStandardMaterial({
+        name: originalDefinition.name || "Otherworld illuminated surface",
+        map: colorMap,
+        color: 0xffffff, // GLB baseColor is [0,0,0]; don't multiply away texture colors.
+        roughness: 0.88,
+        metalness: 0.02,
+        transparent: originalDefinition.alphaMode === "BLEND",
+        alphaTest: originalDefinition.alphaMode === "MASK" ?
+          (originalDefinition.alphaCutoff ?? 0.5) : 0,
+        depthWrite: originalDefinition.alphaMode !== "BLEND",
+        side: originalDefinition.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+        // The lighting now acts on actual normals, with only a tiny ambient fill.
+        emissive: 0x000000
+      });
+    }));
+    if (myToken !== token || !wanted) {
+      renderer.dispose();
+      canvas.remove();
+      return;
+    }
     const revealMaterials = [];
     model.traverse(object => {
       if (!object.isMesh || !object.material) return;
       const original = Array.isArray(object.material) ? object.material : [object.material];
       const materialCopies = original.map(originalMaterial => {
-        const material = originalMaterial.clone();
+        const associatedIndex = sourceMaterialAssociations?.get(originalMaterial)?.materials;
+        const index = Number.isInteger(associatedIndex) ? associatedIndex :
+          materialDefinitions.findIndex(definition => definition.name === originalMaterial.name);
+        const material = preparedMaterials[index]?.clone() || originalMaterial.clone();
         const color = material.color?.clone() || null;
         const emissive = material.emissive?.clone() || null;
         const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
