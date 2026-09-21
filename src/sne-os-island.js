@@ -12,6 +12,8 @@ const enableInput = document.querySelector("#setting-sne-os-world");
 const settingsStatus = document.querySelector("#sne-os-settings-status");
 const worldStatus = document.querySelector("#sne-os-world-status");
 const enterButton = document.querySelector("#sne-os-enter-world");
+const zoomInButton = document.querySelector("#sne-os-zoom-in");
+const zoomOutButton = document.querySelector("#sne-os-zoom-out");
 const resetButton = document.querySelector("#sne-os-reset-view");
 const dialog = document.querySelector("#sne-os-rpg");
 const returnButton = document.querySelector("#sne-os-return");
@@ -140,15 +142,29 @@ function scheduleAnimation() {
   session.animationFrame = requestAnimationFrame(animate);
 }
 
+function setZoom(nextDistance) {
+  if (!session) return;
+  const s = session;
+  s.distance = clamp(nextDistance, s.definition.camera.minDistance, s.definition.camera.maxDistance);
+  s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
+  s.camera.lookAt(0, 0, 0);
+  renderOnce();
+}
+
+function zoomIn() {
+  if (session) setZoom(session.distance * 0.79);
+}
+
+function zoomOut() {
+  if (session) setZoom(session.distance / 0.79);
+}
+
 function resetView() {
   if (!session) return;
   const s = session;
   s.dragging = false;
   s.pivot.rotation.set(0, 0, 0);
-  s.distance = s.definition.camera.initialDistance;
-  s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
-  s.camera.lookAt(0, 0, 0);
-  renderOnce();
+  setZoom(s.definition.camera.initialDistance);
 }
 
 function openGame() {
@@ -213,7 +229,8 @@ function attachPointerControls(s) {
     down = null;
     s.dragging = false;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    if (clicked) openGame();
+    // Clicking a landmark-sized piece of the island is for inspection, not entering the RPG.
+    if (clicked) zoomIn();
   });
   const cancel = () => { down = null; s.dragging = false; };
   canvas.addEventListener("pointercancel", cancel);
@@ -221,13 +238,11 @@ function attachPointerControls(s) {
   canvas.addEventListener("wheel", event => {
     if (!session || !wanted) return;
     event.preventDefault();
-    s.distance = clamp(s.distance * Math.exp(event.deltaY * 0.001), s.definition.camera.minDistance, s.definition.camera.maxDistance);
-    s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
-    s.camera.lookAt(0, 0, 0);
-    renderOnce();
+    setZoom(s.distance * Math.exp(event.deltaY * 0.001));
   }, { passive: false });
   canvas.addEventListener("keydown", event => {
-    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openGame(); }
+    if (event.key === "Enter" || event.key === " " || event.key === "+" || event.key === "=" || event.key === "Add") { event.preventDefault(); zoomIn(); }
+    else if (event.key === "-" || event.key === "_" || event.key === "Subtract") { event.preventDefault(); zoomOut(); }
   });
 }
 
@@ -249,8 +264,8 @@ async function startWorld() {
     renderer.setClearColor(definition.appearance.spaceColor, 1);
     const canvas = renderer.domElement;
     canvas.tabIndex = 0;
-    canvas.setAttribute("aria-label", "Rotatable SNE:OS island. Drag to turn, scroll to zoom, click the island or press Enter to explore.");
-    canvas.title = "Drag to rotate · Scroll to zoom · Click island to enter the little world";
+    canvas.setAttribute("aria-label", "Rotatable SNE:OS island. Drag to turn; scroll, click, or press plus and minus to zoom. The 2D world has a separate entry control.");
+    canvas.title = "Drag to rotate · Scroll or click island to zoom · Plus / minus zoom controls";
     host.prepend(canvas);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(definition.appearance.spaceColor);
@@ -294,7 +309,7 @@ async function startWorld() {
     attachPointerControls(session);
     resize();
     scheduleAnimation();
-    status("Drag to rotate · Scroll to zoom · Click the island to enter your 2D world.");
+    status("Drag to rotate · Click or scroll to zoom · Use + / − to inspect the island.");
   } catch (error) {
     console.error("SNE:OS floating island could not initialize:", error);
     renderer?.dispose();
@@ -321,6 +336,8 @@ function setEnabled(enabled) {
 if (host && workspace && enableInput && dialog && gameFrame) {
   enableInput.addEventListener("change", () => setEnabled(enableInput.checked));
   enterButton?.addEventListener("click", openGame);
+  zoomInButton?.addEventListener("click", zoomIn);
+  zoomOutButton?.addEventListener("click", zoomOut);
   resetButton?.addEventListener("click", resetView);
   returnButton?.addEventListener("click", closeGame);
   dialog.addEventListener("close", () => {
