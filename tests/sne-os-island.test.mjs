@@ -10,7 +10,7 @@ assert.ok(world.id && world.asset && world.appearance && world.camera);
 assert.ok(world.destinations.length > 0);
 const sceneSource = read("src/sne-os-island.js");
 const bootSource = read("src/sne-os-boot.js");
-assert.match(world.asset, /otherworld\\/the_last_stronghold_animated\\.glb$/, "New Otherworld GLB must be active");
+assert.ok(world.asset.endsWith("/otherworld/the_last_stronghold_animated.glb"), "New Otherworld GLB must be active");
 assert.equal(world.reveal.visibleLightBody, false, "Default light body must remain invisible");
 assert.ok(world.reveal.starfieldMinimumMs > 1000, "Starfield stage must precede model arrival");
 const html = read("src/workspace.html");
