@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="actions/data-utilities.css">
   <link rel="stylesheet" href="image-edit/paint-toolbar.css">
 </head>
-<body class="toolbar-show-text">
+<body class="toolbar-show-text sne-os-boot-pending">
   <header class="toolbar">
     <div class="brand">FrameChute</div>
 
@@ -201,6 +201,8 @@
         <button id="sne-os-zoom-out" type="button" title="Zoom out of the floating island" aria-label="Zoom out of island">−</button>
         <button id="sne-os-zoom-in" type="button" title="Zoom into the floating island" aria-label="Zoom into island">+</button>
         <button id="sne-os-reset-view" type="button" title="Reset rotation and zoom">Reset view</button>
+        <button id="sne-os-skip-reveal" type="button" hidden>Skip reveal</button>
+        <button id="sne-os-retry" type="button" hidden>Retry island</button>
         <button id="sne-os-enter-world" type="button" title="Optional: launch the separate existing 2D town">Open 2D town ↗</button>
       </div>
     </section>
@@ -246,6 +248,7 @@
     </section>
   </template>
 
+  <script src="sne-os-boot.js"></script>
   <script type="module" src="workspace.js"></script>
   <script type="module" src="sne-os-island.js"></script>
   <script type="module" src="toolbar-paradigm.js"></script>
