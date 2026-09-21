@@ -35,6 +35,19 @@ assert.ok(html.includes('id="sne-os-enter-world"') && html.includes('>Enter Worl
 assert.ok(html.includes('id="sne-os-entry-label"') && html.includes('id="sne-os-entry-label-reset"'), "World entrance name must be configurable in settings");
 assert.ok(sceneSource.includes('const ENTRY_LABEL_KEY = "sne-os.world.entry.label.v1"'), "Custom entrance title must be saved separately from destination");
 assert.ok(sceneSource.includes("setWorldEntryLabel(savedEntryLabel, false)"), "Saved entrance title must be restored on startup");
+assert.ok(html.includes('id="setting-sne-os-show-key"'), "World Key toggle must appear in settings");
+const settingsSection = html.slice(html.indexOf('<div class="dock-body settings-body">'), html.indexOf('</aside>', html.indexOf('<div class="dock-body settings-body">')));
+assert.ok(settingsSection.lastIndexOf('id="setting-sne-os-show-key"') > settingsSection.indexOf('id="archive-connect"'), "Show World Key must be at bottom of Settings");
+assert.ok(html.includes('class="sne-os-hud" aria-label="World controls" hidden'), "World Key should be hidden by default");
+assert.ok(css.includes('.sne-os-hud[hidden]') && css.includes('display: none !important'), "World Key hidden property must override HUD flex display");
+assert.ok(sceneSource.includes('const SHOW_KEY_KEY = "sne-os.world.show-key.v1"'), "World Key preference must have its own saved setting");
+assert.ok(sceneSource.includes('setWorldKeyVisible(savedShowKey, false)'), "Saved World Key preference must restore on reload");
+assert.ok(sceneSource.includes('showKeyInput?.addEventListener("change"'), "World Key toggle must update live");
+assert.ok(html.includes('id="sne-os-context-menu"') && html.includes('id="sne-os-context-enter"'), "Right-click Enter World menu must exist");
+assert.ok(sceneSource.includes('host.addEventListener("contextmenu", openWorldMenu)'), "Right-click on island must open world menu");
+assert.ok(sceneSource.includes('contextEnter?.addEventListener("click", openGame)'), "Right-click Enter World action must launch the existing world");
+assert.ok(sceneSource.includes('contextEnter.textContent = clean'), "Customized entrance label must appear in context menu too");
+
 
 assert.ok(world.camera.minDistance < 2 && world.camera.maxDistance > 40, "Close inspection and distant overview must both be possible");
 assert.ok(css.includes("pointer-events: none") && css.includes(".workspace > * { pointer-events: auto; }"), "Blank desktop area must pass pointer events to the island without disabling foreground windows");
