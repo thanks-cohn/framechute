@@ -210,3 +210,34 @@ body.sne-os-boot-pending .workspace {
 @media (max-width: 540px) {
   #sne-os-world .sne-os-hud { width: min(198px, calc(100vw - 30px)); bottom: 12px; left: 12px; }
 }
+
+/* Default world presentation is uncluttered. Restore the original key via the
+   Show World Key checkbox at the very bottom of Settings. */
+#sne-os-world .sne-os-hud[hidden],
+#sne-os-world .sne-os-context-menu[hidden] { display: none !important; }
+#sne-os-world .sne-os-context-menu {
+  position: fixed;
+  z-index: 5;
+  min-width: 152px;
+  box-sizing: border-box;
+  padding: 5px;
+  border: 1px solid #9ab3cb88;
+  border-radius: 7px;
+  background: #081523f5;
+  color: #e7efff;
+  box-shadow: 0 8px 24px #000a;
+  pointer-events: auto;
+}
+#sne-os-world .sne-os-context-menu button {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  font: 600 12px/1.5 "Lucida Console", "Consolas", "Courier New", monospace;
+  letter-spacing: .015em;
+}
+#sne-os-world .sne-os-context-menu button:hover,
+#sne-os-world .sne-os-context-menu button:focus-visible {
+  background: #23425a;
+}
