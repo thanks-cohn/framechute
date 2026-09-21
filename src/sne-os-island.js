@@ -15,6 +15,8 @@ const enterButton = document.querySelector("#sne-os-enter-world");
 const zoomInButton = document.querySelector("#sne-os-zoom-in");
 const zoomOutButton = document.querySelector("#sne-os-zoom-out");
 const resetButton = document.querySelector("#sne-os-reset-view");
+const skipButton = document.querySelector("#sne-os-skip-reveal");
+const retryButton = document.querySelector("#sne-os-retry");
 const dialog = document.querySelector("#sne-os-rpg");
 const returnButton = document.querySelector("#sne-os-return");
 const gameFrame = document.querySelector("#sne-os-rpg-frame");
@@ -25,6 +27,7 @@ let wanted = false;
 let token = 0;
 let session = null;
 let worldDefinition = null;
+let skipIntroRequested = false;
 
 function status(message) {
   if (worldStatus) worldStatus.textContent = message;
@@ -79,28 +82,48 @@ function stopWorld() {
   status("Classic desktop active.");
 }
 
-function createStars(scene, count) {
-  let seed = 4729107;
-  const rand = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  const stars = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const longitude = rand() * Math.PI * 2;
-    const latitude = Math.acos(rand() * 2 - 1);
-    const radius = 45 + rand() * 10;
-    stars[i * 3] = radius * Math.sin(latitude) * Math.cos(longitude);
-    stars[i * 3 + 1] = radius * Math.cos(latitude);
-    stars[i * 3 + 2] = radius * Math.sin(latitude) * Math.sin(longitude);
+/* Stars and shooting stars live in the tiny, synchronous bootstrap so a slow
+ * GLB download or blocked WebGL initialization never causes a blank canvas. */
+function ease(t) {
+  t = clamp(t, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function placeCamera(s) {
+  s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
+  s.camera.lookAt(0, 0, 0);
+  if (s.sun && s.definition.reveal?.lightDirection === "camera") {
+    const direction = s.camera.position.clone().normalize().multiplyScalar(10);
+    direction.y += 2;
+    s.sun.position.copy(direction);
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(stars, 3));
-  const points = new THREE.Points(geometry, new THREE.PointsMaterial({
-    color: 0xb7d1f9, size: 1.6, sizeAttenuation: false,
-    transparent: true, opacity: 0.78, depthWrite: false
-  }));
-  scene.add(points);
+}
+
+/* This first pass couples a material-darkness coating to the rising invisible
+ * light. The user's imported GLB contains unlit materials: merely ramping a
+ * directional light would NOT reveal its colors. Tinting copies of materials
+ * makes both lit and unlit meshes participate while preserving original maps.
+ * A later spatial shader can implement a true per-pixel light-front wipe. */
+function setRevealStrength(s, strength) {
+  const amount = ease(strength);
+  s.sun.intensity = s.definition.appearance.sunIntensity * amount;
+  s.ambient.intensity = s.definition.appearance.ambientIntensity * amount;
+  for (const item of s.revealMaterials) {
+    const local = ease(clamp((amount - item.offset * 0.12) / 0.88, 0, 1));
+    const tint = 0.018 + local * 0.982;
+    if (item.color) item.material.color.copy(item.color).multiplyScalar(tint);
+    if (item.emissive) item.material.emissive.copy(item.emissive).multiplyScalar(local);
+  }
+}
+
+function finishReveal(s = session) {
+  if (!s || s.revealStage === "idle") return;
+  s.model.visible = true;
+  s.revealStage = "idle";
+  setRevealStrength(s, 1);
+  if (skipButton) skipButton.hidden = true;
+  status("Drag to rotate · Click or scroll to zoom · Use + / − to inspect Otherworld.");
+  renderOnce();
 }
 
 function renderOnce() {
@@ -126,9 +149,41 @@ function animate(timestamp) {
   if (!wanted || document.hidden || dialog.open || host.hidden) return;
   const dt = Math.min(0.05, Math.max(0, (timestamp - (s.lastTimestamp || timestamp)) / 1000));
   s.lastTimestamp = timestamp;
+  const intro = s.definition.reveal || {};
+  if (s.revealStage !== "idle") {
+    if (reducedMotion.matches || skipIntroRequested) {
+      finishReveal(s);
+    } else if (s.revealStage === "stars" &&
+               timestamp >= (window.SNE_OS_BOOT_AT || timestamp) + (intro.starfieldMinimumMs || 2600)) {
+      s.model.visible = true;
+      s.revealStage = "silhouette";
+      s.revealStarted = timestamp;
+      status("Otherworld emerging from the stars…");
+    } else if (s.revealStage === "silhouette" &&
+               timestamp - s.revealStarted >= (intro.silhouetteHoldMs || 750)) {
+      s.revealStage = "approach";
+      s.approachStarted = timestamp;
+      status("Approaching the shadowed world…");
+    } else if (s.revealStage === "approach") {
+      const fraction = ease((timestamp - s.approachStarted) / (intro.approachMs || 1150));
+      s.distance = s.definition.camera.initialDistance *
+        (1 - (1 - (intro.approachFactor || 0.88)) * fraction);
+      placeCamera(s);
+      if (fraction >= 1) {
+        s.revealStage = "light";
+        s.lightStarted = timestamp;
+        status("The light slowly reveals Otherworld…");
+      }
+    } else if (s.revealStage === "light") {
+      const fraction = clamp((timestamp - s.lightStarted) / (intro.lightRevealMs || 3400), 0, 1);
+      setRevealStrength(s, fraction);
+      if (fraction >= 1) finishReveal(s);
+    }
+  }
   if (!reducedMotion.matches) {
     if (!s.dragging) s.pivot.rotation.y += dt * s.definition.motion.idleRotationRadiansPerSecond;
     s.pivot.position.y = Math.sin(timestamp / 1900) * s.definition.motion.bobAmplitude;
+    if (s.revealStage === "idle") s.mixer?.update(dt);
   } else {
     s.pivot.position.y = 0;
   }
@@ -145,9 +200,9 @@ function scheduleAnimation() {
 function setZoom(nextDistance) {
   if (!session) return;
   const s = session;
+  finishReveal(s);
   s.distance = clamp(nextDistance, s.definition.camera.minDistance, s.definition.camera.maxDistance);
-  s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
-  s.camera.lookAt(0, 0, 0);
+  placeCamera(s);
   renderOnce();
 }
 
@@ -209,6 +264,7 @@ function attachPointerControls(s) {
     if (event.button !== 0 || !session || dialog.open) return;
     down = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false };
     s.dragging = true;
+    finishReveal(s);
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointermove", event => {
@@ -250,35 +306,37 @@ async function startWorld() {
   const myToken = ++token;
   clearSession();
   setWorldAppearance(true);
-  status("Loading your floating island…");
+  if (retryButton) retryButton.hidden = true;
+  if (skipButton) skipButton.hidden = false;
+  status("Stars emerging… Loading Otherworld in the background.");
   let renderer;
+  let canvas;
   try {
     const definition = await getDefinition();
     if (myToken !== token || !wanted) return;
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "low-power" });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, definition.appearance.maxPixelRatio));
     renderer.setSize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
-    renderer.setClearColor(definition.appearance.spaceColor, 1);
-    const canvas = renderer.domElement;
+    renderer.setClearColor(0x000000, 0); // Transparent canvas: the independent night sky stays visible.
+    canvas = renderer.domElement;
     canvas.tabIndex = 0;
     canvas.setAttribute("aria-label", "Rotatable SNE:OS island. Drag to turn; scroll, click, or press plus and minus to zoom. The 2D world has a separate entry control.");
     canvas.title = "Drag to rotate · Scroll or click island to zoom · Plus / minus zoom controls";
     host.prepend(canvas);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(definition.appearance.spaceColor);
-    createStars(scene, definition.appearance.starCount);
-    scene.add(new THREE.HemisphereLight(0xe6f1ff, 0x363b48, definition.appearance.ambientIntensity));
-    const sun = new THREE.DirectionalLight(0xffebcb, definition.appearance.sunIntensity);
+    scene.background = null;
+    const ambient = new THREE.HemisphereLight(0xe6f1ff, 0x363b48, 0);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xffebcb, 0);
     sun.position.set(...definition.appearance.sunPosition);
     scene.add(sun);
-    const camera = new THREE.PerspectiveCamera(43, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 120);
+    const camera = new THREE.PerspectiveCamera(43, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 140);
     const pivot = new THREE.Group();
     scene.add(pivot);
-    const loader = new GLTFLoader();
-    const gltf = await loader.loadAsync(new URL(definition.asset, import.meta.url).href);
+    const gltf = await new GLTFLoader().loadAsync(new URL(definition.asset, import.meta.url).href);
     if (myToken !== token || !wanted) {
       renderer.dispose();
       canvas.remove();
@@ -286,7 +344,7 @@ async function startWorld() {
     }
     const model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
-    if (bounds.isEmpty()) throw new Error("Island model has no usable geometry.");
+    if (bounds.isEmpty()) throw new Error("Otherworld has no usable geometry.");
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
     const longest = Math.max(size.x, size.y, size.z);
@@ -297,32 +355,55 @@ async function startWorld() {
       model.position.y * scale - center.y * scale,
       model.position.z * scale - center.z * scale
     );
+    const revealMaterials = [];
+    model.traverse(object => {
+      if (!object.isMesh || !object.material) return;
+      const original = Array.isArray(object.material) ? object.material : [object.material];
+      const materialCopies = original.map(originalMaterial => {
+        const material = originalMaterial.clone();
+        const color = material.color?.clone() || null;
+        const emissive = material.emissive?.clone() || null;
+        const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+        const offset = clamp((center.x - bounds.min.x) / Math.max(0.001, size.x), 0, 1);
+        revealMaterials.push({ material, color, emissive, offset });
+        return material;
+      });
+      object.material = Array.isArray(object.material) ? materialCopies : materialCopies[0];
+    });
     pivot.add(model);
+    model.visible = false;
+    const mixer = gltf.animations?.length ? new THREE.AnimationMixer(model) : null;
+    if (mixer) for (const clip of gltf.animations) mixer.clipAction(clip).play();
     const distance = definition.camera.initialDistance;
-    camera.position.set(0, distance * definition.camera.verticalAngle, distance);
-    camera.lookAt(0, 0, 0);
     session = {
-      renderer, canvas, scene, camera, pivot, model, definition,
+      renderer, canvas, scene, camera, pivot, model, definition, ambient, sun,
+      mixer, revealMaterials, revealStage: "stars", revealStarted: 0,
+      approachStarted: 0, lightStarted: 0,
       distance, raycaster: new THREE.Raycaster(), animationFrame: 0,
       dragging: false, lastTimestamp: 0
     };
+    placeCamera(session);
+    setRevealStrength(session, 0);
     attachPointerControls(session);
     resize();
     scheduleAnimation();
-    status("Drag to rotate · Click or scroll to zoom · Use + / − to inspect the island.");
+    status("Stars emerging… Otherworld is ready for its shadow reveal.");
   } catch (error) {
-    console.error("SNE:OS floating island could not initialize:", error);
-    renderer?.dispose();
-    stopWorld();
-    wanted = false;
-    enableInput.checked = false;
-    try { localStorage.setItem(SETTINGS_KEY, "false"); } catch {}
-    status("3D island unavailable; your classic desktop is still accessible.");
+    console.error("SNE:OS Otherworld could not initialize:", error);
+    if (session) clearSession();
+    else { canvas?.remove(); renderer?.dispose(); }
+    if (myToken !== token || !wanted) return;
+    // Keep the self-running night sky and the actual desktop accessible.
+    // Do not silently disable the user's preference after a transient startup failure.
+    if (skipButton) skipButton.hidden = true;
+    if (retryButton) retryButton.hidden = false;
+    status("Otherworld could not load. The night sky and your desktop are still available. Choose Retry island.");
   }
 }
 
 function setEnabled(enabled) {
   wanted = enabled;
+  skipIntroRequested = false;
   enableInput.checked = enabled;
   try { localStorage.setItem(SETTINGS_KEY, String(enabled)); } catch {}
   if (!enabled) {
@@ -339,6 +420,8 @@ if (host && workspace && enableInput && dialog && gameFrame) {
   zoomInButton?.addEventListener("click", zoomIn);
   zoomOutButton?.addEventListener("click", zoomOut);
   resetButton?.addEventListener("click", resetView);
+  skipButton?.addEventListener("click", () => { skipIntroRequested = true; finishReveal(); });
+  retryButton?.addEventListener("click", () => { if (wanted) void startWorld(); });
   returnButton?.addEventListener("click", closeGame);
   dialog.addEventListener("close", () => {
     gameFrame.src = "about:blank";
