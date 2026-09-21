@@ -95,7 +95,7 @@ function createStars(scene, count) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(stars, 3));
   const points = new THREE.Points(geometry, new THREE.PointsMaterial({
-    color: 0xb7d1f9, size: 0.09, sizeAttenuation: false,
+    color: 0xb7d1f9, size: 1.6, sizeAttenuation: false,
     transparent: true, opacity: 0.78, depthWrite: false
   }));
   scene.add(points);
@@ -191,14 +191,14 @@ function attachPointerControls(s) {
   let down = null;
   canvas.addEventListener("pointerdown", event => {
     if (event.button !== 0 || !session || dialog.open) return;
-    down = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    down = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false };
     s.dragging = true;
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointermove", event => {
     if (!down || down.id !== event.pointerId || !session) return;
     const dx = event.clientX - down.x, dy = event.clientY - down.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) down.moved = true;
+    if (Math.abs(event.clientX - down.startX) + Math.abs(event.clientY - down.startY) > 6) down.moved = true;
     if (down.moved) {
       s.pivot.rotation.y += dx * 0.008;
       s.pivot.rotation.x = clamp(s.pivot.rotation.x + dy * 0.003, -0.38, 0.38);
