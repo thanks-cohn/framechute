@@ -55,6 +55,8 @@ const glb = JSON.parse(b.subarray(20, 20 + b.readUInt32LE(12)).toString("utf8"))
 const unlitMaterials = glb.materials?.filter(material => material.extensions?.KHR_materials_unlit) || [];
 console.log("Otherworld materials:", JSON.stringify(glb.materials?.map(material => ({ name:material.name, unlit:!!material.extensions?.KHR_materials_unlit, baseColor:material.pbrMetallicRoughness?.baseColorFactor, hasTexture:!!material.pbrMetallicRoughness?.baseColorTexture, emissive:material.emissiveFactor, doubleSided:material.doubleSided }))));
 console.log("Otherworld unlit material count:", unlitMaterials.length, "of", glb.materials?.length);
+console.log("Otherworld material texture metadata:", JSON.stringify(glb.materials?.map(m => ({name:m.name,base:m.pbrMetallicRoughness?.baseColorTexture?.index,emissive:m.emissiveTexture?.index,normal:m.normalTexture?.index,strength:m.extensions?.KHR_materials_emissive_strength?.emissiveStrength}))));
+console.log("Otherworld textures:",JSON.stringify(glb.textures));
 console.log("Otherworld mesh attribute layouts:", JSON.stringify((glb.meshes || []).slice(0,6).map(mesh => mesh.primitives?.map(primitive => Object.keys(primitive.attributes || {})))));
 
 for (const destination of world.destinations) {
