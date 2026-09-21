@@ -18,7 +18,17 @@ for (const token of ['id="sne-os-world"', 'id="setting-sne-os-world"', 'id="sne-
   assert.ok(html.includes(token), "Missing desktop integration: " + token);
 }
 assert.ok(css.includes(".workspace") && css.includes("background: transparent"), "Background must remain behind editable frames");
-assert.ok(sceneSource.includes("intersectObject(model, true)"), "The real island mesh must be clickable");
+for (const id of ['id="sne-os-zoom-in"', 'id="sne-os-zoom-out"']) {
+  assert.ok(html.includes(id), "Missing visible zoom control: " + id);
+}
+assert.ok(sceneSource.includes("intersectObject(model, true)"), "The island mesh must support click-to-inspect");
+assert.ok(sceneSource.includes("if (clicked) zoomIn();"), "Island click must zoom instead of launching the 2D game");
+assert.ok(!sceneSource.includes("if (clicked) openGame();"), "Island click must never open the 2D game");
+assert.ok(sceneSource.includes('zoomInButton?.addEventListener("click", zoomIn);'), "Plus zoom control must be wired");
+assert.ok(sceneSource.includes('zoomOutButton?.addEventListener("click", zoomOut);'), "Minus zoom control must be wired");
+assert.ok(sceneSource.includes('enterButton?.addEventListener("click", openGame);'), "Existing 2D game must have a separate explicit launch");
+assert.ok(world.camera.minDistance < 2 && world.camera.maxDistance > 40, "Close inspection and distant overview must both be possible");
+assert.ok(css.includes("pointer-events: none") && css.includes(".workspace > * { pointer-events: auto; }"), "Blank desktop area must pass pointer events to the island without disabling foreground windows");
 assert.ok(sceneSource.includes("GLTFLoader"), "The real 3D island must be rendered as a model");
 assert.ok(sceneSource.includes('dialog.showModal()'), "The existing 2D world must open without replacing workspace");
 assert.ok(sceneSource.includes("localStorage.setItem(SETTINGS_KEY"), "The classic background toggle must persist");
