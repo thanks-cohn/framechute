@@ -80,6 +80,12 @@ include_roots = [
     pathlib.Path("src"),
     pathlib.Path("icons"),
     pathlib.Path("assets"),
+    # The island enters the existing 2D world without loading a remote page.
+    # Package runtime assets only; do not ship its optional Python builder or test tools.
+    pathlib.Path("experiments/first-playable-attempt-v0/index.html"),
+    pathlib.Path("experiments/first-playable-attempt-v0/style.css"),
+    pathlib.Path("experiments/first-playable-attempt-v0/game.js"),
+    pathlib.Path("experiments/first-playable-attempt-v0/assets"),
 ]
 
 files = []
@@ -148,6 +154,13 @@ required_package_files = {
     "src/launcher.html",
     "src/launcher.js",
     "src/workspace.html",
+    "src/sne-os-island.js",
+    "src/sne-os-island.css",
+    "src/sne-os-world.json",
+    "src/vendor/sne-os/three.module.js",
+    "assets/worlds/floating_island_stage.glb",
+    "experiments/first-playable-attempt-v0/index.html",
+    "experiments/first-playable-attempt-v0/assets/town.png",
     "src/workspace-extras.js",
     "src/picker-guard.js",
     "src/media-dock-grab-pin.js",
