@@ -1,13 +1,41 @@
-/* SNE:OS v0 — rendered island behind the real, editable workspace. */
+/* The actual page/canvas substrate is black, not a decorative overlay.
+   The fixed starfield/3D scene paints ABOVE this base. If the page expands,
+   scrolls, overscrolls, or the renderer has not produced its first frame,
+   there must never be a white browser Canvas-color gap. */
+html {
+  background-color: #000;
+}
+html:has(body.sne-os-world-active),
+html:has(body.sne-os-boot-pending) {
+  background: #000 !important;
+  color-scheme: dark;
+  scrollbar-color: #394657 #000;
+}
 body.sne-os-world-active,
-body.sne-os-world-active[data-framechute-expandable-canvas="true"] {
-  background: #03050b !important;
+body.sne-os-world-active[data-framechute-expandable-canvas="true"],
+body.sne-os-boot-pending,
+body.sne-os-boot-pending[data-framechute-expandable-canvas="true"] {
+  background: #000 !important;
+  background-color: #000 !important;
   background-image: none !important;
 }
-body.sne-os-world-active .workspace {
-  background: transparent !important;
+body.sne-os-world-active .workspace,
+body.sne-os-boot-pending .workspace,
+body.sne-os-world-active .workspace[data-expanded-origin="true"] {
+  background: #000 !important;
+  background-color: #000 !important;
   background-image: none !important;
 }
+html:has(body.sne-os-world-active)::-webkit-scrollbar,
+html:has(body.sne-os-boot-pending)::-webkit-scrollbar,
+body.sne-os-world-active::-webkit-scrollbar,
+body.sne-os-boot-pending::-webkit-scrollbar { background: #000; }
+html:has(body.sne-os-world-active)::-webkit-scrollbar-track,
+html:has(body.sne-os-boot-pending)::-webkit-scrollbar-track,
+body.sne-os-world-active::-webkit-scrollbar-track,
+body.sne-os-boot-pending::-webkit-scrollbar-track { background: #000; }
+html:has(body.sne-os-world-active)::-webkit-scrollbar-thumb,
+body.sne-os-world-active::-webkit-scrollbar-thumb { background: #394657; border-radius: 8px; }
 /* The workspace spans the screen even where no windows exist. Let uncovered
    canvas areas reach the island, while keeping every actual desktop object
    interactive. Otherwise an invisible workspace box swallows drag/wheel. */
@@ -115,11 +143,8 @@ body.sne-os-world-active .workspace .block { pointer-events: auto; }
 
 /* Paint a dark first frame before heavy modules execute. A stalled GLB still
    leaves the user with an intentional, independently animated starfield. */
-body.sne-os-boot-pending { background: #02040b !important; }
-body.sne-os-boot-pending .workspace {
-  background: #02040b !important;
-  background-image: none !important;
-}
+/* The boot-pending state uses the SAME black page substrate as the active
+   world. The animated stars are a separate foreground scene, not the fallback. */
 #sne-os-world .sne-os-sky {
   position: absolute;
   inset: 0;
