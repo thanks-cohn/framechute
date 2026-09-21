@@ -31,6 +31,11 @@ assert.ok(!sceneSource.includes("if (clicked) openGame();"), "Island click must 
 assert.ok(sceneSource.includes('zoomInButton?.addEventListener("click", zoomIn);'), "Plus zoom control must be wired");
 assert.ok(sceneSource.includes('zoomOutButton?.addEventListener("click", zoomOut);'), "Minus zoom control must be wired");
 assert.ok(sceneSource.includes('enterButton?.addEventListener("click", openGame);'), "Existing 2D game must have a separate explicit launch");
+assert.ok(html.includes('id="sne-os-enter-world"') && html.includes('>Enter World</button>'), "Default entrance must be titled Enter World");
+assert.ok(html.includes('id="sne-os-entry-label"') && html.includes('id="sne-os-entry-label-reset"'), "World entrance name must be configurable in settings");
+assert.ok(sceneSource.includes('const ENTRY_LABEL_KEY = "sne-os.world.entry.label.v1"'), "Custom entrance title must be saved separately from destination");
+assert.ok(sceneSource.includes("setWorldEntryLabel(savedEntryLabel, false)"), "Saved entrance title must be restored on startup");
+
 assert.ok(world.camera.minDistance < 2 && world.camera.maxDistance > 40, "Close inspection and distant overview must both be possible");
 assert.ok(css.includes("pointer-events: none") && css.includes(".workspace > * { pointer-events: auto; }"), "Blank desktop area must pass pointer events to the island without disabling foreground windows");
 assert.ok(sceneSource.includes("GLTFLoader"), "The real 3D island must be rendered as a model");
