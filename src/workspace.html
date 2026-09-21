@@ -81,6 +81,23 @@
         <input id="setting-sne-os-world" type="checkbox" checked>
         <span><strong>SNE:OS — Floating 3D Island</strong><small>Show a real, rotatable 3D island in space behind your editable desktop. Turn off to restore the classic canvas.</small><small id="sne-os-settings-status" role="status">Preparing island…</small></span>
       </label>
+      <details class="sne-os-light-settings">
+        <summary>Celestial light · orbit and moon</summary>
+        <p>Place the invisible source at any starting position (X/Y/Z relative to your island). It circles the entire island at a safe distance, then becomes cool moonlight. An unsafe starting point is automatically moved outside the island.</p>
+        <div class="sne-os-light-grid">
+          <label>Start X <input id="sne-os-light-x" type="number" step="0.5" value="0"></label>
+          <label>Start Y <input id="sne-os-light-y" type="number" step="0.5" value="6"></label>
+          <label>Start Z <input id="sne-os-light-z" type="number" step="0.5" value="12"></label>
+          <label>Orbit duration (seconds) <input id="sne-os-light-duration" type="number" min="4" max="3600" step="1" value="28"></label>
+          <label>Safety clearance <input id="sne-os-light-clearance" type="number" min="1" max="2000" step="0.5" value="3"></label>
+          <label>Moon brightness <input id="sne-os-light-moon" type="number" min="0.05" max="1" step="0.05" value="0.4"></label>
+        </div>
+        <div class="sne-os-light-actions">
+          <button id="sne-os-light-apply" type="button">Apply orbit</button>
+          <button id="sne-os-light-reset" type="button">Default light</button>
+        </div>
+        <small id="sne-os-light-status" role="status">The light source is invisible; only its effects are shown.</small>
+      </details>
       <label class="setting-row">
         <input id="setting-block-headers" type="checkbox" checked>
         <span><strong>Show block headers</strong><small>Hide the title bars on Flashframe blocks.</small></span>
