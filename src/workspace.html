@@ -81,6 +81,13 @@
         <input id="setting-sne-os-world" type="checkbox" checked>
         <span><strong>SNE:OS — Floating 3D Island</strong><small>Show a real, rotatable 3D island in space behind your editable desktop. Turn off to restore the classic canvas.</small><small id="sne-os-settings-status" role="status">Preparing island…</small></span>
       </label>
+      <div class="sne-os-entry-settings">
+        <label for="sne-os-entry-label"><strong>World entrance label</strong><small>Choose what the world-entry button says. Default: Enter World.</small></label>
+        <div class="sne-os-entry-actions">
+          <input id="sne-os-entry-label" type="text" maxlength="48" value="Enter World" autocomplete="off" spellcheck="false" aria-label="World entrance button name">
+          <button id="sne-os-entry-label-reset" type="button">Use default</button>
+        </div>
+      </div>
       <details class="sne-os-light-settings">
         <summary>Celestial light · orbit and moon</summary>
         <p>Place the invisible source at any starting position (X/Y/Z relative to your island). It circles the entire island at a safe distance, then becomes cool moonlight. An unsafe starting point is automatically moved outside the island.</p>
@@ -220,12 +227,12 @@
         <button id="sne-os-reset-view" type="button" title="Reset rotation and zoom">Reset view</button>
         <button id="sne-os-skip-reveal" type="button" hidden>Skip reveal</button>
         <button id="sne-os-retry" type="button" hidden>Retry island</button>
-        <button id="sne-os-enter-world" type="button" title="Optional: launch the separate existing 2D town">Open 2D town ↗</button>
+        <button id="sne-os-enter-world" type="button" title="Enter the configured world">Enter World</button>
       </div>
     </section>
   </main>
   <dialog id="sne-os-rpg" aria-label="SNE:OS playable town">
-    <button id="sne-os-return" class="sne-os-return" type="button">← Return to desktop island</button>
+    <button id="sne-os-return" class="sne-os-return" type="button">← Return to World</button>
     <iframe id="sne-os-rpg-frame" title="SNE:OS playable little town" referrerpolicy="no-referrer" allow="fullscreen"></iframe>
   </dialog>
 
