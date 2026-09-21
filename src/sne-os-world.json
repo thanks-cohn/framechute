@@ -17,8 +17,8 @@
   },
   "camera": {
     "initialDistance": 9,
-    "minDistance": 4.7,
-    "maxDistance": 24,
+    "minDistance": 0.85,
+    "maxDistance": 65,
     "verticalAngle": 0.24
   },
   "motion": {
