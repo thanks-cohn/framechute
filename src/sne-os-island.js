@@ -8,12 +8,16 @@ import { safeOrbit, orbitAt, clampNumber } from "./sne-os-light-orbit.mjs";
 
 const SETTINGS_KEY = "sne-os.floating-world.enabled.v1";
 const LIGHT_SETTINGS_KEY = "sne-os.celestial-light.v1";
+const ENTRY_LABEL_KEY = "sne-os.world.entry.label.v1";
+const DEFAULT_ENTRY_LABEL = "Enter World";
 const host = document.querySelector("#sne-os-world");
 const workspace = document.querySelector("#workspace");
 const enableInput = document.querySelector("#setting-sne-os-world");
 const settingsStatus = document.querySelector("#sne-os-settings-status");
 const worldStatus = document.querySelector("#sne-os-world-status");
 const enterButton = document.querySelector("#sne-os-enter-world");
+const entryLabelInput = document.querySelector("#sne-os-entry-label");
+const entryLabelReset = document.querySelector("#sne-os-entry-label-reset");
 const zoomInButton = document.querySelector("#sne-os-zoom-in");
 const zoomOutButton = document.querySelector("#sne-os-zoom-out");
 const resetButton = document.querySelector("#sne-os-reset-view");
@@ -34,6 +38,15 @@ let token = 0;
 let session = null;
 let worldDefinition = null;
 let skipIntroRequested = false;
+
+function setWorldEntryLabel(input, persist = true) {
+  const clean = String(input ?? "").replace(/[\\u0000-\\u001f\\u007f]/g, " ").trim().slice(0, 48) || DEFAULT_ENTRY_LABEL;
+  if (entryLabelInput) entryLabelInput.value = clean;
+  if (enterButton) { enterButton.textContent = clean; enterButton.setAttribute("aria-label", clean); }
+  if (persist) { try { localStorage.setItem(ENTRY_LABEL_KEY, clean); } catch {} }
+  return clean;
+}
+
 let lightOverrides = null;
 try {
   const saved = JSON.parse(localStorage.getItem(LIGHT_SETTINGS_KEY) || "null");
@@ -538,6 +551,12 @@ function setEnabled(enabled) {
 if (host && workspace && enableInput && dialog && gameFrame) {
   enableInput.addEventListener("change", () => setEnabled(enableInput.checked));
   enterButton?.addEventListener("click", openGame);
+  entryLabelInput?.addEventListener("change", () => setWorldEntryLabel(entryLabelInput.value));
+  entryLabelInput?.addEventListener("blur", () => setWorldEntryLabel(entryLabelInput.value));
+  entryLabelReset?.addEventListener("click", () => setWorldEntryLabel(DEFAULT_ENTRY_LABEL));
+  let savedEntryLabel = DEFAULT_ENTRY_LABEL;
+  try { savedEntryLabel = localStorage.getItem(ENTRY_LABEL_KEY) || DEFAULT_ENTRY_LABEL; } catch {}
+  setWorldEntryLabel(savedEntryLabel, false);
   zoomInButton?.addEventListener("click", zoomIn);
   zoomOutButton?.addEventListener("click", zoomOut);
   resetButton?.addEventListener("click", resetView);
