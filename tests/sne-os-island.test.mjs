@@ -42,7 +42,21 @@ assert.ok(sceneSource.includes("GLTFLoader"), "The real 3D island must be render
 assert.ok(html.includes('src="sne-os-boot.js"'), "Starfield must bootstrap independent of the renderer");
 assert.ok(bootSource.includes("SNE_OS_BOOT_AT") && bootSource.includes("sne-os-meteor"), "Stars and shooting stars must launch before the model");
 assert.ok(sceneSource.includes('alpha: true') && sceneSource.includes('scene.background = null'), "3D scene must not obscure the waiting starfield");
-assert.ok(sceneSource.includes('revealStage === "silhouette"') && sceneSource.includes('revealStage === "light"'), "Shadow and light reveal stages must exist");
+assert.ok(sceneSource.includes('revealStage === "light"'), "Light reveal stage must exist");
+assert.ok(!sceneSource.includes('revealStage === "approach"') && !sceneSource.includes('revealStage === "silhouette"'),
+  "Intro must not include automatic camera approach or separate silhouette hold");
+assert.ok(!sceneSource.includes('s.distance = s.definition.camera.initialDistance *'),
+  "Startup must not change the camera distance");
+assert.equal(world.motion.idleRotationRadiansPerSecond, 0, "Default model must not rotate itself");
+assert.equal(world.motion.bobAmplitude, 0, "Default model must not bob during reveal");
+assert.ok(!Object.hasOwn(world.reveal,"approachMs") && !Object.hasOwn(world.reveal,"approachFactor"),
+  "Camera intro approach must be removed from world configuration");
+assert.ok(html.includes('class="sne-os-hud-footnote"'), "Explanatory status must appear as a bottom footnote");
+const hud = html.slice(html.indexOf('class="sne-os-hud"'), html.indexOf('</div>\n    </section>', html.indexOf('class="sne-os-hud"')));
+assert.ok(hud.indexOf('id="sne-os-enter-world"') < hud.indexOf('id="sne-os-world-status"'),
+  "Buttons must precede the explanatory footer");
+assert.ok(css.includes('flex-direction: column') && css.includes('"Lucida Console"'),
+  "World controls should stack vertically with a legible retro monospace font");
 assert.ok(sceneSource.includes("setRevealStrength(s, fraction)"), "Gradual illumination must be tied to reveal progress");
 assert.ok(sceneSource.includes("Keep the self-running night sky"), "Failed GLB startup must preserve the safe night sky");
 assert.ok(html.includes('id="sne-os-retry"') && html.includes('id="sne-os-skip-reveal"'), "Retry and skip must be available");
