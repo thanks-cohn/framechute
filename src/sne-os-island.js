@@ -154,7 +154,7 @@ function animate(timestamp) {
     if (reducedMotion.matches || skipIntroRequested) {
       finishReveal(s);
     } else if (s.revealStage === "stars" &&
-               timestamp >= (window.SNE_OS_BOOT_AT || timestamp) + (intro.starfieldMinimumMs || 2600)) {
+               timestamp >= s.bootAt + (intro.starfieldMinimumMs || 2600)) {
       s.model.visible = true;
       s.revealStage = "silhouette";
       s.revealStarted = timestamp;
@@ -377,6 +377,7 @@ async function startWorld() {
     const distance = definition.camera.initialDistance;
     session = {
       renderer, canvas, scene, camera, pivot, model, definition, ambient, sun,
+      bootAt: window.SNE_OS_BOOT_AT || performance.now(),
       mixer, revealMaterials, revealStage: "stars", revealStarted: 0,
       approachStarted: 0, lightStarted: 0,
       distance, raycaster: new THREE.Raycaster(), animationFrame: 0,
