@@ -22,8 +22,8 @@
     "verticalAngle": 0.24
   },
   "motion": {
-    "idleRotationRadiansPerSecond": 0.025,
-    "bobAmplitude": 0.035
+    "idleRotationRadiansPerSecond": 0,
+    "bobAmplitude": 0
   },
   "destinations": [
     {
@@ -36,9 +36,6 @@
   ],
   "reveal": {
     "starfieldMinimumMs": 2800,
-    "silhouetteHoldMs": 750,
-    "approachMs": 1150,
-    "approachFactor": 0.88,
     "lightRevealMs": 3400,
     "lightDirection": "camera",
     "visibleLightBody": false
