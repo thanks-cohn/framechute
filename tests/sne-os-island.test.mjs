@@ -9,6 +9,10 @@ assert.equal(world.schemaVersion, 1);
 assert.ok(world.id && world.asset && world.appearance && world.camera);
 assert.ok(world.destinations.length > 0);
 const sceneSource = read("src/sne-os-island.js");
+const bootSource = read("src/sne-os-boot.js");
+assert.match(world.asset, /otherworld\\/the_last_stronghold_animated\\.glb$/, "New Otherworld GLB must be active");
+assert.equal(world.reveal.visibleLightBody, false, "Default light body must remain invisible");
+assert.ok(world.reveal.starfieldMinimumMs > 1000, "Starfield stage must precede model arrival");
 const html = read("src/workspace.html");
 const css = read("src/sne-os-island.css");
 for (const token of ["#sne-os-world", "#setting-sne-os-world", "#sne-os-rpg", "#sne-os-rpg-frame"]) {
@@ -30,6 +34,13 @@ assert.ok(sceneSource.includes('enterButton?.addEventListener("click", openGame)
 assert.ok(world.camera.minDistance < 2 && world.camera.maxDistance > 40, "Close inspection and distant overview must both be possible");
 assert.ok(css.includes("pointer-events: none") && css.includes(".workspace > * { pointer-events: auto; }"), "Blank desktop area must pass pointer events to the island without disabling foreground windows");
 assert.ok(sceneSource.includes("GLTFLoader"), "The real 3D island must be rendered as a model");
+assert.ok(html.includes('src="sne-os-boot.js"'), "Starfield must bootstrap independent of the renderer");
+assert.ok(bootSource.includes("SNE_OS_BOOT_AT") && bootSource.includes("sne-os-meteor"), "Stars and shooting stars must launch before the model");
+assert.ok(sceneSource.includes('alpha: true') && sceneSource.includes('scene.background = null'), "3D scene must not obscure the waiting starfield");
+assert.ok(sceneSource.includes('revealStage === "silhouette"') && sceneSource.includes('revealStage === "light"'), "Shadow and light reveal stages must exist");
+assert.ok(sceneSource.includes("setRevealStrength(s, fraction)"), "Gradual illumination must be tied to reveal progress");
+assert.ok(sceneSource.includes("Keep the self-running night sky"), "Failed GLB startup must preserve the safe night sky");
+assert.ok(html.includes('id="sne-os-retry"') && html.includes('id="sne-os-skip-reveal"'), "Retry and skip must be available");
 assert.ok(sceneSource.includes('dialog.showModal()'), "The existing 2D world must open without replacing workspace");
 assert.ok(sceneSource.includes("localStorage.setItem(SETTINGS_KEY"), "The classic background toggle must persist");
 const directory = resolve(root, "src");
