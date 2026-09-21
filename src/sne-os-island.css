@@ -107,3 +107,59 @@ body.sne-os-world-active .workspace .block { pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) {
   #sne-os-world { scroll-behavior: auto; }
 }
+
+/* Paint a dark first frame before heavy modules execute. A stalled GLB still
+   leaves the user with an intentional, independently animated starfield. */
+body.sne-os-boot-pending { background: #02040b !important; }
+body.sne-os-boot-pending .workspace {
+  background: #02040b !important;
+  background-image: none !important;
+}
+#sne-os-world .sne-os-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 38%, #111a29 0%, #050911 54%, #010207 100%);
+}
+#sne-os-world .sne-os-star {
+  position: absolute;
+  background: #e7efff;
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow: 0 0 5px #b8d2ff99;
+  animation: sne-os-star-appear 1.45s ease-out var(--delay) forwards;
+}
+@keyframes sne-os-star-appear {
+  from { opacity: 0; transform: scale(.25); }
+  to { opacity: var(--shine); transform: scale(1); }
+}
+#sne-os-world .sne-os-meteor {
+  position: absolute;
+  width: 80px;
+  height: 1px;
+  opacity: 0;
+  transform-origin: right center;
+  transform: rotate(-32deg) translateX(0);
+  background: linear-gradient(90deg, transparent, #a1d5ff65 46%, #f3f8ff);
+  filter: drop-shadow(0 0 3px #c6e0ff);
+  animation: sne-os-meteor-cross 9s linear var(--delay) infinite;
+}
+@keyframes sne-os-meteor-cross {
+  0%, 2% { opacity: 0; transform: rotate(-32deg) translateX(0); }
+  2.5% { opacity: .7; }
+  7% { opacity: 0; transform: rotate(-32deg) translateX(-175px); }
+  7.01%, 100% { opacity: 0; transform: rotate(-32deg) translateX(-175px); }
+}
+#sne-os-world canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+#sne-os-world .sne-os-hud { z-index: 3; }
+#sne-os-world .sne-os-hud button[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  #sne-os-world .sne-os-star { animation-duration: 0.01s; animation-delay: 0s; }
+  #sne-os-world .sne-os-meteor { animation: none; }
+}
