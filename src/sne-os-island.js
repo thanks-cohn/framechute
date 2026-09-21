@@ -4,8 +4,10 @@
  */
 import * as THREE from "./vendor/sne-os/three.module.js";
 import { GLTFLoader } from "./vendor/sne-os/GLTFLoader.js";
+import { safeOrbit, orbitAt, clampNumber } from "./sne-os-light-orbit.mjs";
 
 const SETTINGS_KEY = "sne-os.floating-world.enabled.v1";
+const LIGHT_SETTINGS_KEY = "sne-os.celestial-light.v1";
 const host = document.querySelector("#sne-os-world");
 const workspace = document.querySelector("#workspace");
 const enableInput = document.querySelector("#setting-sne-os-world");
@@ -17,6 +19,10 @@ const zoomOutButton = document.querySelector("#sne-os-zoom-out");
 const resetButton = document.querySelector("#sne-os-reset-view");
 const skipButton = document.querySelector("#sne-os-skip-reveal");
 const retryButton = document.querySelector("#sne-os-retry");
+const lightStatus = document.querySelector("#sne-os-light-status");
+const lightInputs = ["x","y","z","duration","clearance","moon"].map(name => document.querySelector(`#sne-os-light-${name}`));
+const applyLightButton = document.querySelector("#sne-os-light-apply");
+const resetLightButton = document.querySelector("#sne-os-light-reset");
 const dialog = document.querySelector("#sne-os-rpg");
 const returnButton = document.querySelector("#sne-os-return");
 const gameFrame = document.querySelector("#sne-os-rpg-frame");
@@ -28,6 +34,69 @@ let token = 0;
 let session = null;
 let worldDefinition = null;
 let skipIntroRequested = false;
+let lightOverrides = null;
+try {
+  const saved = JSON.parse(localStorage.getItem(LIGHT_SETTINGS_KEY) || "null");
+  if (saved && typeof saved === "object" && !Array.isArray(saved)) lightOverrides = saved;
+} catch {}
+
+function activeLightSettings(definition) {
+  return { ...definition.lighting.primary, ...(lightOverrides || {}) };
+}
+
+function updateLightControls(definition) {
+  if (!definition || lightInputs.some(input => !input)) return;
+  const light = activeLightSettings(definition);
+  const values = [...light.startPosition, light.orbitDurationMs / 1000,
+    light.clearance, light.moonIntensityFactor];
+  lightInputs.forEach((input, index) => { input.value = String(values[index]); });
+}
+
+function updateCelestialLight(s) {
+  if (!s.orbit) return;
+  const current = orbitAt(s.orbit, s.orbitElapsedMs);
+  s.sun.position.set(...current.position);
+  const moonTransition = ease(clamp((s.orbitElapsedMs - s.orbit.periodMs) / 1300, 0, 1));
+  s.sun.color.copy(s.sunColor).lerp(s.moonColor, moonTransition);
+  s.sun.intensity = s.definition.appearance.sunIntensity *
+    (1 - moonTransition * (1 - s.orbit.moonIntensityFactor));
+  s.ambient.intensity = s.definition.appearance.ambientIntensity * (1 - moonTransition * 0.5);
+  if (s.lastCelestialMode !== current.mode) {
+    s.lastCelestialMode = current.mode;
+    if (lightStatus) lightStatus.textContent = current.mode === "moon"
+      ? "One complete orbit finished: the invisible light is now moonlight."
+      : "Sunlight begins from your selected position and safely circles the whole island.";
+  }
+}
+
+function applyLightSettings() {
+  if (!worldDefinition || lightInputs.some(input => !input)) return;
+  const defaults = worldDefinition.lighting.primary;
+  const numbers = lightInputs.map(input => Number(input.value));
+  if (numbers.some((n,i) => lightInputs[i].value.trim() === "" || !Number.isFinite(n))) {
+    if (lightStatus) lightStatus.textContent = "Enter valid numeric values for each light control.";
+    return;
+  }
+  lightOverrides = {
+    startPosition: numbers.slice(0,3).map((n,i) => clampNumber(n, -100000, 100000, defaults.startPosition[i])),
+    orbitDurationMs: clampNumber(numbers[3] * 1000, 4000, 3600000, defaults.orbitDurationMs),
+    clearance: clampNumber(numbers[4], 1, 2000, defaults.clearance),
+    moonIntensityFactor: clampNumber(numbers[5], 0.05, 1, defaults.moonIntensityFactor)
+  };
+  try { localStorage.setItem(LIGHT_SETTINGS_KEY, JSON.stringify(lightOverrides)); } catch {}
+  updateLightControls(worldDefinition);
+  if (session) {
+    session.orbit = safeOrbit(activeLightSettings(worldDefinition), session.worldRadius);
+    session.orbitElapsedMs = 0;
+    session.lastCelestialMode = null;
+    if (session.revealStage === "idle") updateCelestialLight(session);
+    else session.sun.position.set(...orbitAt(session.orbit,0).position);
+    renderOnce();
+  }
+  const safety = session?.orbit || safeOrbit(activeLightSettings(worldDefinition));
+  if (lightStatus) lightStatus.textContent =
+    `Orbit applied: radius ${safety.radius.toFixed(1)} (minimum safe ${safety.minRadius.toFixed(1)}). Full circle ${(safety.periodMs / 1000).toFixed(0)}s, then moonlight. Source hidden.`;
+}
 
 function status(message) {
   if (worldStatus) worldStatus.textContent = message;
@@ -93,9 +162,7 @@ function placeCamera(s) {
   s.camera.position.set(0, s.distance * s.definition.camera.verticalAngle, s.distance);
   s.camera.lookAt(0, 0, 0);
   if (s.sun && s.definition.reveal?.lightDirection === "camera") {
-    const direction = s.camera.position.clone().normalize().multiplyScalar(10);
-    direction.y += 2;
-    s.sun.position.copy(direction);
+    if (s.orbit) s.sun.position.set(...orbitAt(s.orbit, s.orbitElapsedMs || 0).position);
   }
 }
 
@@ -121,6 +188,8 @@ function finishReveal(s = session) {
   s.model.visible = true;
   s.revealStage = "idle";
   setRevealStrength(s, 1);
+  s.orbitElapsedMs = 0;
+  updateCelestialLight(s);
   if (skipButton) skipButton.hidden = true;
   status("Drag to rotate · Click or scroll to zoom · Use + / − to inspect Otherworld.");
   renderOnce();
@@ -183,7 +252,11 @@ function animate(timestamp) {
   if (!reducedMotion.matches) {
     if (!s.dragging) s.pivot.rotation.y += dt * s.definition.motion.idleRotationRadiansPerSecond;
     s.pivot.position.y = Math.sin(timestamp / 1900) * s.definition.motion.bobAmplitude;
-    if (s.revealStage === "idle") s.mixer?.update(dt);
+    if (s.revealStage === "idle") {
+      s.orbitElapsedMs += dt * 1000;
+      updateCelestialLight(s);
+      s.mixer?.update(dt);
+    }
   } else {
     s.pivot.position.y = 0;
   }
@@ -314,6 +387,7 @@ async function startWorld() {
   try {
     const definition = await getDefinition();
     if (myToken !== token || !wanted) return;
+    updateLightControls(definition);
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, definition.appearance.maxPixelRatio));
     renderer.setSize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), false);
@@ -355,6 +429,8 @@ async function startWorld() {
       model.position.y * scale - center.y * scale,
       model.position.z * scale - center.z * scale
     );
+    const worldRadius = new THREE.Box3().setFromObject(model).getBoundingSphere(new THREE.Sphere()).radius;
+    const orbit = safeOrbit(activeLightSettings(definition), worldRadius);
     const revealMaterials = [];
     model.traverse(object => {
       if (!object.isMesh || !object.material) return;
@@ -377,6 +453,9 @@ async function startWorld() {
     const distance = definition.camera.initialDistance;
     session = {
       renderer, canvas, scene, camera, pivot, model, definition, ambient, sun,
+      orbit, worldRadius, orbitElapsedMs:0, lastCelestialMode:null,
+      sunColor:new THREE.Color(definition.lighting.primary.sunColor),
+      moonColor:new THREE.Color(definition.lighting.primary.moonColor),
       bootAt: window.SNE_OS_BOOT_AT || performance.now(),
       mixer, revealMaterials, revealStage: "stars", revealStarted: 0,
       approachStarted: 0, lightStarted: 0,
@@ -385,6 +464,7 @@ async function startWorld() {
     };
     placeCamera(session);
     setRevealStrength(session, 0);
+    if (lightStatus) lightStatus.textContent = `Orbit minimum safe radius ${orbit.minRadius.toFixed(1)}; actual ${orbit.radius.toFixed(1)}. The light body stays invisible.`;
     attachPointerControls(session);
     resize();
     scheduleAnimation();
@@ -421,6 +501,12 @@ if (host && workspace && enableInput && dialog && gameFrame) {
   zoomInButton?.addEventListener("click", zoomIn);
   zoomOutButton?.addEventListener("click", zoomOut);
   resetButton?.addEventListener("click", resetView);
+  applyLightButton?.addEventListener("click", applyLightSettings);
+  resetLightButton?.addEventListener("click", () => {
+    lightOverrides = null;
+    try { localStorage.removeItem(LIGHT_SETTINGS_KEY); } catch {}
+    if (worldDefinition) { updateLightControls(worldDefinition); applyLightSettings(); }
+  });
   skipButton?.addEventListener("click", () => { skipIntroRequested = true; finishReveal(); });
   retryButton?.addEventListener("click", () => { if (wanted) void startWorld(); });
   returnButton?.addEventListener("click", closeGame);
