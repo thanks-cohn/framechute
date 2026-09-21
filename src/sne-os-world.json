@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "sne-os-first-island",
+  "title": "SNE:OS — First Floating World",
+  "asset": "../assets/worlds/floating_island_stage.glb",
+  "appearance": {
+    "spaceColor": "#02040b",
+    "starCount": 180,
+    "ambientIntensity": 1.55,
+    "sunIntensity": 2.2,
+    "sunPosition": [
+      -5,
+      9,
+      6
+    ],
+    "maxPixelRatio": 1.5
+  },
+  "camera": {
+    "initialDistance": 9,
+    "minDistance": 4.7,
+    "maxDistance": 24,
+    "verticalAngle": 0.24
+  },
+  "motion": {
+    "idleRotationRadiansPerSecond": 0.025,
+    "bobAmplitude": 0.035
+  },
+  "destinations": [
+    {
+      "id": "little-town",
+      "label": "Enter the little world",
+      "trigger": "model-click",
+      "type": "embedded-page",
+      "page": "../experiments/first-playable-attempt-v0/index.html"
+    }
+  ]
+}
