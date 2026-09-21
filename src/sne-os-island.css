@@ -41,16 +41,18 @@ body.sne-os-world-active .workspace .block { pointer-events: auto; }
   left: max(18px, env(safe-area-inset-left));
   max-width: min(420px, calc(100vw - 36px));
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 7px;
-  align-items: center;
-  padding: 8px 12px;
-  border: 1px solid #9ecfff42;
-  border-radius: 12px;
-  background: #030712bd;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid #a4bfda4a;
+  border-radius: 9px;
+  background: #030a15d9;
   backdrop-filter: blur(8px);
-  color: #e4efff;
-  font: 12px/1.45 system-ui, sans-serif;
+  color: #dce9f7;
+  /* Retro Casio/LCD-inspired rhythm without external font downloads. */
+  font: 500 12px/1.5 "Lucida Console", "Consolas", "Courier New", monospace;
+  letter-spacing: 0.015em;
   pointer-events: auto;
 }
 #sne-os-world button {
@@ -61,12 +63,15 @@ body.sne-os-world-active .workspace .block { pointer-events: auto; }
   min-height: 30px;
   padding: 4px 9px;
   cursor: pointer;
-  font: 12px system-ui, sans-serif;
+  font: 600 12px/1.4 "Lucida Console", "Consolas", "Courier New", monospace;
+  letter-spacing: 0.01em;
+  text-align: center;
+  width: 100%;
 }
 #sne-os-world #sne-os-zoom-in,
 #sne-os-world #sne-os-zoom-out {
   min-width: 34px;
-  font: 700 20px/1 system-ui, sans-serif;
+  font: 700 20px/1 "Lucida Console", "Consolas", "Courier New", monospace;
 }
 #sne-os-world button:focus-visible,
 #sne-os-world canvas:focus-visible { outline: 2px solid #afe2ff; outline-offset: 2px; }
@@ -183,3 +188,25 @@ body.sne-os-boot-pending .workspace {
 .sne-os-entry-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 #sne-os-entry-label { box-sizing: border-box; flex: 1 1 130px; min-width: 0; max-width: 250px; padding: 5px 7px; border: 1px solid #8699ae66; border-radius: 5px; background: Canvas; color: CanvasText; }
 .sne-os-entry-actions button { cursor: pointer; }
+
+/* World controls: large target first, status/disclaimer last, legible retro UI. */
+#sne-os-world .sne-os-hud { width: 198px; box-sizing: border-box; }
+#sne-os-world .sne-os-hud-footnote {
+  order: 10;
+  border-top: 1px solid #b0c8e045;
+  margin-top: 4px;
+  padding-top: 8px;
+  display: grid;
+  gap: 5px;
+  overflow-wrap: anywhere;
+  color: #c9d5e5;
+  font-size: 11px;
+}
+#sne-os-world .sne-os-hud-footnote small {
+  font: inherit;
+  opacity: .78;
+}
+#sne-os-world .sne-os-hud button:focus-visible { outline-offset: 3px; }
+@media (max-width: 540px) {
+  #sne-os-world .sne-os-hud { width: min(198px, calc(100vw - 30px)); bottom: 12px; left: 12px; }
+}
