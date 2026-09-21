@@ -220,7 +220,7 @@
 
   <main id="workspace" class="workspace" aria-label="Flashframe workspace">
     <section id="sne-os-world" aria-label="SNE:OS floating island background" hidden>
-      <div class="sne-os-hud" aria-label="World controls">
+      <div class="sne-os-hud" aria-label="World controls" hidden>
         <button id="sne-os-enter-world" type="button" title="Enter the configured world">Enter World</button>
         <button id="sne-os-zoom-in" type="button" title="Zoom into the floating island" aria-label="Zoom in">+</button>
         <button id="sne-os-zoom-out" type="button" title="Zoom out of the floating island" aria-label="Zoom out">−</button>
@@ -231,6 +231,9 @@
           <span id="sne-os-world-status" role="status">Preparing island…</span>
           <small>Drag to turn · scroll or use + / − to inspect. Enter World opens the 2D environment.</small>
         </div>
+      </div>
+      <div id="sne-os-context-menu" class="sne-os-context-menu" role="menu" aria-label="World actions" hidden>
+        <button id="sne-os-context-enter" type="button" role="menuitem">Enter World</button>
       </div>
     </section>
   </main>
