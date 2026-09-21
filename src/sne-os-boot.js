@@ -6,11 +6,13 @@
   let enabled = true;
   try { enabled = localStorage.getItem(key) !== "false"; } catch {}
   document.body.classList.remove("sne-os-boot-pending");
-  if (!host || !workspace || !enabled) return;
-  window.SNE_OS_BOOT_AT = performance.now();
-  document.body.classList.add("sne-os-world-active");
-  workspace.classList.add("sne-os-world-active");
-  host.hidden = false;
+  if (!host || !workspace) return;
+  if (enabled) {
+    window.SNE_OS_BOOT_AT = performance.now();
+    document.body.classList.add("sne-os-world-active");
+    workspace.classList.add("sne-os-world-active");
+    host.hidden = false;
+  }
   const sky = document.createElement("div");
   sky.className = "sne-os-sky";
   sky.setAttribute("aria-hidden", "true");
