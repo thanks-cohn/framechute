@@ -101,3 +101,23 @@ The initial slice can use a simple original 2D drawing, lightweight planes, fixe
 - **Scope:** this is a **proposed game and engine showcase**, not existing gameplay, a commitment that the transposer is implemented, or permission to alter a user's actual workspace or documents during fictional dimensional events.
 
 **Core payoff:** “I always hated that city air.” Old Dog drags the player into a ridiculous hand-drawn countryside, plays the shabby fool with pans and sticks, and then, furious, breathes away half their health. The hand-drawn style is no mere filter: in ÆXIS, it is a domain, a character capability and a creator-authored way to experience the same living entity across media.
+
+## 10. Closing cutscene — back to the innocent poster
+
+After the rural climax, Old Dog **sucks the protagonist inward** in one final impossible inhalation. The image collapses into sketch outlines and white. Rather than a straightforward corpse or triumphal victory scene, the protagonist regains consciousness in the **ordinary town square**, unsure how they got there or what just happened. The people and ambient city sounds are back; the ground is solid; the giant poster-domain is gone. Every Old Dog Porkchops poster looks **innocent, cheerful and unchanged** again. The sequence must preserve ambiguity about what Old Dog has retreated into without undoing the gameplay achievement or requiring that the entire battle was a dream. Avoid a lengthy explanatory monologue; the return to the same familiar branding is the punchline and lingering unease.
+
+## 11. Post-encounter unlock — Old Dog as a playable character
+
+**Defeating/clearing the encounter unlocks Old Dog as a playable character**, not merely a gallery poster or cosmetic skin. Preserve his name, shabby outfit, outrageous facial expressions, fork/spoon and bib, delight in food, tooth-picking smugness, theatrical howl, and unglamorous pan/dirt/stick attacks. His comedic damage and irritation animations are part of the playable identity, not discarded when the player controls him.
+
+**Central character paradox:** Old Dog is most formidable in the city, where posters are everywhere and he can propagate through commercial images, remake an urban plaza as a printed surface, move between illustrated and rigged 3D presentations, and potentially drag opponents into his realm. Yet he **misses home**—the poor, rural cartoon world in which he is comfortable, can be himself and huff and puff without restraint. This rural refuge also exposes his weaknesses: he grows complacent, fights with laughably shabby improvisations, takes damage, becomes irritated and can be read or countered by an attentive opponent. Being homesick does not mean the rural phase is an overall power upgrade; distinguish broad city-scale dimensional dominance from the rural **specialization** of his devastating breath. His affection for home and his vulnerabilities there should remain visible when he is playable.
+
+Suggested playable design (proposed balance, not final numbers):
+- **City/printed-media affinity:** stronger traversal, projection and environmental manipulation where branded surfaces and an urban ruleset permit it; avoid giving the player unrestricted control over every surface in every level.
+- **Home-domain affinity:** cartoon props, squash/stretch, expressive slapstick move set, and a charged huff-and-puff signature with clear startup, timing, limits and recovery; enemies can exploit his telegraph, overconfidence and recovery.
+- **Dimensional pull:** a authored special/ultimate or level-specific ability, with permitted targets, arena transitions and a gameplay-safe return. It should never commandeer real SUBSTRATE/Framechute windows or private files.
+- **Damage identity:** the playable wolf can be knocked about and visibly lose health. Humorous animations make his vulnerability legible, including when a mistimed rural trick leaves him open.
+- **Style parity:** when crossing between city 3D/hybrid and rural illustration, the same canonical Old Dog character persists. Artists may author his 2D frames, stylized 3D rig and mapping using the proposed ÆXIS transposer.
+- **Boss vs player balance:** the scripted boss's half-current-health breath is a showcase set piece, **not** an automatic spammable half-health attack in PvP or free-roam. Adapt it to a telegraphed, counterable, resource-limited player move while retaining its visual identity.
+
+The unlock rewards the player's encounter with a character whose personality and world relationship are expressed through **how he plays**, not just how he looks: the city is his domain of power; the countryside is where he wants to be, even with all his weaknesses there.
