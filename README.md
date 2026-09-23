@@ -28,6 +28,8 @@ move · edit · extract · compare · combine · convert
 keep working or Save As
 ```
 
+**Seven-stage world creation roadmap:** [ÆXIS → AERIS → TOPOS → SEKAI → ASTRA → ARCADIA → ANIMA](Stages/README.md).
+
 ## Why I started this
 
 I started this project without a clearly defined direction, but with an idea and a picture in my head of where I wanted it to lead.
