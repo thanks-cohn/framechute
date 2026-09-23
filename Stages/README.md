@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 01 | **ÆXIS** | A world foundation: map, identity, scale and consistent spatial truth | Supply/open a world map and choose simple defaults |
 | 02 | **AERIS** | Aerial exploration: altitude, flight, atmosphere, ocean and descent | Open the world and fly; change a few accessible settings if desired |
-| 03 | **TOPOS** | Geography and terrain: insert local maps, infer sensible elevations and establish surfaces | Upload an edited Tiled map, preview its additions and apply |
+| 03 | **EARTH** *(formerly TOPOS)* | Geography and terrain: insert local maps, infer sensible elevations and establish surfaces | Upload an edited Tiled map, preview its additions and apply |
 | 04 | **SEKAI** | World assembly: import existing GLBs and place them on usable surfaces | **Upload → click → drop** (or pick a project asset and click a saved location) |
 | 05 | **ASTRA** | Ship design and construction, from general silhouette to detailed internals | **Describe → provide reference pictures → generate**, then place |
 | 06 | **ARCADIA** | Architecture: houses, towers, interiors, cities and monumental structures | **Describe → provide reference pictures → generate**, then place |
@@ -32,7 +32,7 @@ Make the ÆXIS world traversable from above: lightweight ship flight, recognizab
 
 **Exit condition:** A creator can open, fly through and descend into the same stable world while its map, heights and collision/landing semantics remain intelligible to tools and agents.
 
-## 03 — TOPOS: build the geography and placement surfaces
+## 03 — EARTH (formerly TOPOS): build the geography and placement surfaces
 
 A creator can open an existing large Tiled world, add a smaller handmade region (for example, a 50 × 50 map inserted into a 500 × 500 map), export the edited map and feed it to the terrain generator along with preserved original elevation information. The system detects newly added regions and offers **Preview → Apply**, initially generating a simple, low-to-the-ground, geographically coherent insertion. Honor protected terrain, coastlines, seams and existing heights. Bounded, saved-seed variation can make repeated generation feel natural rather than identical or nonsensical.
 
@@ -103,3 +103,33 @@ ASTRA establishes a **general agentic construction kernel**. ARCADIA and ANIMA e
 This is a **roadmap**, not a report of shipped features. Preserve functioning prototype flows, including Tiled-223D's existing low-ground insertion/flight experiment, while progressively implementing and testing each gate. Do not claim Stage 4 GLB placement or Stages 5–7 agentic generation work merely because their proposals are documented.
 
 Read alongside [Stage 3 shapes and Stage 4 GLB placement](../Proposals/aexis-shape-aware-map-insertion-stage-4-glb-placement.md) and [Model Foundry's agentic construction contract](../Proposals/model-foundry-agentic-parametric-glb-construction.md). Those documents hold the deeper geometry, round-trip, validation, provenance, detail-mode and machine API requirements. This roadmap specifies **what the stages mean and how their creator experiences compose**.
+
+
+## Low-end-first creation: recommended tools, never mandatory dependencies
+
+**Product requirement:** World's ÆXIS Engine should remain useful on modest and older computers. Treat a **4 GB RAM Windows machine with integrated graphics** as a priority testing target for the simplest world-building and small-asset workflows, **not** a blanket promise that every scene, browser, renderer or generation mode will fit in 4 GB. Publish real measured memory, startup, frame time and export results for each hardware profile and stage. If the hardware is insufficient, show an actionable message and a lower-cost alternative, rather than silently freezing, corrupting work or blocking the creator.
+
+The basic experience remains **upload a Tiled map → preview/create the world → upload an existing GLB → click a placement surface → drop and save**. Nothing in Stages 1–4 requires a dedicated GPU, cloud subscription, advanced 3D editor or paid AI **by design**, subject to the actual browser/WebGL capability and a bounded scene. Stages 5–7 may use optional agentic or remote compute for demanding generation, but the creator must still be able to author/import simple assets locally. No external editor is required just to *place* a model.
+
+### Suggested external editors (examples, not exclusive endorsements or bundled software)
+
+| Editor | Creator-facing use | Import/compatibility plan |
+| --- | --- | --- |
+| [Blockbench](https://www.blockbench.net/) | **First suggested beginner option:** approachable low-poly and box-based models, small ships/buildings/props and stylized characters. | Prefer a tested binary glTF/GLB export where supported; otherwise validate/convert glTF or another documented export. Preserve texture/material and orientation. |
+| [MagicaVoxel](https://ephtracy.github.io/) | Free voxel/blocky asset creation and retro-style buildings, props and characters. Favor manageable model sizes and do not confuse its path-tracing renderer with its modeling performance. | Offer an optional tested OBJ + material/texture or VOX conversion path to GLB; don't promise direct native GLB export. Respect the external software's redistribution restrictions; link to its original site instead of bundling it. |
+| [Kenney Asset Forge](https://kenney.nl/tools/asset-forge) | Optional **paid**, block-based assembly of small models, towns, objects and stylized vehicles for people who prefer composition to mesh editing. | Accept/validate supported glTF exports and convert to GLB when necessary; do not describe it as free or include its program or paid blocks without permission. |
+| [Blender](https://www.blender.org/) | Optional more advanced modeling, cleanup and export for users with the skills and machine resources. | Accept validated GLB from its export workflow; never make Blender installation a prerequisite for basic ÆXIS creation or placement. |
+
+Maintain a short, regularly checked compatibility guide, with an asset produced in each recommended editor and actually loaded on a low-end target. Third-party export features and device needs may vary by version; do not advertise untested direct import formats or guaranteed performance.
+
+### Required low-memory behavior
+
+1. **Small by default:** start new worlds with low-cost geometry and texture presets, limited active objects, simple lighting and conservative visible distance; do not force cinematic effects or MINUTIA on the first launch. Preserve the option to increase quality later.
+2. **Keep editing separate from heavy rendering:** lightweight map and top-down/simplified placement views should remain usable if full 3D preview becomes expensive. Allow the user to save and resume without a live high-detail scene.
+3. **Lazy load and reuse:** stream terrain/world chunks and assets near the camera; use LOD, instancing, bounded caches, texture compression where supported, visibility limits and deterministic resource disposal. Do not allocate the whole planet or render every fastener at every distance.
+4. **Gracefully scale features:** expose Low/Standard/High presets, with further user controls for resolution, ocean/shadows, view distance, texture size, maximum simultaneous detail and generation budget. A simple ocean mode must remain navigable and readable.
+5. **Progressive agentic modeling:** ASTRA/ARCADIA/ANIMA begin with an inexpensive Default asset; request Detail or localized MINUTIA only where needed. Permit paused/resumable jobs and optional remote compute; never tie an otherwise local workflow to an obligatory external account.
+6. **No hidden data loss:** preserve source map, source editor file, project object IDs and original full-quality assets. Render proxies and generated LODs are derived views, not destructive substitutions for creators' originals.
+7. **Honest hardware guidance:** benchmark an actual 4 GB-class machine (and browsers/GPUs); document limitations and the simplest tested workflows instead of guaranteeing all projects will run on any weak computer.
+
+**Onboarding copy:** *An older computer is enough to begin. Start with a small world, create a simple asset in a lightweight editor—or use one you already have—and click to place it. ÆXIS handles the underlying world data. You can add complexity as your tools and computer allow.*
