@@ -106,3 +106,42 @@ Later, support multiple world chunks, nested world-map overviews and tile/2.5D/3
 **Quality bar:** Two users—one who presses Default and one who uses six dropdown selections—can each produce a coherent, revisitable geography around their hand-built maps without understanding procedural generation. Every advertised action should be an actual functional operation rather than a decorative form or placeholder.
 
 **Single sentence to preserve:** "Sketch the land you imagine, choose as much or as little as you like, and ÆXIS makes the world around your maps."
+
+---
+
+## Addendum — Town Placement Mode: GLB Scene + Circular Connection Plane (2026-09-23)
+
+**Design clarification:** A portable town does not have to be a whole generated world. A creator may import an ordinary GLB village as **one grouped scene/object**, attach a simple circular **connection plane underneath**, position that assembly anywhere above, at, or below existing world terrain, and then choose what—if anything—connects the town to the destination world. **The plane is the interface; the GLB is the content.** Houses, trees, roads, and scene props stay inside the imported GLB rather than being regenerated as world tiles.
+
+### One-minute creator flow
+
+1. In the already generated ÆXIS world, click **Place Town** and import a GLB. Preview its footprint and orientation. Preserve the original GLB and scene transforms.
+2. The editor creates a **circular connection plane** underneath the GLB, sized to its projected base. Show the plane as a visual guide, not necessarily permanent visible geometry. Provide simple **Align to Ground**, radius, horizontal position, rotation, and vertical elevation controls. Let creators move the town and plane **together**, while also adjusting the plane relative to the GLB when necessary.
+3. The creator positions the complete assembly anywhere: above the ground, intersecting it, flush with it, or lower than its surroundings. Preview intersections before placement.
+4. On **Place Town** / **Enter**, ask: **How should your town connect to the world?**
+   - **Allow to float:** leave the town suspended without a supporting platform or new terrain. No implicit terrain edits; appropriate for magical or surreal scenes.
+   - **Place a floating disk underneath:** attach a **designer-provided, interchangeable platform** beneath the plane, scaled/aligned to the town's base. Offer friendly themed presets, e.g. grassy floating island, natural stone, futuristic metal, fantastical crystal; allow changing the selection later. The disk is a scene/support object, not a demand to regenerate the underlying world.
+   - **Create terrain to reach the town:** edit **only nearby unprotected terrain chunks** to meet the connection plane's perimeter and elevation. Sample the existing destination ground, then construct appropriate hills, slopes, embankments, a mountain/plateau, cliff face, valley or depression depending on the height difference, neighboring biome, coastline, passable entrances, and creator's selected style. Simple styles: **Automatic (default)**, **Gentle slopes**, **Dramatic cliffs/plateau**, **Mountain rises to town**.
+5. Show a **real preview before commit** (including affected terrain footprint, platform/float silhouette, collision/path connections and undo scope). On confirmation, commit the placement as a movable, reversible instance; allow relocation and changing support mode later.
+
+### Connection-plane contract
+
+Record the plane's local-to-GLB transform, footprint center and radius, world transform, elevation, boundary/perimeter, connection mode, optional platform preset, optional terrain style, protected-zone rules and stable IDs. Use this representation to connect the world **without needing to understand every GLB house or decorative object**. It is reasonable for the first version to support one flat circular plane, while clearly warning if a GLB's actual ground is not flat or protrudes beyond the circle; offer manual alignment and radius adjustment rather than pretending automatic bounds guarantee a usable ground surface.
+
+The **plane may remain invisible at runtime** after serving as the guide for support geometry, terrain transition, placement, and collision. The underlying GLB remains a normal rendered scene or asset group with its own materials/LOD and optional collision proxies. Do not infer walkability from the presence of a visual plane: declare a separate authoritative ground/collision/walkable footprint and explicit entrance/path anchors when needed. Never run or execute arbitrary embedded GLB logic.
+
+### Inexpensive, localized terrain joining
+
+For **Create terrain to reach**, take elevation and material samples in an annulus outside the plane, determine the height difference and permissible seam width, then create a smooth, bounded blend or chosen cliff/mountain connection. Respect locked maps, authored shorelines, water exclusions, roads and existing terrain outside the affected zone. If the proposed join conflicts with locked terrain, water, other objects, or available space, explain it and offer simpler alternatives: move/raise/lower the assembly, reduce the radius, switch to cliffs or use a floating platform. Preserve the town's mesh and authored internal ground; do not flatten buildings, regenerate the GLB, or overwrite unrelated chunks.
+
+The simple circle is an **attachment footprint**, not an instruction to generate circular coastlines or circular terrain transitions. Use soft, context-aware variation outside the precise connection boundary so the resulting surrounding land is organic while maintaining the hard surface necessary to join the town.
+
+For a hillside settlement, future modes can replace/supplement the flat plane with a custom uneven ground mesh, sampled heightfield or linked planes; keep the same three user-visible placement choices. No need to implement that complexity in the first pass.
+
+### Implementation priorities and acceptance cases
+
+**First version:** Import one GLB, provide a visible/editable circular connection guide and Align to Ground, move/rotate/change elevation, choose **Float / Designed disk / Terrain join**, preview, confirm, save/reload and undo. Test one town floating unsupported, one using a fitted disk, one on a high plateau joined by generated hills, and one below nearby ground connected via a depression. Source GLB and protected maps remain unchanged. Ensure only the affected chunk set is rebuilt for a terrain join; preserve terrain/elevation/collision truth independently of display meshes. Support offline/default operation on low-memory devices and do not claim the editor already implements this proposal.
+
+**Later:** Alternative plane outlines and uneven ground meshes, multiple entrances, snapping paths to the road network, advanced platform libraries, independently moving whole-town instances and nested town/world placement. These are optional enhancements, not prerequisites to the effortless original workflow.
+
+**Creator-facing promise:** "Drop in your little town. Position it wherever you like. Let it float, give it a beautiful platform, or let the world grow up to meet it."
