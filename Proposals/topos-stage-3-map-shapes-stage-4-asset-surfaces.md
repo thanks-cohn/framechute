@@ -1,6 +1,8 @@
 # TOPOS Stage 3 → Stage 4 — Shape-Aware Tiled Geography, Universal Placement Surfaces, and GLB Footprint Synchronization
 
-**Status:** Proposal only; implementation is not claimed. **Date:** 2026-09-23.  
+**Status:** Proposal only; implementation is not claimed.
+**Current name and companion:** The asset-placement and 2D/3D synchronization workflow described here is now **SEKAI Stage 4**, building on ÆRIS's flight/rendering foundation and the preceding geographical import/surface work. TOPOS in this legacy filename/text is an earlier working label, not a separate engine. For agent-first and programmer-grade API architecture, inspect [agentic_design.md](./agentic_design.md) alongside this workflow before implementation.
+ **Date:** 2026-09-23.  
 **Roadmap:** ÆRIS Stage 2 = lightweight cinematic flight and multiscale rendering; TOPOS Stage 3 = robust geography import/edit/renderer contract; TOPOS Stage 4 = place GLB assets in 3D and create matching editable Tiled + world-JSON object representations. Keep the user-facing path simple: **import → detect changes → Default or Customize → preview → apply**. Agent/advanced options exist but are not mandatory.
 
 ## 1. Product promise and what Stage 3 MUST finish
