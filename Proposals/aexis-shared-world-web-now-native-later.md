@@ -29,3 +29,17 @@ The native renderer would not run Three.js unchanged. It would reuse world meani
 4. Choose a native renderer and broader desktop distribution after those measurements. Preserve browser publishing and the optional desktop path even if one backend becomes preferred.
 
 This keeps our end goal visible while letting today's work ship: a world an artist can reshape, a programmer can control precisely, and an agent can inspect and improve through understandable, authorized operations.
+
+## Addendum: browser-first creation and transfer to other game engines
+
+ÆXIS should reach creators through the browser first, while making an authored world transferable to a native ÆXIS desktop renderer and, eventually, Godot, Unity, and Unreal. This does **not** require the ÆXIS core to be rewritten in every destination's scripting language. Use JavaScript/TypeScript for the initial world core and web tools; a future C/C++ renderer consumes the same versioned world snapshots. Engine-side adapters use the host's extension languages: Godot's editor/scripting APIs, a C# Unity package, and an Unreal C++ plugin with Blueprint-facing hooks where useful.
+
+Keep three layers explicit:
+
+1. **Portable world truth:** stable IDs, terrain/elevations, entity and asset references, transforms, anchors, surfaces, lights, cameras, authored constraints, provenance, revisions, and a versioned coordinate/unit contract. Tiled JSON and GLB/glTF can carry suitable maps and 3D assets, but neither defines ÆXIS gameplay behavior by itself.
+2. **Portable supported behavior:** a small, typed set of actions and events—such as activate a door, follow a route, switch a light, or attach an object to an anchor—with deterministic parameters and declared semantics. Each destination adapter maps these to native engine concepts, or marks a feature unsupported. Gameplay rules and project permissions belong to the core contract; renderer and editor implementations remain replaceable.
+3. **Destination-specific extensions:** arbitrary JavaScript, shaders, physics tuning, visual scripts, plugins, and editor-only effects may require an engine-specific implementation. Do not promise automatic translation of arbitrary code or identical simulation across different physics/rendering engines.
+
+An export should create the destination scene *and* a machine-readable compatibility report: transferred, approximated, unsupported, affected IDs, and suggested repairs. Preserve identity and creator corrections during reimport and targeted updates; never silently replace unrelated regions or objects. Provide fixtures that compare coordinates, elevations, labels, simple behaviors, and revision changes across browser ÆXIS and each destination.
+
+Prove this in stages: first a browser-to-Godot example with terrain, one labeled GLB, a light, and one basic interaction; then a Unity C# importer over the **same** world contract; then an Unreal plugin. One-click transfer is the promise for the explicitly supported portable subset, expanded only after parity and round-trip tests. The artist can still take the world further in the target engine without ÆXIS claiming to own that engine's native features.
