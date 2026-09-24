@@ -44,6 +44,9 @@ Proposed tiers for the Creator event:
 | --- | --- | --- |
 | Defeat the Creator under the event's published win condition | **$5,000 per winning player** | An offer for a salaried game developer role, subject to terms disclosed before entry |
 | Reach the published high-progress threshold but lose | **$2,000 per qualifying player** | **Possible** job offer; no guarantee |
+| Win the Creator event in two consecutive years | **Eligible for a $100,000 team prize**, divided among the qualifying teammates under published rules | No additional job offer is implied by this tier |
+
+For the two-year tier, publish what counts as the same team, the qualifying roster for each year, whether substitutes qualify, and the division formula before the first qualifying event. Winning twice establishes eligibility for the team prize; it does not silently trigger payment without the published conditions and verification. The $100,000 is a shared team amount, unlike the $5,000 per-player victory prize.
 
 Before holding a paid event, define qualifying progress, team size, prize pool, tie/disconnect handling, eligibility, regions, tax/payment treatment, cheating rules, dispute procedure and who receives a job offer. Publish role, salary range, work arrangement and hiring criteria before promising an offer. Do not equate a strong match with demonstrated professional development skill without a clear hiring process. These are future event terms to design and fund, not a current promotion.
 
