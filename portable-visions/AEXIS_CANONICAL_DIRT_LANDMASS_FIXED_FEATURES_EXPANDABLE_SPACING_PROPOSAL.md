@@ -1,0 +1,117 @@
+# ÆXIS — Canonical Dirt Landmass, Fixed Features, Expandable Spacing
+
+**Status:** Design and Codex implementation proposal; NOT a claim that this architecture, editor or driving system already exists. This document supersedes conflicting interpretations of the dirt-continent experiment in PR #30 without rewriting any source maps.  
+**Shared locations:** Tiled-223D (ÆXIS engine), SUBSTRATE (creator workspace), FrameChute (optional browser-extension workspace).  
+**Related:** `AEXIS_EXPANSIVE_ROAD_LEVEL2_COUNTRYSIDE_AND_TILED_DESTINATIONS_PROPOSAL.md`; `docs/EXPANSIVE_DIRT_VERTICAL_SLICE.md` in Tiled-223D describes the experimental PR #30 implementation, not this final intended design.
+
+## 1. The creator's precise rule
+
+**One canonical 500 × 500 Tiled world, one new canonical dirt landmass, and three scale interpretations of the SAME saved landmass. Preserve every authored ramp and other protected feature exactly; when expanding, lengthen the traversable space BETWEEN these features. Never enlarge a ramp into a cliff or invent three unrelated sets of ramps.**
+
+The new landmass is approximately **one third of the world in the default showcase** and exists in the 500 × 500, 2,500 × 2,500 and 16,000 × 16,000 worlds. Its **relative footprint, outline, position, feature identities and topology** derive from the saved canonical Tiled map. It is NOT three independent elliptical continents generated afresh and NOT a recoloring of one third of the original islands. The original islands, their original textures, elevations, geometry, trees and destinations remain separate and protected. The canonical map is the geographical reference; a future creator may edit the footprint and its intended proportion. A small patch in another authored Tiled map may have exceptionally long internal travel while staying small on the overview.
+
+**Two distinct notions of expansion:**
+1. **World-scale selection**: Current (500 × 500), Bigger (2,500 × 2,500), Massive (16,000 × 16,000). Maps use the same canonical Tiled geographical proportions, scaled to each world's coordinates. This DOES NOT imply that authored ramp meshes increase in size.
+2. **Landmass experience expansion**: what happens *on or driving across* a chosen region—experienced length, gaps between fixed features, mostly-flat in-between terrain, traffic/roadside scenery, camera/speed and region-specific travel rules. Default: use the current world's established expansion profile with a deliberately tuned dirt-driving presentation. Optional: **replace** that inherited profile entirely with a landmass-specific profile, for example apply ocean-like expansion within a dirt patch on the 500 × 500 world. Replacement is NOT an implicit multiplier, overlay or combination with the original world rules.
+
+The experience-space distance may be longer than a bird's-eye exterior-world coordinate interval. Keep explicit, stable mappings from experience-local progress to canonical points/entry/exit. Do not physically stretch the whole exterior planet or teleport authored destinations. The forest-only locations described in the related proposal remain reachable through their defined experience by default; exposing direct external flight access is a separate creator decision.
+
+## 2. Produce the small original ONCE, then save it
+
+In the canonical 500 × 500 generation workflow, generate/author the **new dirt landmass** from the same Tiled geographical source as the two existing islands, using deterministic mathematical terrain synthesis. Persist the canonical production before deriving any larger world, including:
+- stable landmass ID, original Tiled source/version, 500 × 500 map space, location, coastal outline/mask and relative world footprint;
+- canonical dirt surface palette/seed, mostly-flat elevation baseline, tiny rolling variations and saved color-region descriptors;
+- each individual large/medium/small ramp with stable ID, exact local size, footprint, shape/height profile, orientation, position and collision/visual representation;
+- protected features such as authored rocks, roads, crossings, structures, clearings, destination anchors, and any no-build/no-ramp clearance zones;
+- deterministic inter-feature interval IDs and expansion-safe variation rules, profile schema/version and any authored overrides.
+
+Persist both numerical/semantic descriptors and sufficient deterministic procedural recipe to rebuild detail without storing an enormous full-resolution mesh. A saved source ramp stays the same on reload; changing random seeds or selected world scale does not silently replace its shape, count, ID, order or location relative to other protected features. Changes to the original are explicit revisions; derived worlds can be invalidated/regenerated from that revision.
+
+For the initial default landmass: roughly one-third of the canonical world; broad light-/medium-/dark-brown patches, subtle outlines and **mostly flat actual ground**. Color variation should usually be visual/material variation rather than a new height bump. Small terrain undulations may be sampled coherently; preserve a safe driving corridor and reasonable isolated high points. Make all defaults configurable later through the same editor/SDK surface used by the built-in preset.
+
+## 3. The exact protected-feature rule
+
+**Fixed ramps:** Their mesh/profile, width, height, orientation, local contact surface, launch geometry and collision response do not change when selecting Bigger or Massive or when increasing travel expansion. A large ramp may be large relative to a vehicle but it must NOT scale by 5× or 32× as a consequence of the world setting. No duplicate ramps merely to fill additional distance.
+
+**Expandable intervals:** Record the space between the edges of consecutive protected feature footprints as a distinct interval. Expansion adds/interpolates traversable dirt **inside that interval**, leaving each endpoint feature unchanged. Maintain ramp order, left/right relationship, bearing and intended connectivity. For roads/paths, insert additional coherent, mainly flat segments, lightweight texture/color detail and appropriately spaced decoration between ramp clearance envelopes. Merge to each ramp at its authored approach/exit elevation with continuous height and sensible slope and normals; avoid abrupt seam, floating ramp, invented cliff or collision discrepancy.
+
+A conceptual one-dimensional route example (illustrative only):
+
+```text
+Small source:   entry -- [ramp A] ---- [ramp B] -- [ramp C] -- exit
+Bigger:         entry -- [ramp A] ---------------- [ramp B] -------- [ramp C] -- exit
+Massive:        entry -- [ramp A] ----------------------------- [ramp B] ---------------- [ramp C] -- exit
+                ^ ramp A/B/C footprints and jumps do not scale; only open gaps change
+```
+
+Do not assume linear spacing across every path: use a monotone, invertible, piecewise mapping along each route/landmass travel coordinate. Protected feature intervals map with slope 1 (or explicit physical-size preservation), unprotected gaps absorb the selected expansion distance. Where the canonical geography is 2D rather than one road, preserve feature neighborhoods/topology and develop a continuous local 2D warp or corridor decomposition that cannot fold features over one another. Declare unresolved multi-road intersections, overlapping protection zones, path splits and incompatible expansion budgets instead of silently deforming a ramp.
+
+Illustrative math: protected features `F_i=[a_i,b_i]` have `length_expanded(F_i)=b_i-a_i`; inter-feature gaps `G_i=[b_i,a_(i+1)]` receive nonnegative additional length `E_i` and `length_expanded(G_i)=length(G_i)+E_i`. The selected total experienced length is the sum of unscaled features plus expanded gaps. Allocate `E_i` by safe available gap weights and authored constraints, never by scaling the fixed features. If a segment is too crowded or a creator asks for less length than the protected features and minimum clearances require, return an explicit infeasibility diagnostic.
+
+**A ramp located halfway across the original experience remains the same ramp**, but its expanded route-progress coordinate can shift according to the gap allocation. Do not independently regenerate new random ramps at "50% progress" in each scale. Canonical map proportions on the overview and actual experienced progress while driving are separate, deliberate coordinates.
+
+## 4. Initial default ramp rules: sparse, enjoyable, non-clustered
+
+The revised initial proposed spawn rates are **5% large, 3% medium, 10% small**. State precisely what percentage means: for this first default use a probability **per eligible, independently spaced canonical candidate zone**, NOT a claim that 5%/3%/10% of the continent's surface area is covered in ramp geometry. Creator API/editor may later support area-coverage targets as a separate, clearly labeled mode. Do not keep the superseded 10%/9%/30% numbers.
+
+Generate candidate zones only in safe, suitable parts of the original 500 × 500 dirt landmass, never inside existing islands, coast protections, destination footprints, water, steep slopes, another ramp's clearance envelope or an authored no-placement zone. Select deterministically with a stable seed and spatial exclusion/Poisson-disk-like clearance; large ramps need wider approach/landing clearance than medium or small. Resolve overlapping candidate sizes deterministically, enforce a minimum gap between ramps, and provide a long safe approach/exit where high driving speeds require it. A creator can change probabilities and minimum separation *before an explicit regenerate*; changing world size alone does not re-roll them.
+
+The ramps are actual traversable terrain profiles—not decorative images. The near mesh, swept vehicle/wheel collision queries, map/overview indications where warranted and cinematic impact/jump cues must refer to the SAME sampled geometry. A default ship need not have the future wheel/hydraulics system yet, but never advertise completed fun driving physics while only an approximate visual slope exists.
+
+## 5. Sparse visual and physical interpretation at all three scales
+
+The physical canonical Tiled geography determines the map-level outline and proportional position of the dirt region in **all three** world overview representations. The world renderer can draw a low-cost, coarse distant brown landmass aligned with that outline. The near-ground interpreter streams a bounded set of tiles/chunks near the active player with expanded inter-feature dirt, subtle shades, high points only where allowed, ramps that retain their original exact mesh/height profile, and context-appropriate light/atmosphere.
+
+Keep an explicit separation of:
+- canonical 500 × 500 surface and saved feature descriptors;
+- world-space scale/overview transform;
+- experience-local expanded traversal and in-between procedural detail;
+- bounded GPU presentation (far coarse representation, near geometry and occasional 2D proxies);
+- authoritative collision sampling corresponding to the **currently active experience representation**.
+
+Do NOT allocate a 2,500² or 16,000² height/ground grid to implement this. Generate bounded, deterministic chunks from saved original data plus a profile; use versioned seeds, consistent boundary conditions, caching and stable LOD transitions. Do not render the close mesh and coarse mesh over exactly the same area without clipping/blending—avoid depth fighting, coastline gaps, conflicting elevations, and the appearance of the dirt sheet covering the existing islands. On a 4 GB test machine, profile CPU frame time, JS heap, GPU memory, upload frequency and camera behavior from ground to orbital overview.
+
+The earliest exploratory PR #30 implementation uses an **independently sampled ellipse** and per-scale analytical ramps. That is an intermediate experiment, NOT the intended same-Tiled-landmass/same-ramp architecture. Do not claim that changing its scale gating or probabilities alone satisfies this proposal.
+
+## 6. Defaults, replacement policies and creator access
+
+The first showcase should work without editing anything: a coherent one-third dirt landmass in the canonical small world; mostly flat dirt and sparse fixed ramps; standard world expansion inherited in all scales with dirt-specific **presentation/driving tuning**, not hidden compound multiplication. If dirt needs ocean-like feel, make that an explicit named/default profile choice that fully defines the effective behavior; keep true expansion-profile inheritance vs replacement unambiguous.
+
+```ts
+// PROPOSED versioned data shape; not an existing runtime API.
+type LandmassExpansion =
+  | { mode: "inherit-world" }
+  | { mode: "replace"; profileId: string; rules?: DirtExperienceRules };
+
+type DirtLandmass = {
+  id: string;
+  sourceMapId: string;
+  canonicalMapSize: [500, 500];
+  canonicalRegion: SavedRegionMaskAndTransform;
+  features: SavedFixedFeature[];      // same IDs and physical shapes for ALL scales
+  intervals: SavedExpandableInterval[];
+  expansion: LandmassExpansion;
+  rampGeneration: {
+    seed: number;
+    probabilityByEligibleZone: { large: 0.05; medium: 0.03; small: 0.10 };
+    minimumClearanceBySize: Record<string, number>;
+  };
+};
+```
+
+The current world selection establishes world dimensions and default experience profile. For each landmass resolve exactly ONE effective profile: `landmass.mode==="replace" ? landmass.profile : world.defaultProfile`. Dirt-specific *surface handling* (wheel support, collision, visual palette) is a different dimension from expansion-profile stacking: it must not secretly multiply experienced distances again. A creator can choose the ocean expansion profile on a tiny 500 × 500 landmass while keeping its proportional Tiled placement.
+
+**Simple editor:** select the dirt landmass; show its Tiled footprint and unchanging ramp IDs; toggle "Use world expansion" / "Replace with selected profile"; choose a preset or custom profile; change overall travel distance and interval allocation, tint/outline/flatness, ramp probabilities (with clear "regenerates canonical features" warning), size/spacing clearance, and preview the ground-level and world overview results. Slider + exact value for each control, undo/restore defaults and per-world-scale preview. A creator must not need to write code to do this.
+
+**Programmer/agent API:** versioned inspect/list/source/feature/progress mapping/preview/plan/commit operations with authorized edits, validation and diagnostics for overlapping features, insufficient interval lengths, mismatched authored anchors, duplicate IDs, performance budget, and unsupported direct exterior-flight connections. Expose deterministic regeneration and a dry-run that reports how many canonical features would change before applying it. API and editor are two views of the SAME settings; the ÆXIS default itself is one saved editable preset.
+
+## 7. Codex implementation and acceptance plan
+
+1. **Protect the existing islands and separate authored source from generated interpretation.** Compare PR #30 against the intended contract. Stop treating the independently generated ellipse as the authoritative geography. Introduce a canonical new dirt region in the **same source Tiled map** (or an explicit, persisted canonical map-layer addition that does not overwrite the original island cells), with stable region mask/outline and landmass ID. Preserve original source maps and source elevation backups.
+2. **Canonical feature generation.** Generate and save the 500 × 500 mostly-flat brown dirt representation ONCE. Save exactly the selected ramps and fixed footprints/terrain shapes, seed, clearance and original source-relative positions. Defaults: large 5%, medium 3%, small 10% per eligible separated candidate zone. Test deterministic reload and count/shape invariance; protect island cells.
+3. **Piecewise gap-expansion interpreter.** Derive Current, Bigger and Massive from the same saved source and feature list. Preserve every ramp's mesh/contact dimensions; distribute additional experienced distance only over allowed intervals with safe height and collision joins. Maintain canonical overview location and proportional region outline in all three worlds; explicit infeasibility errors rather than silent ramp scaling. Support an ocean-style replacement profile on a small world as a concrete proof.
+4. **Bounded rendering and navigation.** Generate and cache coarse/near representation chunks, limit memory, ensure exact authoritative ground/collision agreement at feature contacts, avoid overlapping LOD artifacts, and keep world-to-experience mapping stable under reverse travel, turns and stage transitions.
+5. **Editor and API in increments.** First expose truthful source/feature/profile inspection and nonmutating previews; then implement authorized deterministic edits with revisioning and persistence; finally add friendly sliders/exact fields/undo. Existing incomplete APIs must report capability honestly.
+6. **Validate before merging.** Automated tests and browser screenshots for 500, 2,500 and 16,000 worlds: landmass proportional location and outline, untouched original islands, unchanged ramp count/IDs/sizes/geometry and order, increased interval lengths, seamless ramp contacts/collisions, easy driving, correct ocean/land boundary, stable main/preview cameras, no overwrites on Tiled import, and roughly 4 GB hardware performance. Test a custom landmass replacing its inherited rule with ocean expansion in the small world. Review PR #30 and create follow-up commits or a replacement PR rather than merging a mismatched prototype.
+
+**One-line promise: The map tells us where the landmass and its ramps are; our saved small-world production tells us what each ramp is; expansion changes the journey BETWEEN them. World defaults make it delightful immediately, and the editor/API make every choice understandable and replaceable.**
