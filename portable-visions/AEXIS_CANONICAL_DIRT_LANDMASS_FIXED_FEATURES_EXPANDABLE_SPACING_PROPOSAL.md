@@ -180,3 +180,56 @@ The example's 1,250-unit interval length is illustrative: real gap length comes 
 - Treat this as a **proposal and implementation acceptance criteria**, not proof that the experimental PR #30 already implements saved canonical data, deterministic interval streaming, seam-free LOD, or production-ready road physics.
 
 **Design maxim:** Generate and save what the world *is* once; resolve how expansive its journeys *are* from the selected rules; rebuild only what the player needs to *see and touch*. The geometry may come and go. The same ramps, authored places and mathematical terrain remain.
+
+## Agent Recommendations — Implementation Architecture and First Playable Milestone
+
+*The following are implementation recommendations from the agent, not replacements for the creator's established defaults, saved-canonical-geography requirement, fixed-ramp rule, or inherit-versus-replace expansion policy. This section proposes how to realize those requirements efficiently and incrementally.*
+
+### A. Maintain three independently testable systems
+
+1. **Persistent world definition — what exists.** The saved canonical 500 × 500 Tiled-relative world is authoritative for the new dirt landmass's geographical footprint, original islands, ramp identities, immutable physical ramp dimensions and profiles, protected features, semantic dirt palette, procedural seeds, authored edits and revision history. World-size selection never rerolls those original features.
+2. **Expansion interpreter — how traversal is experienced.** Resolve exactly one effective expansion profile: inherit the selected world's default, or fully replace it with the landmass's explicit alternative. From the canonical features, derive a stable route/experience-coordinate mapping and extra traversable *gaps between fixed features*. Preserve fixed-feature geometry, order, topology, approach and landing clearance, and the landmass's proportional placement in the world overview.
+3. **Terrain presentation and collision — what must be visible and physically available now.** Stream bounded near-ground geometry and authoritative collision/contact samples from the same deterministic expanded terrain definition. Use simpler mid-distance terrain and a cheap canonical, map-aligned far/orbital representation. Allow disposable rendered geometry without making world data disposable. Keep the three subsystems independently testable so a future renderer or desktop backend can reuse the same saved world and interpreter.
+
+### B. Do not precompute or save every polygon of expanded terrain
+
+Save the canonical source and versioned rules. Derive lightweight, stable descriptors for expanded intervals when necessary, and persist/cache them only when recomputation or authored changes warrant it. Each interval should carry a stable ID, bounding fixed-feature IDs, canonical endpoints, selected effective expansion-profile revision, experienced distance, interpolation/terrain parameters, deterministic seed and explicit authored patches. A useful conceptual record is:
+
+```js
+{
+  id: "ramp-A-to-ramp-B",
+  sourceRevision: 1,
+  effectiveProfile: "bigger-default",
+  startFeature: "ramp-A",
+  endFeature: "ramp-B",
+  originalLength: 120,
+  expandedLength: 1200,
+  terrainSeed: 48193,
+  baseElevation: 8,
+  elevationVariation: 0.4
+}
+```
+
+The numbers are illustrative, not mandated defaults or a currently shipped API. The interval is an addressable *recipe* for reproducible terrain, not a preallocated giant mesh. Invalidate affected derived intervals on relevant source/profile edits; preserve creator-authored exceptions across reloads and cache eviction.
+
+### C. Use permanent mathematical chunk addresses
+
+Address a chunk by canonical landmass ID, canonical source revision, effective expansion-profile ID/version, route/interval ID and deterministic chunk index (and any necessary branch/side coordinate). A request for the same address must reconstruct the same ground, dirt coloration, road alignment and protected features, regardless of visit order, camera, machine or time. Chunk LOD/resolution may vary, but must sample the same underlying place. Unload distant meshes and optionally keep a small, bounded recent-chunk cache for reversing; never reroll ramps when a player returns. For multiplayer, share authoritative feature/terrain coordinates and seeds while allowing explicitly cosmetic per-player presentation overrides.
+
+### D. Protect ramps as independent physical features
+
+Store each canonical ramp's stable ID, original footprint, width, height, profile, orientation, contact surface and entry/exit clearance independently from the in-between terrain generator. Expansion increases travel length *only inside permitted gaps*; ramps do not scale by world linear dimension, and new ones are not silently created merely to fill distance. The interpolated in-between terrain must meet the original ramp approach and departure surfaces with continuous height and suitable slope/normal continuity. If a requested experience length is incompatible with unchanged features and their minimum safe clearances, report that constraint rather than deforming the ramps.
+
+### E. Separate collision-relevant geometry from appearance
+
+Use a relatively economical, mostly flat height/contact surface with gentle bounded undulations and actual ramps for physical interaction. Derive broad light-, medium- and dark-brown patches, minimal outlines and small dirt details primarily from deterministic material/shading functions; a change in soil color should not force more physical vertices or an elevation bump. Rendered near terrain and swept ship/wheel collision must sample the same authoritative heights and fixed-ramp geometry. Reduce mesh detail only where doing so cannot mislead an approaching player about the drivable surface.
+
+### F. Begin with a small streaming prototype, then profile the 4 GB target
+
+Start with a few bounded near-ground chunks, a low-detail middle distance, a map-aligned far representation and a small recent-chunk cache. Choose chunk dimensions and cache limits using measured frame time, geometry upload cost, CPU/JS memory, GPU memory, and high-speed prefetch performance on the actual 4 GB Windows test machine—not untested large fixed values. Keep generation/upload work bounded per frame; reuse materials and geometry buffers when practical. Prefetch a longer navigable corridor as speed increases, and prepare actual ramp collision/contact geometry before reaching it. Do not allocate an entire 2,500² or 16,000² detailed grid or generate every expanded interval up front. Avoid overlapping coarse/fine mesh z-fighting and terrain seams.
+
+### G. First working milestone before expanding to the full forest
+
+Demonstrate **one** canonical dirt landmass with **three saved ramps** in the small world. Switch among Current, Bigger and Massive: the exact three ramps keep their IDs, physical dimensions, shapes, orientations, contact geometry and order, while the drivable distances between them change according to each scale's effective expansion rules. Drive away, unload the corridor, return, reverse and reload: the same deterministic ground and ramp geometry must reappear. Confirm the original islands remain unchanged, the new landmass's relative Tiled-map footprint stays consistent, near rendering agrees with collision, and a dirt landmass in Current can select an ocean-like expansion profile via **replacement**, not superimposition. Only after this vertical slice is visually and physically reliable should the full four-layer forest, high-speed scenic events, multiplayer variants and cinematic road systems be built on this foundation.
+
+**Agent recommendation in one sentence:** Persist what the world *is* once; determine the selected journey's expansion without resizing its fixed features; construct and discard only the terrain geometry the player presently needs.
