@@ -141,3 +141,42 @@ Allow optional author-controlled profiles for the project's four existing atmosp
 **Definition of success:** A new creator can use optimized built-in camera angles, drag a slider to tilt one shot toward Earth, type a precise subject-position value, customize the small preview independently, swap via C, restore the original preset or save their own new baseline, and export it. A browser-game programmer can load the same preset/SDK, bind their ship and world, change a few values and obtain a playable, cinematic result without rebuilding the camera system. Across all supported altitudes and scales, default cameras remain legible and do not unintentionally disappear into the ship or black out.
 
 **Long-term ambition:** earn an open, interoperable standard of **breadth, depth and ease of use** for browser-based interactive experiences, culminating in a browser-first authoring/SDK combination of a distinctive kind. Other engines and timelines already contain related concepts; “first of its kind for browsers” is an aspiration about the particular accessible, integrated product we build, not a categorical claim of inventing cameras, cinematic timelines or interchange.
+
+## 11. Portable camera-shot and camera-rig exports — attach authored angles to ships, people, cars and custom avatars
+
+**Status:** New creator requirement / future interoperability feature. `.aexcam` below is a *working name*, not an implemented extension, existing SDK, or final standard. Extend the portable ÆXIS experience schema rather than introducing an incompatible parallel runtime.
+
+A creator or programmer must be able to **export any customized individual camera or complete collection of camera shots, import it in another world/game, and attach it to a particular ship, car, person or custom avatar/GLB instance**. This should work without bundling the original vehicle mesh or requiring adoption of the full ÆXIS editor. A whole rig can carry the intended startup main/preview selections, optional viewport-specific composition, semantic camera switching and shot-to-shot transitions; a standalone shot can be imported into an existing camera library. Camera settings are reusable authored *assets*, not hardcoded globals and not inseparable from one particular ship's original dimensions.
+
+**Authoring surface:** In the browser editor, offer `Export selected camera`, `Export camera rig`, `Import camera / rig`, `Attach to selected object`, `Preview adaptation`, `Save as new default preset`, and `Reset to source/factory preset` as distinct, understandable actions. Sliders and synchronized precise inputs remain the friendly editing route; programmer and agent APIs manipulate exactly the same versioned data. Exports should capture the camera's *authored current values* and its intended baseline; temporary per-frame altitude/auto-fit adjustments should not get baked into the source preset accidentally. Never interpret “Export” as publishing a marketplace item without a separate explicit action.
+
+**Two portable asset scopes:**
+- **Single shot:** stable package and shot ID, semantic name, source/derived lineage, default/current configuration (or explicit chosen export baseline), follow/target anchors, relative offset with units, angle offsets, lens/projection/fisheye, normalized subject placement and viewport-safe framing, smoothing and optional altitude/movement policies. Exporting one modified shot should preserve the creator's chosen values and not incorrectly revert them to factory defaults.
+- **Camera rig collection:** multiple individually addressable shots, compatible attachment roles, preset inheritance, main/preview initial selections, per-viewport defaults/overrides, optional camera transition definitions and event bindings. Allow a game to select just one imported shot or a complete rig; imported cameras retain their own identities and may be cloned rather than mutating a shared global template.
+
+**Attachment and adaptation contract:** A rig is defined in a declared local reference frame, with normalized or unit-explicit offsets relative to an attachment reference and optional semantic anchors (`body.center`, `cockpit`, `head`, `underside`, `wheel.contact`, etc.). Importers resolve anchors against the destination object's *actual* stable scene/GLB IDs and available nodes; provide editable fallback using object bounds and selected pivot when a node is absent. Capture authoring reference dimensions and constraints so `adaptToModelSize` can compute effective distance, framing and lens-safe offsets for a giant ship, tiny flying car or character without changing the authored rig's stored values or `(Modified)` status. Show diagnostic warnings for incompatible orientation, missing anchors, unsupported capabilities, undersized clearance or an impossible requested framing. Do not silently promise that an arbitrary vehicle can share realistic handling or mesh attachment points.
+
+**Baseline and status semantics:** ÆXIS factory presets remain available and immutable. An edited instance compared with its own default is `(Modified)`; importing a creator-authored rig as a new project default is an **explicit** `Establish defaults` action with a new stable identity/version, after which its saved values display `(Customizable)` until changed. Loading a modified export as an *editable instance* must retain its modified state and inherited baseline; do not secretly convert it into a default during import. Camera IDs and package IDs must not depend on human display names. Keep creator-authored shot names and source attribution distinct from the derived status suffix.
+
+**Portability:** Use the same renderer-independent versioned schema as the main ÆXIS sequence proposal, as an embedded camera component or optional standalone manifest/package (e.g. proposed `.aexcam`). The exported manifest declares schema version, dimensions/units, coordinate conventions, capabilities, dependency/asset references, rig-to-object bindings, viewport policies, attribution/license and safe supported behavior profiles. It must contain no serialized Three.js objects, browser DOM references, or untrusted executable code. Optional Liquid behavior must declare a validated, capability-scoped portable runtime/graph; if unsupported, report the limitation and use an explicit static fallback. Original camera GLB attachment references should resolve to a new bound object without hardcoded source-world coordinates.
+
+**Illustrative future programmer API (names not implemented):**
+
+```ts
+const rig = await cameras.importRig("/camera-rigs/hero-ship.aexcam");
+const bound = rig.attachTo(myShip, {
+  adaptToModelSize: true,
+  anchorMap: { "body.center": myShip.centerAnchor }
+});
+bound.get("rear-chase").setPosition({
+  forward: -25, right: 0, up: 8, unit: "ft"
+});
+bound.setInitialViewports({ main: "rear-chase", preview: "low-front-fisheye" });
+await bound.exportRig("my-game-camera-rig.aexcam");
+// Optional, explicit and distinct from editing:
+bound.establishAsProjectDefaults();
+```
+
+**Acceptance criteria:** In the reference browser editor, customize one camera using slider or numeric field, export it, import into another clean project, attach to a different compatible GLB and reproduce the intended shot with sensible size-aware correction. Export and import a full rig, preserving individual camera settings, labels, look-at targeting, main/preview configuration and two-way C swap. Verify independent main/preview framing, absence of camera-inside-mesh at high altitude, graceful missing-anchor errors, reversible reset/new-baseline semantics, stable IDs after save/load and actual renderer-independent import via a minimal external browser host/SDK adapter. Test that exported content does not require owning the original GLB or ÆXIS application to parse. Keep the first framing/orbital blackout and curved-island bugs as immediate work; camera-rig portability is a subsequent implementation stage, not a reason to delay targeted bugfixes.
+
+**Why this matters:** A new browser-game developer should be able to take a well-authored camera collection, attach it to their own ship or avatar, edit a few values, and have playable cinematic shots **and a working preview/swap experience** without building that infrastructure from scratch. This is a concrete step toward ÆXIS's ambition of earning a broadly reusable, engine-agnostic experience format and SDK through breadth, depth and ease of use.
