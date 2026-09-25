@@ -115,3 +115,68 @@ The current world selection establishes world dimensions and default experience 
 6. **Validate before merging.** Automated tests and browser screenshots for 500, 2,500 and 16,000 worlds: landmass proportional location and outline, untouched original islands, unchanged ramp count/IDs/sizes/geometry and order, increased interval lengths, seamless ramp contacts/collisions, easy driving, correct ocean/land boundary, stable main/preview cameras, no overwrites on Tiled import, and roughly 4 GB hardware performance. Test a custom landmass replacing its inherited rule with ocean expansion in the small world. Review PR #30 and create follow-up commits or a replacement PR rather than merging a mismatched prototype.
 
 **One-line promise: The map tells us where the landmass and its ramps are; our saved small-world production tells us what each ramp is; expansion changes the journey BETWEEN them. World defaults make it delightful immediately, and the editor/API make every choice understandable and replaceable.**
+
+## Addendum — Generate the canonical world once; save mathematical constraints; stream deterministic geometry
+
+**Decision for the small-machine target:** Generate and persist the original 500 × 500 dirt-landmass production **once**. Derive an expanded-experience plan from that saved source and the selected profile, retaining the same feature identities and geometry in every world size. Generate/render only bounded nearby terrain chunks as the player approaches. A chunk may be rebuilt after unloading, but it must reproduce the **same place**, not create a new random landscape on each visit. This is the intended balance between a persistent world and the roughly 4 GB target machine.
+
+### Three distinct operations, with different lifetimes
+
+1. **Canonical source production (once, then explicit revision):** Save the original Tiled-relative geographical footprint, dirt palette and color-patch recipe, mostly-flat base terrain/elevation constraints, deterministic seeds, individually identified ramp meshes/profiles and collision footprints, no-build clearances, authored locations, topology, route connections and source schema version. Persist this source independently of transient GPU meshes; retain the original islands unmodified. Ramps are selected and fixed **here**, with default probabilities of **5% large, 3% medium and 10% small per eligible, adequately separated canonical candidate zone**. An explicit creator regeneration can revise them, but ordinary reload, world-scale switching or approaching them cannot.
+2. **Expansion interpretation (once per relevant source/profile revision, with compact persistent or reconstructible descriptors):** Resolve the currently selected world's default expansion rules, unless this landmass explicitly **replaces** them with one other selected profile. Preserve the Tiled map's relative outline and placement in Current (500 × 500), Bigger (2,500 × 2,500) and Massive (16,000 × 16,000). Assign stable IDs and deterministic seeds to the expandable intervals **between** the unchanged ramp/feature footprints, record their effective experienced lengths and coordinate mapping, and define color/elevation interpolation and safe joins. Cache/save the compact plan or derive it reproducibly from saved canonical data plus a versioned expansion profile; do not save enormous full-resolution representations unnecessarily. Never combine inherited and replacement expansion distances by silent multiplication.
+3. **View-dependent geometry (as needed and disposable):** Near the ship/vehicle, build a bounded detailed mesh and matching authoritative ground/collision samples from the saved mathematical recipe and expansion plan. At middle distance use simplified geometry and silhouettes; at planetary scale use a cheap coarse representation of the same canonical landmass outline. Stream/prefetch chunks in the direction of travel. Keep an optional small, bounded recently used mesh cache for quick reverse driving; discard distant GPU/CPU vertex buffers without discarding their source definitions. On revisiting an unloaded chunk, recompute its *same* deterministic height, brown shading, features and road alignment. Do not reroll or relocate ramps, roads, destinations or shared multiplayer collision obstacles.
+
+### Mathematical contract and feature continuity
+
+For each mapped expanded interval `I`, a deterministic function `H_I(u,v)=H_base + epsilon*N_I(u,v) + R_I(u,v)` defines the physical height, where `N_I` is smooth bounded low-amplitude in-between variation and `R_I` comes from *saved* protected features (and their explicitly defined joins), not newly sampled ramps. A distinct dirt-color function can generate broad mostly brown/light-brown/dark-brown patches and occasional outlines without turning every color change into a height change. Elevation/road/brown-shade seeds are tied to stable interval IDs and canonical source/profile revisions, **not** load order, camera distance, wall clock or frame count. The same sampled height, interpolation and feature contact geometry must drive both visible near terrain and actual wheel/ship collision. Keep the original ramp dimensions and approach/landing clearances invariant while distributing added experienced distance into permitted gaps; ensure C0 height continuity and appropriate slope/normal continuity where gaps meet ramps.
+
+**Do not assume saving the world means storing every rendered polygon.** Prefer compact semantic descriptors, mathematical coefficients, deterministic seeds, fixed ramp data, saved world/experience coordinate maps, and creator edits. Cache derived expansion-plan metadata when expensive to recompute; invalidate only affected intervals when the saved source/profile changes. An authored exception or manual terrain edit must be persisted as an explicit patch over the deterministic recipe, with stable IDs and revisioning, rather than lost when a chunk unloads.
+
+### Streaming and speed safeguards
+
+Use a bounded chunk scheduler with three relevant distance levels: **near:** detailed physical surface, collision and intact fixed ramps; **mid:** reduced mesh and color/elevation silhouettes consistent with canonical features; **far/orbital:** lightweight map-aligned landmass outline and broad color. Prevent simultaneous overlapping coarse/near triangles from causing depth fighting; provide a deliberate clip, morph or blend seam. Reserve and prefetch the future travel corridor based on actual vehicle velocity, acceleration, steering reach and braking/turning time, so a fast ship cannot discover a ramp or road turn only after collision preparation would be too late. A visible actionable obstacle must correspond to a prepared authoritative one. Use conservative fallback geometry and sensible speed/physics handling when fine chunks cannot be prepared in time; never substitute a freshly randomized or secretly non-collidable ramp.
+
+Keep a strict CPU/JS-heap/GPU/mesh-cache budget, reuse material/texture assets, cap concurrent builds and vertex uploads, and measure actual loading and frame times on the target 4 GB Windows device. Generating all detailed geometry for a 16,000 × 16,000 world is **not** part of the default contract. The coarse planetary representation is a separate cheap view of the SAME canonical geography, not a second unrelated randomly produced landmass.
+
+### Proposed compact representation (illustrative, not an existing runtime schema)
+
+```json
+{
+  "source": {
+    "canonicalMapSize": [500, 500],
+    "landmassId": "dirt-landmass-01",
+    "sourceRevision": 1,
+    "fixedFeatureIds": ["ramp-A", "ramp-B", "ramp-C"]
+  },
+  "interpretation": {
+    "worldScale": "bigger",
+    "effectiveExpansion": {
+      "mode": "inherit-world",
+      "profileId": "bigger-default"
+    },
+    "intervals": [{
+      "id": "ramp-A--ramp-B",
+      "startFeature": "ramp-A",
+      "endFeature": "ramp-B",
+      "expandedTravelLength": 1250,
+      "terrainSeed": 48193,
+      "baseElevation": 8,
+      "elevationVariation": 0.4,
+      "brownShadeVariation": 0.25
+    }]
+  }
+}
+```
+
+The example's 1,250-unit interval length is illustrative: real gap length comes from a constrained, profile-specific expansion plan. The saved source and effective interpretation together reproduce the exact same ramps and intervening traversable land after a reload.
+
+### Acceptance checks
+
+- Save the 500 × 500 canonical production, load each world scale, drive from ramp A to B, unload/reload the corridor and drive backwards: the ramps retain **identical IDs, shape, dimensions and collision profiles** and the in-between geometry/shading reappears deterministically. The larger experienced distance occurs only in the allowed intervals.
+- Change camera distance/altitude or reload the app: no visible landmark, ramp or authored edit is re-rolled; planetary and near-ground views correspond to one canonical region. A nontrivial source/profile edit invalidates only affected derived chunks and retains manually authored patches.
+- Verify no world-sized detailed grid is allocated for Bigger/Massive; measure bounded chunk/mesh cache and prefetch at slow and extremely fast flight/driving speeds, including reversal, curves, high-speed approach, and low-memory conditions.
+- Verify near visual surface and collision/landing/suspension sampling agree; safe/coherent seams, no high-speed tunneling, abrupt terrain pops, falsely collidable distant proxies or conflicting coarse/near meshes.
+- Confirm a small 500 × 500 world can use an ocean-like **replacement** expansion profile on its dirt landmass while retaining the exact saved ramps and original canonical world footprint.
+- Treat this as a **proposal and implementation acceptance criteria**, not proof that the experimental PR #30 already implements saved canonical data, deterministic interval streaming, seam-free LOD, or production-ready road physics.
+
+**Design maxim:** Generate and save what the world *is* once; resolve how expansive its journeys *are* from the selected rules; rebuild only what the player needs to *see and touch*. The geometry may come and go. The same ramps, authored places and mathematical terrain remain.
